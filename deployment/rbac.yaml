@@ -1,0 +1,41 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kubernetes-agent
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kubernetes-agent
+rules:
+  # Read pods, logs, and events
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "events", "services", "configmaps", "endpoints"]
+    verbs: ["get", "list", "watch"]
+  # Execute commands in pods (for debugging)
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
+  # Read deployments and other workloads
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets", "daemonsets", "replicasets"]
+    verbs: ["get", "list", "watch"]
+  # Read metrics
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["pods", "nodes"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kubernetes-agent
+subjects:
+  - kind: ServiceAccount
+    name: kubernetes-agent
+    namespace: argo-rollouts
+roleRef:
+  kind: ClusterRole
+  name: kubernetes-agent
+  apiGroup: rbac.authorization.k8s.io
+
+

@@ -1,0 +1,21 @@
+target/
+*.class
+*.log
+*.jar
+!.mvn/wrapper/maven-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets
+deployment/secret.yaml
+
+
