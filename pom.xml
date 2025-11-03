@@ -14,7 +14,7 @@
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<maven.compiler.source>21</maven.compiler.source>
 		<maven.compiler.target>21</maven.compiler.target>
-		<quarkus.platform.version>3.28.2</quarkus.platform.version>
+		<quarkus.platform.version>3.29.0</quarkus.platform.version>
 		<quarkus-langchain4j.version>1.3.1</quarkus-langchain4j.version>
 		<langchain4j.beta.version>1.6.0-beta12</langchain4j.beta.version>
         <a2a.version>0.3.0.Beta1</a2a.version>
@@ -75,7 +75,6 @@
 		<dependency>
             <groupId>dev.langchain4j</groupId>
             <artifactId>langchain4j-agentic-a2a</artifactId>
-            <version>${langchain4j.beta.version}</version>
         </dependency>
 		<dependency>
             <groupId>io.github.a2asdk</groupId>
@@ -123,13 +122,11 @@
 		<dependency>
 			<groupId>org.mockito</groupId>
 			<artifactId>mockito-core</artifactId>
-			<version>5.2.0</version>
 			<scope>test</scope>
 		</dependency>
 		<dependency>
 			<groupId>org.mockito</groupId>
 			<artifactId>mockito-junit-jupiter</artifactId>
-			<version>5.2.0</version>
 			<scope>test</scope>
 		</dependency>
 	</dependencies>
