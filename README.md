@@ -1,6 +1,6 @@
 # Kubernetes AI Agent
 
-An autonomous AI agent for Kubernetes debugging and remediation, powered by Google's Agent Development Kit (ADK) and Gemini AI.
+An autonomous AI agent for Kubernetes debugging and remediation, powered by Quarkus LangChain4j and Gemini AI (or alternatively OpenAI).
 
 ## Overview
 
@@ -43,11 +43,11 @@ Argo Rollouts Analysis
 	↓
 rollouts-plugin-metric-ai
 	↓ (A2A HTTP)
-Kubernetes Agent (ADK)
-	├── K8s Tools (Fabric8 client)
+Kubernetes Agent (Quarkus LangChain4j)
+	├── K8s Tools (Quarkus Kubernetes)
 	├── Git Operations (JGit)
-	├── GitHub PR (GitHub API)
-	└── AI Analysis (Gemini)
+	├── GitHub PR ()
+	└── AI Analysis (Gemini or OpenAI)
 ```
 
 ## Prerequisites
