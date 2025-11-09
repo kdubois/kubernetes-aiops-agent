@@ -242,19 +242,66 @@ public class K8sTools {
             }
             Log.info(MessageFormat.format("Retrieved {0} characters of logs", logs.length()));
             
+            // Analyze logs for common error patterns
+            Map<String, Object> analysis = analyzeLogs(logs);
             
-            return Map.of(
-                "namespace", namespace,
-                "podName", podName,
-                "container", containerName != null ? containerName : "default",
-                "previous", getPrevious,
-                "logs", logs
-            );
+            Map<String, Object> result = new HashMap<>();
+            result.put("namespace", namespace);
+            result.put("podName", podName);
+            result.put("container", containerName != null ? containerName : "default");
+            result.put("previous", getPrevious);
+            result.put("logs", logs);
+            result.put("analysis", analysis);
+            
+            return result;
             
         } catch (Exception e) {
             Log.error("Error getting logs", e);
             return Map.of("error", e.getMessage());
         }
+    }
+    
+    /**
+     * Analyze logs for common error patterns
+     */
+    private Map<String, Object> analyzeLogs(String logs) {
+        if (logs == null || logs.isEmpty()) {
+            return Map.of("hasErrors", false);
+        }
+        
+        String lowerLogs = logs.toLowerCase();
+        boolean hasErrors = lowerLogs.contains("error") ||
+            lowerLogs.contains("exception") ||
+            lowerLogs.contains("fatal") ||
+            lowerLogs.contains("panic");
+        
+        boolean hasWarnings = lowerLogs.contains("warn");
+        
+        // Count error lines
+        long errorCount = logs.lines()
+            .filter(line -> {
+                String lower = line.toLowerCase();
+                return lower.contains("error") || lower.contains("exception");
+            })
+            .count();
+        
+        // Detect OOMKilled
+        boolean oomDetected = lowerLogs.contains("out of memory") ||
+            lowerLogs.contains("oomkilled");
+        
+        // Detect connection issues
+        boolean connectionIssues = lowerLogs.contains("connection refused") ||
+            lowerLogs.contains("connection timeout") ||
+            lowerLogs.contains("unable to connect");
+        
+        Map<String, Object> analysis = new HashMap<>();
+        analysis.put("hasErrors", hasErrors);
+        analysis.put("hasWarnings", hasWarnings);
+        analysis.put("errorCount", errorCount);
+        analysis.put("oomDetected", oomDetected);
+        analysis.put("connectionIssues", connectionIssues);
+        
+        return analysis;
     }
     
     /**
@@ -274,33 +321,87 @@ public class K8sTools {
         
         
         try {
-            PodMetrics metrics = k8sClient.top().pods()
-                .inNamespace(namespace)
-                .withName(podName)
-                .metric();
-            
-            if (metrics == null) {
-                return Map.of("error", "Metrics not available (metrics-server might not be installed)");
+            // Try to get actual metrics from metrics-server
+            try {
+                PodMetrics metrics = k8sClient.top().pods()
+                    .inNamespace(namespace)
+                    .withName(podName)
+                    .metric();
+                
+                if (metrics != null) {
+                    List<Map<String, Object>> containerMetrics = metrics.getContainers().stream()
+                        .map(c -> {
+                            Map<String, Object> m = new HashMap<>();
+                            m.put("name", c.getName());
+                            m.put("cpu", c.getUsage().get("cpu").toString());
+                            m.put("memory", c.getUsage().get("memory").toString());
+                            return m;
+                        })
+                        .collect(Collectors.toList());
+                    Log.info(MessageFormat.format("Retrieved actual metrics for {0} containers", containerMetrics.size()));
+                    
+                    return Map.of(
+                        "namespace", namespace,
+                        "podName", podName,
+                        "timestamp", metrics.getTimestamp(),
+                        "containers", containerMetrics
+                    );
+                }
+            } catch (Exception metricsException) {
+                Log.warn("Metrics-server not available, falling back to resource requests/limits");
             }
             
-            List<Map<String, Object>> containerMetrics = metrics.getContainers().stream()
-                .map(c -> {
-                    Map<String, Object> m = new HashMap<>();
-                    m.put("name", c.getName());
-                    m.put("cpu", c.getUsage().get("cpu").toString());
-                    m.put("memory", c.getUsage().get("memory").toString());
-                    return m;
-                })
-                .collect(Collectors.toList());
-            Log.info(MessageFormat.format("Retrieved metrics for {0} containers", containerMetrics.size()));
+            // Fallback: Get resource requests and limits from pod spec
+            Pod pod = k8sClient.pods()
+                .inNamespace(namespace)
+                .withName(podName)
+                .get();
             
+            if (pod == null) {
+                return Map.of("error", "Pod not found: " + namespace + "/" + podName);
+            }
             
-            return Map.of(
-                "namespace", namespace,
-                "podName", podName,
-                "timestamp", metrics.getTimestamp(),
-                "containers", containerMetrics
-            );
+            Map<String, Object> metricsInfo = new HashMap<>();
+            metricsInfo.put("podName", podName);
+            metricsInfo.put("namespace", namespace);
+            metricsInfo.put("note", "Showing resource requests/limits (metrics-server not available for actual usage)");
+            
+            List<Map<String, Object>> containerResources = new ArrayList<>();
+            if (pod.getSpec().getContainers() != null) {
+                for (var container : pod.getSpec().getContainers()) {
+                    ResourceRequirements resources = container.getResources();
+                    
+                    if (resources != null) {
+                        Map<String, Object> containerInfo = new HashMap<>();
+                        containerInfo.put("containerName", container.getName());
+                        
+                        // Requests
+                        if (resources.getRequests() != null) {
+                            Map<String, String> requests = new HashMap<>();
+                            resources.getRequests().forEach((key, value) ->
+                                requests.put(key, value.toString())
+                            );
+                            containerInfo.put("requests", requests);
+                        }
+                        
+                        // Limits
+                        if (resources.getLimits() != null) {
+                            Map<String, String> limits = new HashMap<>();
+                            resources.getLimits().forEach((key, value) ->
+                                limits.put(key, value.toString())
+                            );
+                            containerInfo.put("limits", limits);
+                        }
+                        
+                        containerResources.add(containerInfo);
+                    }
+                }
+            }
+            
+            metricsInfo.put("containers", containerResources);
+            Log.info(MessageFormat.format("Retrieved resource requests/limits for pod: {0}/{1}", namespace, podName));
+            
+            return metricsInfo;
             
         } catch (Exception e) {
             Log.error("Error getting metrics", e);
@@ -418,17 +519,64 @@ public class K8sTools {
                 }
                 
                 List<Map<String, Object>> serviceInfo = services.stream()
-                    .map(s -> Map.of(
-                        "name", s.getMetadata().getName(),
-                        "type", s.getSpec().getType(),
-                        "clusterIP", s.getSpec().getClusterIP() != null ? s.getSpec().getClusterIP() : "",
-                        "ports", s.getSpec().getPorts().stream()
-                            .map(p -> p.getPort() + ":" + p.getTargetPort())
-                            .collect(Collectors.toList())
-                    ))
+                    .map(s -> {
+                        Map<String, Object> info = new HashMap<>();
+                        info.put("name", s.getMetadata().getName());
+                        info.put("type", s.getSpec().getType());
+                        info.put("clusterIP", s.getSpec().getClusterIP() != null ? s.getSpec().getClusterIP() : "");
+                        
+                        // Enhanced port information
+                        if (s.getSpec().getPorts() != null) {
+                            List<Map<String, Object>> ports = s.getSpec().getPorts().stream()
+                                .map(p -> {
+                                    Map<String, Object> port = new HashMap<>();
+                                    port.put("name", p.getName() != null ? p.getName() : "");
+                                    port.put("port", p.getPort());
+                                    port.put("targetPort", p.getTargetPort() != null ? p.getTargetPort().toString() : "");
+                                    port.put("protocol", p.getProtocol() != null ? p.getProtocol() : "TCP");
+                                    return port;
+                                })
+                                .collect(Collectors.toList());
+                            info.put("ports", ports);
+                        }
+                        
+                        info.put("selector", s.getSpec().getSelector() != null ?
+                            s.getSpec().getSelector() : Map.of());
+                        
+                        return info;
+                    })
                     .collect(Collectors.toList());
                 
                 result.put("services", serviceInfo);
+            }
+            
+            if (resourceType == null || "configmap".equalsIgnoreCase(resourceType)) {
+                List<ConfigMap> configMaps = k8sClient.configMaps()
+                    .inNamespace(namespace)
+                    .list()
+                    .getItems();
+                
+                if (resourceName != null && !resourceName.isEmpty()) {
+                    configMaps = configMaps.stream()
+                        .filter(cm -> resourceName.equals(cm.getMetadata().getName()))
+                        .collect(Collectors.toList());
+                }
+                
+                List<Map<String, Object>> configMapInfo = configMaps.stream()
+                    .map(cm -> {
+                        Map<String, Object> info = new HashMap<>();
+                        info.put("name", cm.getMetadata().getName());
+                        
+                        // Only include data keys, not full content for security
+                        if (cm.getData() != null) {
+                            info.put("dataKeys", cm.getData().keySet());
+                        }
+                        
+                        return info;
+                    })
+                    .collect(Collectors.toList());
+                
+                result.put("configMaps", configMapInfo);
             }
             
             // Log detailed information about what was found
