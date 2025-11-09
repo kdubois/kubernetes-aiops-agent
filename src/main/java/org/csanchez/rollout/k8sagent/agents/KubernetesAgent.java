@@ -3,13 +3,16 @@ package org.csanchez.rollout.k8sagent.agents;
 import org.csanchez.rollout.k8sagent.k8s.K8sTools;
 import org.csanchez.rollout.k8sagent.remediation.GitHubPRTool;
 
+import dev.langchain4j.service.MemoryId;
 import dev.langchain4j.service.SystemMessage;
+import dev.langchain4j.service.UserMessage;
 import io.quarkiverse.langchain4j.RegisterAiService;
 import io.quarkiverse.langchain4j.ToolBox;
 import jakarta.enterprise.context.ApplicationScoped;
 
 /**
- * Agent interface for LangChain4j
+ * Agent interface for LangChain4j with conversation memory support.
+ * The memoryId parameter enables maintaining separate conversation histories for different users or sessions.
  */
 @RegisterAiService
 @ApplicationScoped
@@ -49,6 +52,6 @@ public interface KubernetesAgent {
         Be thorough but concise in your analysis.
     """)
 	@ToolBox({K8sTools.class, GitHubPRTool.class})
-    String chat(String message);
+    String chat(@MemoryId String memoryId, @UserMessage String message);
 }
 

@@ -53,10 +53,16 @@ public class ConsoleRunner {
     }
     
     /**
-     * Run the agent in console mode
+     * Run the agent in console mode.
+     * Uses "console-session" as the memory ID to maintain conversation history
+     * throughout the console session.
      */
     private void runConsoleMode() {
         Log.info("Kubernetes AI Agent started in console mode. Type 'quit' to exit.");
+        
+        // Use a fixed memory ID for the console session to maintain conversation history
+        final String memoryId = "console-session";
+        Log.info("Console session memory ID: " + memoryId);
         
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             Log.info("Exiting Kubernetes Agent. Goodbye!");
@@ -71,7 +77,7 @@ public class ConsoleRunner {
                 }
                 
                 System.out.print("\nAgent > ");
-                String response = agentService.chat(userInput);
+                String response = agentService.chat(memoryId, userInput);
                 System.out.println(response);
             }
         } catch (Exception e) {

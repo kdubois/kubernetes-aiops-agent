@@ -43,8 +43,12 @@ public class KubernetesAgentResource {
             String prompt = buildPrompt(request);
             Log.debug(MessageFormat.format("Built prompt: {0}", prompt));
             
-            // Execute analysis using the KubernetesAgent
-            String analysisResult = kubernetesAgent.chat(prompt);
+            // Get effective memory ID (uses memoryId if provided, otherwise falls back to userId)
+            String memoryId = request.getEffectiveMemoryId();
+            Log.debug(MessageFormat.format("Using memory ID: {0}", memoryId));
+            
+            // Execute analysis using the KubernetesAgent with memory support
+            String analysisResult = kubernetesAgent.chat(memoryId, prompt);
             
             // Parse response
             KubernetesAgentResponse response = responseParser.parse(analysisResult);

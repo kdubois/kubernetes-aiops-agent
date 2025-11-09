@@ -60,8 +60,12 @@ public class A2AAgentExecutor {
                     String messageContent = extractMessageContent(context.getMessage());
                     Log.debug(MessageFormat.format("Extracted message content: {0}", messageContent));
                     
-                    // Process the request using the KubernetesAgent
-                    String agentResponse = kubernetesAgent.chat(messageContent);
+                    // Use task ID as memory ID to maintain conversation history per task
+                    String memoryId = context.getTask() != null ? context.getTask().getId() : "default";
+                    Log.debug(MessageFormat.format("Using memory ID: {0}", memoryId));
+                    
+                    // Process the request using the KubernetesAgent with memory support
+                    String agentResponse = kubernetesAgent.chat(memoryId, messageContent);
                     Log.info("KubernetesAgent processed request successfully");
                     
                     // Parse the agent response into a structured format
