@@ -1,6 +1,5 @@
 package org.csanchez.rollout.k8sagent.k8s;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.langchain4j.agent.tool.P;
 import dev.langchain4j.agent.tool.Tool;
 import io.fabric8.kubernetes.api.model.*;
@@ -417,11 +416,13 @@ public class K8sTools {
                 
                 // Apply label selector if provided
                 if (labelSelector != null && !labelSelector.isEmpty()) {
+                    Log.info(MessageFormat.format("Applying label selector: {0}", labelSelector));
                     pods = k8sClient.pods()
                         .inNamespace(namespace)
-                        .withLabelSelector(labelSelector)
+                        .withLabels(parseLabelSelector(labelSelector))
                         .list()
                         .getItems();
+                    Log.info(MessageFormat.format("Found {0} pods matching label selector", pods.size()));
                 } else {
                     pods = k8sClient.pods()
                         .inNamespace(namespace)
@@ -538,6 +539,27 @@ public class K8sTools {
             Log.error("Error inspecting resources", e);
             return Map.of("error", e.getMessage());
         }
+    }
+    
+    /**
+     * Parse label selector string (e.g., "role=canary" or "app=myapp,env=prod") into a Map
+     */
+    private Map<String, String> parseLabelSelector(String labelSelector) {
+        if (labelSelector == null || labelSelector.trim().isEmpty()) {
+            return Map.of();
+        }
+        
+        Map<String, String> labels = new HashMap<>();
+        String[] pairs = labelSelector.split(",");
+        
+        for (String pair : pairs) {
+            String[] keyValue = pair.trim().split("=", 2);
+            if (keyValue.length == 2) {
+                labels.put(keyValue[0].trim(), keyValue[1].trim());
+            }
+        }
+        
+        return labels;
     }
 }
 
