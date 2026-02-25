@@ -1,6 +1,6 @@
 # Kubernetes AI Agent
 
-An autonomous AI agent for Kubernetes debugging and remediation, powered by Quarkus LangChain4j and Gemini AI (or alternatively OpenAI).
+An autonomous AI agent for Kubernetes debugging and remediation, powered by Quarkus LangChain4j with support for Google Gemini AI and OpenAI.
 
 ## Overview
 
@@ -52,11 +52,11 @@ Kubernetes Agent (Quarkus LangChain4j)
 
 ## Prerequisites
 
-- Java 17+
+- Java 21+
 - Maven 3.8+
 - Kubernetes cluster
 - Google API Key (Gemini) or OpenAI API Key
-- GitHub Personal Access Token
+- GitHub Personal Access Token (with `repo` scope)
 
 ## Local Development
 
@@ -73,15 +73,24 @@ export GITHUB_TOKEN="your-github-token"
 ### 2. Run locally
 
 ```bash
-mvn quarkus:dev [-Dquarkus.profile=dev,[openai][gemini]]
+# Run with Gemini (default)
+mvn quarkus:dev -Dquarkus.profile=dev,gemini
+
+# Run with OpenAI
+mvn quarkus:dev -Dquarkus.profile=dev,openai
+
 # Server starts on port 8080
-# Health check: http://localhost:8080/a2a/health
+# Health check: http://localhost:8080/q/health
 ```
 
 ### 3. Run locally in console mode
 
 ```bash
-mvn quarkus:dev [-Dquarkus.profile=dev,[openai][gemini]] -Drun.mode=console
+# Interactive console mode for testing
+mvn quarkus:dev -Dquarkus.profile=dev,gemini -Drun.mode=console
+
+# Or use the convenience script
+./run-console.sh
 ```
 
 ## Deployment to Kubernetes
@@ -89,17 +98,21 @@ mvn quarkus:dev [-Dquarkus.profile=dev,[openai][gemini]] -Drun.mode=console
 ### 1. Build Docker image
 
 ```bash
-mvn package -Dquarkus.profile=prod,[openai][gemini]
-docker build -t quay.io/kevindubois/kubernetes-agent:latest .
+# Build with Maven
+mvn clean package -Dquarkus.profile=prod,gemini
+
+# Build Docker image
+docker build -f src/main/docker/Dockerfile.jvm -t quay.io/kevindubois/kubernetes-agent:latest .
+
+# Push to registry
 docker push quay.io/kevindubois/kubernetes-agent:latest
 ```
 
 Or directly with Quarkus:
 
 ```bash
-quarkus image push --also-build
-or
-mvn quarkus:image-push -Dquarkus.container-image.build=true -DquarkusRegistryClient=true
+# Build and push in one command
+mvn quarkus:image-push -Dquarkus.container-image.build=true -Dquarkus.profile=prod,gemini
 ```
 
 
@@ -117,30 +130,27 @@ kubectl apply -f deployment/secret.yaml
 ### 3. Deploy agent
 
 ```bash
-# Update image in deployment/deployment.yaml if needed
+# Deploy using Kustomize
 kubectl apply -k deployment/
+
+# Verify deployment
+kubectl get pods -n openshift-gitops | grep kubernetes-agent
 ```
 
-or directly with quarkus:
-
-```bash
-quarkus deploy
-or
-mvn quarkus:deploy
-```
+**Note**: The default namespace is `openshift-gitops`. Update `deployment/kustomization.yaml` if deploying to a different namespace.
 
 ### 4. Verify deployment
 
 ```bash
 # Check pods
-kubectl get pods -n argo-rollouts | grep kubernetes-agent
+kubectl get pods -n openshift-gitops | grep kubernetes-agent
 
 # Check logs
-kubectl logs -f deployment/kubernetes-agent -n argo-rollouts
+kubectl logs -f deployment/kubernetes-agent -n openshift-gitops
 
 # Test health endpoint
-kubectl port-forward -n argo-rollouts svc/kubernetes-agent 8080:8080
-curl http://localhost:8080/a2a/health
+kubectl port-forward -n openshift-gitops svc/kubernetes-agent 8080:8080
+curl http://localhost:8080/q/health
 ```
 
 ### 5. Run tests
@@ -171,8 +181,13 @@ The test script will:
 ### Direct Console Mode
 
 ```bash
-$ java -jar kubernetes-agent.jar console
+# Run console mode
+./run-console.sh
 
+# Or manually:
+mvn quarkus:dev -Dquarkus.profile=dev,gemini -Drun.mode=console
+
+# Example interaction:
 You > Debug pod my-app-canary in namespace production
 
 Agent > Analyzing pod my-app-canary in namespace production...
@@ -256,11 +271,16 @@ spec:
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `GOOGLE_API_KEY` | Yes | Google Gemini API key |
-| `GITHUB_TOKEN` | Yes | GitHub personal access token |
+| `GOOGLE_API_KEY` | Yes* | Google Gemini API key (required if using Gemini) |
+| `OPENAI_API_KEY` | Yes* | OpenAI API key (required if using OpenAI) |
+| `GITHUB_TOKEN` | Yes | GitHub personal access token (needs `repo` scope) |
 | `GIT_USERNAME` | No | Git commit username (default: "kubernetes-agent") |
 | `GIT_EMAIL` | No | Git commit email (default: "agent@example.com") |
-| `K8S_AGENT_URL` | No | Agent URL for plugin (default: http://kubernetes-agent.argo-rollouts.svc.cluster.local:8080) |
+| `GEMINI_MODEL` | No | Gemini model name (default: "gemini-2.5-flash") |
+| `OPENAI_MODEL` | No | OpenAI model name (default: "gpt-4o") |
+| `OPENAI_BASE_URL` | No | OpenAI API base URL (default: "https://api.openai.com/v1") |
+
+*Either `GOOGLE_API_KEY` or `OPENAI_API_KEY` is required, depending on which model you're using.
 
 ### Resource Limits
 
@@ -282,23 +302,33 @@ resources:
 
 ```bash
 # Check logs
-kubectl logs deployment/kubernetes-agent -n argo-rollouts
+kubectl logs deployment/kubernetes-agent -n openshift-gitops
 
 # Common issues:
 # 1. Missing API keys - check secrets
 # 2. Invalid service account - check RBAC
 # 3. Out of memory - increase limits
+# 4. Wrong namespace - check deployment namespace
 ```
 
 ### Health check failing
 
 ```bash
 # Test endpoint directly
-kubectl port-forward -n argo-rollouts svc/kubernetes-agent 8080:8080
-curl http://localhost:8080/a2a/health
+kubectl port-forward -n openshift-gitops svc/kubernetes-agent 8080:8080
+curl http://localhost:8080/q/health
 
-# Should return:
-# {"status":"healthy","agent":"KubernetesAgent","version":"1.0.0"}
+# Should return Quarkus health check response
+```
+
+### API Key Issues
+
+```bash
+# Verify secret exists
+kubectl get secret kubernetes-agent -n openshift-gitops
+
+# Check environment variables in pod
+kubectl exec -n openshift-gitops deployment/kubernetes-agent -- env | grep -E "GOOGLE_API_KEY|OPENAI_API_KEY|GITHUB_TOKEN"
 ```
 
 ### PR creation failing
@@ -309,7 +339,7 @@ curl http://localhost:8080/a2a/health
 # - workflow (if modifying GitHub Actions)
 
 # Check logs for git errors:
-kubectl logs deployment/kubernetes-agent -n argo-rollouts | grep -i "git\|github"
+kubectl logs deployment/kubernetes-agent -n openshift-gitops | grep -i "git\|github"
 ```
 
 ## Security Considerations
@@ -326,21 +356,51 @@ kubectl logs deployment/kubernetes-agent -n argo-rollouts | grep -i "git\|github
 
 ```
 kubernetes-agent/
-├── src/main/java/com/google/adk/samples/agents/k8sagent/
-│   ├── KubernetesAgent.java          # Main agent
-│   ├── tools/                        # K8s debugging tools
-│   ├── remediation/                  # Git and GitHub operations
-│   └── a2a/                          # A2A REST controllers
+├── src/main/java/dev/kevindubois/rollout/agent/
+│   ├── agents/                       # Agent interfaces
+│   │   ├── KubernetesAgent.java     # Main agent interface
+│   │   ├── AnalysisAgent.java       # Analysis logic
+│   │   ├── DiagnosticAgent.java     # Data gathering
+│   │   ├── ScoringAgent.java        # Quality scoring
+│   │   └── RemediationAgent.java    # PR creation
+│   ├── k8s/                          # Kubernetes tools
+│   │   └── K8sTools.java            # K8s debugging tools
+│   ├── a2a/                          # A2A REST API
+│   │   ├── KubernetesAgentResource.java
+│   │   └── A2AAgentExecutor.java
+│   ├── model/                        # Data models
+│   └── utils/                        # Utilities
 ├── deployment/                       # Kubernetes manifests
+│   ├── deployment.yaml
+│   ├── rbac.yaml
+│   ├── service.yaml
+│   └── secret.yaml.template
 ├── pom.xml                           # Maven config
-└── Dockerfile                        # Container image
+├── ARCHITECTURE.md                   # Architecture documentation
+├── agents.md                         # Agent development guide
+└── src/main/docker/                  # Dockerfiles
+    ├── Dockerfile.jvm
+    ├── Dockerfile.native
+    └── Dockerfile.native-micro
 ```
 
 ### Running Tests
 
 ```bash
+# Run unit tests
 mvn test
+
+# Run with coverage
+mvn verify
+
+# Run integration tests
+mvn verify -DskipITs=false
+
+# Run E2E tests (requires cluster)
+./run-e2e-test.sh
 ```
+
+See [src/test/README.md](src/test/README.md) for detailed testing documentation.
 
 ### Building Multi-arch Images
 
@@ -373,18 +433,43 @@ Contributions are welcome! Please:
 
 This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
 
+## Additional Documentation
+
+- **[ARCHITECTURE.md](ARCHITECTURE.md)**: Detailed architecture and design decisions
+- **[agents.md](agents.md)**: Comprehensive agent development guide
+- **[src/test/README.md](src/test/README.md)**: Testing documentation and strategies
+
+## Model Support
+
+The agent supports multiple AI models through profile-based configuration:
+
+### Google Gemini (Default)
+```bash
+mvn quarkus:dev -Dquarkus.profile=dev,gemini
+export GOOGLE_API_KEY="your-key"
+export GEMINI_MODEL="gemini-2.5-flash"  # Optional
+```
+
+### OpenAI
+```bash
+mvn quarkus:dev -Dquarkus.profile=dev,openai
+export OPENAI_API_KEY="your-key"
+export OPENAI_MODEL="gpt-4o"  # Optional
+export OPENAI_BASE_URL="https://api.openai.com/v1"  # Optional
+```
+
+### vLLM (OpenAI-compatible)
+```bash
+mvn quarkus:dev -Dquarkus.profile=dev,openai
+export OPENAI_API_KEY="dummy"
+export OPENAI_BASE_URL="http://vllm-service:8000/v1"
+export OPENAI_MODEL="gemma-2-9b-it"
+```
+
 ## Support
 
 For issues or questions:
-- **GitHub Issues**: [https://github.com/carlossg/kubernetes-agent/issues](https://github.com/carlossg/kubernetes-agent/issues)
-- **Documentation**: See the `docs/` directory and inline README files
-
-## Development Documentation
-
-Additional development documentation is available in the `docs/development/` directory:
-- Maven plugin integration and logging
-- Debug mode configuration
-- Testing strategies
-- Rate limiting and fork modes
+- **GitHub Issues**: Create an issue in the repository
+- **Documentation**: See ARCHITECTURE.md and agents.md for detailed information
 
 
