@@ -96,7 +96,7 @@ if mvn test -Dtest=ComprehensiveE2ETest -Dquarkus.log.level=INFO; then
     echo -e "${GREEN}  ✓ Test 5: Memory and multiple requests${NC}"
     echo ""
     echo -e "${BLUE}💡 Tips:${NC}"
-    echo -e "${BLUE}  • View test logs: cat target/surefire-reports/org.csanchez.rollout.agents.ComprehensiveE2ETest.txt${NC}"
+    echo -e "${BLUE}  • View test logs: cat target/surefire-reports/dev.kevindubois.rollout.agent.ComprehensiveE2ETest.txt${NC}"
     echo -e "${BLUE}  • Check test namespace: kubectl get all -n k8s-agent-e2e-test${NC}"
     echo -e "${BLUE}  • View agent logs: kubectl logs -n argo-rollouts -l app=kubernetes-agent${NC}"
     echo ""
@@ -110,7 +110,7 @@ else
     echo -e "${YELLOW}🔍 Troubleshooting:${NC}"
     echo ""
     echo -e "${YELLOW}1. Check test logs:${NC}"
-    echo -e "   cat target/surefire-reports/org.csanchez.rollout.agents.ComprehensiveE2ETest.txt"
+    echo -e "   cat target/surefire-reports/dev.kevindubois.rollout.agent.ComprehensiveE2ETest.txt"
     echo ""
     echo -e "${YELLOW}2. Check test namespace:${NC}"
     echo -e "   kubectl get all -n k8s-agent-e2e-test"
@@ -129,9 +129,8 @@ else
     echo -e "   • Network connectivity issues"
     echo ""
     echo -e "${YELLOW}📖 For more help, see:${NC}"
-    echo -e "   src/test/java/org/csanchez/rollout/agents/README_E2E_TEST.md"
+    echo -e "   src/test/java/dev/kevindubois/rollout/agent/README_E2E_TEST.md"
     echo ""
     exit 1
 fi
 
-# Made with Bob

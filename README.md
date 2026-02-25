@@ -90,8 +90,8 @@ mvn quarkus:dev [-Dquarkus.profile=dev,[openai][gemini]] -Drun.mode=console
 
 ```bash
 mvn package -Dquarkus.profile=prod,[openai][gemini]
-docker build -t csanchez/kubernetes-agent:latest .
-docker push csanchez/kubernetes-agent:latest
+docker build -t quay.io/kevindubois/kubernetes-agent:latest .
+docker push quay.io/kevindubois/kubernetes-agent:latest
 ```
 
 Or directly with Quarkus:
@@ -346,7 +346,7 @@ mvn test
 
 ```bash
 docker buildx build --platform linux/amd64,linux/arm64 \
-	-t csanchez/kubernetes-agent:latest \
+	-t quay.io/kevindubois/kubernetes-agent:latest \
 	--push .
 ```
 

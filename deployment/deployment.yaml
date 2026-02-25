@@ -17,7 +17,7 @@ spec:
       serviceAccountName: kubernetes-agent
       containers:
         - name: agent
-          image: csanchez/kubernetes-agent:latest
+          image: quay.io/kevindubois/kubernetes-agent:latest
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080

@@ -3,7 +3,7 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>org.csanchez.rollout.agents</groupId>
+    <groupId>dev.kevindubois.rollout.agent</groupId>
     <artifactId>kubernetes-agent</artifactId>
     <version>1.0.1-SNAPSHOT</version>
     <packaging>jar</packaging>
@@ -147,6 +147,55 @@
             <artifactId>mockito-junit-jupiter</artifactId>
             <scope>test</scope>
         </dependency>
+
+        <!-- Enhanced Testing Dependencies -->
+
+        <!-- AssertJ for fluent assertions -->
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <version>3.25.3</version>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- Mockito inline for static mocking -->
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-inline</artifactId>
+            <version>5.2.0</version>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- Awaitility for async testing -->
+        <dependency>
+            <groupId>org.awaitility</groupId>
+            <artifactId>awaitility</artifactId>
+            <version>4.2.0</version>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- JUnit 5 Parameterized Tests -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-params</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- Fabric8 Kubernetes Mock Server -->
+        <dependency>
+            <groupId>io.fabric8</groupId>
+            <artifactId>kubernetes-server-mock</artifactId>
+            <version>6.10.0</version>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- WireMock for HTTP mocking -->
+        <dependency>
+            <groupId>com.github.tomakehurst</groupId>
+            <artifactId>wiremock-jre8-standalone</artifactId>
+            <version>2.35.1</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
     <build>
         <plugins>
@@ -183,9 +232,55 @@
                     </systemPropertyVariables>
                     <argLine>@{argLine} --add-opens java.base/java.lang=ALL-UNNAMED</argLine>
                     <excludes>
-                        <exclude>**/A2AAgentExecutorTest.java</exclude>
+                        <!-- Exclude integration tests from unit test phase -->
+                        <exclude>**/*IT.java</exclude>
+                        <exclude>**/*E2ETest.java</exclude>
                     </excludes>
+                    <includes>
+                        <!-- Include only unit tests -->
+                        <include>**/*Test.java</include>
+                    </includes>
                 </configuration>
+            </plugin>
+            <!-- JaCoCo Code Coverage -->
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <version>0.8.12</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>prepare-agent</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>report</id>
+                        <phase>test</phase>
+                        <goals>
+                            <goal>report</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>jacoco-check</id>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <rule>
+                                    <element>PACKAGE</element>
+                                    <limits>
+                                        <limit>
+                                            <counter>LINE</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.60</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
             <plugin>
                 <artifactId>maven-failsafe-plugin</artifactId>

@@ -1,6 +1,6 @@
 .PHONY: build test clean docker-build docker-push deploy
 
-IMAGE ?= csanchez/kubernetes-agent:latest
+IMAGE ?= quay.io/kevindubois/kubernetes-agent:latest
 
 CONTEXT ?= $(shell kubectl config current-context)
 
@@ -14,7 +14,7 @@ clean:
 	mvn clean
 
 docker-build:
-	docker build -t $(IMAGE) .
+	docker build -t $(IMAGE) -f src/main/docker/Dockerfile.jvm .
 
 docker-push:
 	docker push $(IMAGE)

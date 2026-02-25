@@ -33,7 +33,7 @@ export OPENAI_API_KEY="sk-..."
 mvn test -Dtest=ComprehensiveE2ETest
 ```
 
-📖 **[Full E2E Test Documentation](java/org/csanchez/rollout/agents/README_E2E_TEST.md)**
+📖 **[Full E2E Test Documentation](java/dev/kevindubois/rollout/agent/README_E2E_TEST.md)**
 
 ### KubernetesAgentResourceIT.java (Integration Tests)
 
@@ -218,7 +218,7 @@ kubectl delete namespace k8s-agent-e2e-test
 
 ### Getting Help
 
-- 📖 [E2E Test Documentation](java/org/csanchez/rollout/agents/README_E2E_TEST.md)
+- 📖 [E2E Test Documentation](java/dev/kevindubois/rollout/agent/README_E2E_TEST.md)
 - 📖 [Main Project README](../../README.md)
 - 📖 [Development Guide](../../docs/development/TESTING.md)
 
