@@ -10,10 +10,10 @@ import jakarta.ws.rs.core.Response.Status;
 import java.text.MessageFormat;
 import java.util.Map;
 
-import dev.kevindubois.rollout.agent.agents.KubernetesAgent;
+import dev.kevindubois.rollout.agent.workflow.KubernetesWorkflow;
+import dev.kevindubois.rollout.agent.model.AnalysisResult;
 import dev.kevindubois.rollout.agent.model.KubernetesAgentRequest;
 import dev.kevindubois.rollout.agent.model.KubernetesAgentResponse;
-import dev.kevindubois.rollout.agent.service.AgentResponseParser;
 import dev.kevindubois.rollout.agent.utils.RetryHelper;
 import dev.kevindubois.rollout.agent.utils.ToolCallLimiter;
 
@@ -25,10 +25,7 @@ import dev.kevindubois.rollout.agent.utils.ToolCallLimiter;
 public class KubernetesAgentResource {
 
     @Inject
-    KubernetesAgent kubernetesAgent;
-    
-    @Inject
-    AgentResponseParser responseParser;
+    KubernetesWorkflow kubernetesWorkflow;
      
     /**
      * Main analyze endpoint
@@ -53,15 +50,36 @@ public class KubernetesAgentResource {
             ToolCallLimiter.resetSession(memoryId);
             Log.info(MessageFormat.format("Reset tool call limiter for session: {0}", memoryId));
             
-            // Execute analysis with retry logic for transient errors
-            String analysisResult = RetryHelper.executeWithRetryOnTransientErrors(
-                () -> kubernetesAgent.chat(memoryId, prompt),
-                "AI agent analysis"
+            // Execute multi-agent workflow with retry logic for transient errors
+            AnalysisResult analysisResult = RetryHelper.executeWithRetryOnTransientErrors(
+                () -> kubernetesWorkflow.execute(memoryId, prompt),
+                "Multi-agent workflow analysis"
             );
             
-            // Parse response
-            KubernetesAgentResponse response = responseParser.parse(analysisResult);
-            Log.info("Analysis completed successfully");
+            // Validate PR link is not hallucinated
+            if (analysisResult.prLink() != null && isHallucinatedUrl(analysisResult.prLink())) {
+                Log.warn(MessageFormat.format("Detected hallucinated PR link: {0}, setting to null", analysisResult.prLink()));
+                analysisResult = new AnalysisResult(
+                    analysisResult.promote(),
+                    analysisResult.confidence(),
+                    analysisResult.analysis(),
+                    analysisResult.rootCause(),
+                    analysisResult.remediation(),
+                    null  // Clear hallucinated link
+                );
+            }
+            
+            // Convert AnalysisResult to KubernetesAgentResponse
+            KubernetesAgentResponse response = new KubernetesAgentResponse(
+                analysisResult.analysis(),
+                analysisResult.rootCause(),
+                analysisResult.remediation(),
+                analysisResult.prLink(),
+                analysisResult.promote(),
+                analysisResult.confidence()
+            );
+            
+            Log.info("Multi-agent workflow completed successfully");
             return Response.ok(response).build();
             
         } catch (Exception e) {
@@ -117,19 +135,54 @@ public class KubernetesAgentResource {
             });
         }
 
-        prompt.append("\nCRITICAL INSTRUCTIONS:\n");
-        prompt.append("1. Gather each piece of data ONCE (max 5-7 tool calls total)\n");
-        prompt.append("2. Do NOT call the same tool multiple times with the same parameters\n");
-        prompt.append("3. After gathering data, STOP and analyze what you have\n");
-        prompt.append("4. Make a decision based on the data collected\n");
-        prompt.append("\nProvide a structured response with:\n");
-        prompt.append("- analysis: Detailed analysis text\n");
-        prompt.append("- rootCause: Identified root cause\n");
-        prompt.append("- remediation: Suggested remediation steps\n");
-        prompt.append("- prLink: GitHub PR link if applicable (can be null)\n");
-        prompt.append("- promote: true to promote canary, false to abort\n");
-        prompt.append("- confidence: Confidence level 0-100\n");
+        prompt.append("\n⚠️ CRITICAL: EXECUTE ONE TOOL CALL AT A TIME ⚠️\n");
+        prompt.append("⚠️ MAXIMUM 3-4 TOOL CALLS - BE EFFICIENT ⚠️\n\n");
+        prompt.append("EFFICIENT SEQUENTIAL EXECUTION RULES:\n");
+        prompt.append("1. Call ONE tool and STOP - wait for the result\n");
+        prompt.append("2. Review the result before deciding the next step\n");
+        prompt.append("3. ALWAYS call inspectResources FIRST to discover actual pod names\n");
+        prompt.append("4. NEVER hallucinate or guess pod/resource names\n");
+        prompt.append("5. Use actual names from previous tool results\n");
+        prompt.append("6. Maximum 3-4 tool calls total (not 5-7!)\n");
+        prompt.append("7. Each tool can only be called ONCE with the same parameters\n");
+        prompt.append("8. Get logs from ONE representative pod per group (not all pods)\n");
+        prompt.append("9. Skip getEvents if pods are Running/Ready\n");
+        prompt.append("10. Return immediately once you have pod names and logs from both stable and canary\n\n");
+        prompt.append("EFFICIENT WORKFLOW (3-4 calls):\n");
+        prompt.append("1. inspectResources for stable pods\n");
+        prompt.append("2. inspectResources for canary pods\n");
+        prompt.append("3. getLogs from ONE stable pod\n");
+        prompt.append("4. getLogs from ONE canary pod\n");
+        prompt.append("→ RETURN IMMEDIATELY\n\n");
+        prompt.append("The multi-agent workflow will:\n");
+        prompt.append("1. DiagnosticAgent: Gather minimum necessary data efficiently (3-4 tool calls)\n");
+        prompt.append("2. AnalysisAgent: Analyze the gathered data\n");
+        prompt.append("3. RemediationAgent: Implement fixes if needed\n");
         
         return prompt.toString();
+    }
+    
+    /**
+     * Detect hallucinated URLs that the LLM may have invented.
+     * Common patterns include example.com, example/repo, or generic placeholder URLs.
+     *
+     * @param url The URL to validate
+     * @return true if the URL appears to be hallucinated, false otherwise
+     */
+    private boolean isHallucinatedUrl(String url) {
+        if (url == null || url.isEmpty()) {
+            return false;
+        }
+        
+        // Detect common hallucination patterns
+        boolean isHallucinated = url.contains("example.com") ||
+                                 url.contains("example/repo") ||
+                                 url.matches(".*github\\.com/[^/]+/repo/.*");
+        
+        if (isHallucinated) {
+            Log.debug(MessageFormat.format("URL matched hallucination pattern: {0}", url));
+        }
+        
+        return isHallucinated;
     }
 }

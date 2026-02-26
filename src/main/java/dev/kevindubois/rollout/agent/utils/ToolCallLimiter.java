@@ -12,7 +12,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public class ToolCallLimiter {
     
-    private static final int MAX_TOOL_CALLS = 5;
+    private static final int MAX_TOOL_CALLS = 4;
     private static final Map<String, AtomicInteger> callCounts = new ConcurrentHashMap<>();
     private static final Map<String, Map<String, Integer>> toolCallHistory = new ConcurrentHashMap<>();
     

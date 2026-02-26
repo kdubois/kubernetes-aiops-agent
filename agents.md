@@ -1,6 +1,6 @@
 # Agent Instructions for Kubernetes Agent
 
-This document provides comprehensive instructions for AI assistants working on the Kubernetes Agent project. It covers development workflows, testing procedures, deployment strategies, and coding standards.
+This document provides comprehensive instructions for AI assistants working on the Kubernetes Agent project. It covers development workflows, testing procedures, deployment strategies, and coding standards.  Do not create redundant .md files to document what you've done. As this is just an experimental project, do not take backwards compatibility in consideration since it will increase complexity unnecessarily.
 
 ## Project Overview
 

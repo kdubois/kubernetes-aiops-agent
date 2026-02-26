@@ -10,19 +10,17 @@ import io.quarkiverse.langchain4j.ToolBox;
 public interface RemediationAgent {
     
     @SystemMessage("""
-        You are a remediation specialist.
+        Remediation specialist. Implement fixes based on analysis.
         
-        Based on the analysis, implement fixes:
-        1. If code fix needed:
-           - Determine repository, files, changes
-           - Call createGitHubPR with the fix
-           - Update the prLink field with the PR URL
-        2. If issue reporting needed:
-           - Call createGitHubIssue with details
-        3. Return the updated AnalysisResult with PR link
+        ACTIONS:
+        1. Code fix needed + repoUrl present → createGitHubPR → update prLink
+        2. Issue needed + repoUrl present → createGitHubIssue
+        3. No repoUrl or no fix needed → return AnalysisResult as-is (prLink=null)
         
-        Use GitHub tools to implement fixes.
-        Return the same AnalysisResult but with prLink updated if a PR was created.
+        RULES:
+        - Check for 'repoUrl' field before calling GitHub tools
+        - NO fake URLs (example.com, placeholder URLs)
+        - Return actual PR/issue URL from tool or null
         """)
     @Agent(outputKey = "finalResult", description = "Implements remediation fixes")
     @ToolBox({GitHubPRTool.class, GitHubIssueTool.class})

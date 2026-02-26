@@ -219,7 +219,8 @@ public class K8sTools {
         }
         
         boolean getPrevious = previous != null && previous;
-        int lines = (tailLines != null && tailLines > 0) ? tailLines : 100;
+        // Reduced default from 100 to 30 lines for faster responses
+        int lines = (tailLines != null && tailLines > 0) ? tailLines : 30;
         Log.info(MessageFormat.format("Getting logs for pod: {0}/{1}, container: {2}, previous: {3}, lines: {4}",
                 namespace, podName, containerName, getPrevious, lines));
         
@@ -447,7 +448,7 @@ public class K8sTools {
             if (resourceType == null || "pods".equalsIgnoreCase(resourceType)) {
                 List<Pod> pods;
                 
-                // Apply label selector if provided
+                // Apply label selector if provided (takes priority over resourceName)
                 if (labelSelector != null && !labelSelector.isEmpty()) {
                     Log.info(MessageFormat.format("Applying label selector: {0}", labelSelector));
                     pods = k8sClient.pods()
@@ -456,26 +457,44 @@ public class K8sTools {
                         .list()
                         .getItems();
                     Log.info(MessageFormat.format("Found {0} pods matching label selector", pods.size()));
+                } else if (resourceName != null && !resourceName.isEmpty()) {
+                    // Only filter by resourceName if labelSelector is not provided
+                    Log.info(MessageFormat.format("Filtering by resource name: {0}", resourceName));
+                    pods = k8sClient.pods()
+                        .inNamespace(namespace)
+                        .list()
+                        .getItems()
+                        .stream()
+                        .filter(p -> resourceName.equals(p.getMetadata().getName()))
+                        .collect(Collectors.toList());
                 } else {
+                    // No filtering - get all pods
                     pods = k8sClient.pods()
                         .inNamespace(namespace)
                         .list()
                         .getItems();
                 }
                 
-                if (resourceName != null && !resourceName.isEmpty()) {
-                    pods = pods.stream()
-                        .filter(p -> resourceName.equals(p.getMetadata().getName()))
-                        .collect(Collectors.toList());
-                }
-                
+                // Limit to 3 pods per group for performance (agent only needs representative samples)
                 List<Map<String, Object>> podInfo = pods.stream()
+                    .limit(3)
                     .map(p -> {
                         Map<String, Object> info = new HashMap<>();
                         info.put("name", p.getMetadata().getName());
                         info.put("phase", p.getStatus().getPhase());
                         info.put("podIP", p.getStatus().getPodIP() != null ? p.getStatus().getPodIP() : "");
-                        info.put("labels", p.getMetadata().getLabels() != null ? p.getMetadata().getLabels() : Map.of());
+                        // Only include essential labels (role, app) to reduce context size
+                        Map<String, String> labels = p.getMetadata().getLabels();
+                        if (labels != null) {
+                            Map<String, String> essentialLabels = new HashMap<>();
+                            if (labels.containsKey("role")) essentialLabels.put("role", labels.get("role"));
+                            if (labels.containsKey("app")) essentialLabels.put("app", labels.get("app"));
+                            if (labels.containsKey("rollouts-pod-template-hash"))
+                                essentialLabels.put("rollouts-pod-template-hash", labels.get("rollouts-pod-template-hash"));
+                            info.put("labels", essentialLabels);
+                        } else {
+                            info.put("labels", Map.of());
+                        }
                         
                         // Container readiness
                         if (p.getStatus().getContainerStatuses() != null) {
@@ -488,6 +507,11 @@ public class K8sTools {
                         return info;
                     })
                     .collect(Collectors.toList());
+                
+                // Add summary if we truncated the list
+                if (pods.size() > 3) {
+                    Log.info(MessageFormat.format("Truncated pod list from {0} to 3 for performance", pods.size()));
+                }
                 
                 result.put("pods", podInfo);
             }
