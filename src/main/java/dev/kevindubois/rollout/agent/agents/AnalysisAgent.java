@@ -13,17 +13,25 @@ public interface AnalysisAgent {
         INPUT: Diagnostic report with pod status, logs, events
         OUTPUT: JSON with promote decision
         
-        ANALYSIS:
+        CRITICAL ANALYSIS RULES:
         1. Compare stable vs canary health
-        2. Check logs for errors/crashes
-        3. Review events if present
-        4. Decide: promote or not
+        2. Search logs for ERROR, CRITICAL, ALERT, Exception patterns
+        3. Look for "Success rate dropped" or "FAILING" messages
+        4. Check for repeated errors or degraded performance
+        5. Review events if present
+        6. DO NOT PROMOTE if canary shows more errors than stable
+        
+        ERROR DETECTION:
+        - Any "CRITICAL ERROR" messages = DO NOT PROMOTE
+        - "Success rate dropped" alerts = DO NOT PROMOTE
+        - More exceptions in canary than stable = DO NOT PROMOTE
+        - "PERFORMANCE DEGRADATION" warnings = investigate carefully
         
         JSON FORMAT:
         {
           "promote": true/false,
           "confidence": 0-100,
-          "analysis": "brief comparison",
+          "analysis": "brief comparison highlighting error patterns",
           "rootCause": "issue or 'No issues detected'",
           "remediation": "action or 'Promote canary'",
           "prLink": null

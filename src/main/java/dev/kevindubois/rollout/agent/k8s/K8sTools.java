@@ -208,9 +208,9 @@ public class K8sTools {
      * @param podName The exact name of the pod to get logs from (e.g., 'my-app-7d8f9c5b6-xyz12')
      * @param containerName Optional: The name of the container within the pod (if pod has multiple containers)
      * @param previous Optional: Set to true to get logs from the previous terminated container instance
-     * @param tailLines Optional: Number of lines to tail from the end of the logs (default: 100)
+     * @param tailLines Optional: Number of lines to tail from the end of the logs (default: 200). Use 200+ to capture runtime errors, not just startup logs.
      */
-    @Tool("Get logs from a Kubernetes pod")
+    @Tool("Get logs from a Kubernetes pod. Returns recent log entries including ERROR, CRITICAL, and ALERT messages if present.")
     public Map<String, Object> getLogs(String namespace, String podName, String containerName, Boolean previous, Integer tailLines) {
         Log.info("=== Executing Tool: getLogs ===");
         
@@ -219,8 +219,8 @@ public class K8sTools {
         }
         
         boolean getPrevious = previous != null && previous;
-        // Reduced default from 100 to 30 lines for faster responses
-        int lines = (tailLines != null && tailLines > 0) ? tailLines : 30;
+        // Default to 200 lines to capture runtime errors, not just startup logs
+        int lines = (tailLines != null && tailLines > 0) ? tailLines : 200;
         Log.info(MessageFormat.format("Getting logs for pod: {0}/{1}, container: {2}, previous: {3}, lines: {4}",
                 namespace, podName, containerName, getPrevious, lines));
         

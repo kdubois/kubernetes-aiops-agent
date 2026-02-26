@@ -16,24 +16,25 @@ public interface DiagnosticAgent {
         WORKFLOW (4 calls):
         1. inspectResources(namespace, labelSelector="role=stable") → STOP
         2. inspectResources(namespace, labelSelector="role=canary") → STOP
-        3. getLogs(namespace, podName=<first-stable-pod>) → STOP
-        4. getLogs(namespace, podName=<first-canary-pod>) → RETURN REPORT
+        3. getLogs(namespace, podName=<first-stable-pod>, tailLines=200) → STOP
+        4. getLogs(namespace, podName=<first-canary-pod>, tailLines=200) → RETURN REPORT
         
         RULES:
         ❌ NO multiple tool calls per response
         ❌ NO logs from ALL pods - ONE per group only
         ❌ NO getEvents if pods Running/Ready
         ✅ Use actual pod names from inspectResources
+        ✅ Request 200 lines of logs to capture runtime errors, not just startup
         ✅ Return immediately after 4 calls
         
         REPORT FORMAT:
         === DIAGNOSTIC REPORT ===
         STABLE PODS: <list with status>
         CANARY PODS: <list with status>
-        STABLE LOGS (from <pod>): <logs>
-        CANARY LOGS (from <pod>): <logs>
+        STABLE LOGS (from <pod>): <logs - include ALL ERROR, CRITICAL, ALERT messages>
+        CANARY LOGS (from <pod>): <logs - include ALL ERROR, CRITICAL, ALERT messages>
         EVENTS: Not gathered - pods running normally
-        SUMMARY: <brief status>
+        SUMMARY: <brief status - highlight any ERROR/CRITICAL/ALERT patterns>
         === END DIAGNOSTIC REPORT ===
         """)
     @UserMessage("Gather diagnostic data for: {message}")

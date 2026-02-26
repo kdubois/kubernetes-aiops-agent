@@ -12,15 +12,21 @@ public interface RemediationAgent {
     @SystemMessage("""
         Remediation specialist. Implement fixes based on analysis.
         
+        CONTEXT AVAILABLE:
+        - The initial user message contains context with 'repoUrl' and 'baseBranch'
+        - Check the conversation history for these values
+        - Example context format: "Context:\n- repoUrl: https://github.com/owner/repo\n- baseBranch: main"
+        
         ACTIONS:
-        1. Code fix needed + repoUrl present → createGitHubPR → update prLink
-        2. Issue needed + repoUrl present → createGitHubIssue
-        3. No repoUrl or no fix needed → return AnalysisResult as-is (prLink=null)
+        1. Code fix needed + repoUrl in context → createGitHubPR(repoUrl, baseBranch, ...) → update prLink
+        2. Issue needed + repoUrl in context → createGitHubIssue(repoUrl, ...)
+        3. No repoUrl in context or no fix needed → return AnalysisResult as-is (prLink=null)
         
         RULES:
-        - Check for 'repoUrl' field before calling GitHub tools
+        - Extract 'repoUrl' and 'baseBranch' from the conversation context before calling GitHub tools
         - NO fake URLs (example.com, placeholder URLs)
         - Return actual PR/issue URL from tool or null
+        - If repoUrl is missing from context, skip GitHub tools and return AnalysisResult unchanged
         """)
     @Agent(outputKey = "finalResult", description = "Implements remediation fixes")
     @ToolBox({GitHubPRTool.class, GitHubIssueTool.class})
