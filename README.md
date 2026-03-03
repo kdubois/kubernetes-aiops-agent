@@ -1,5 +1,8 @@
 # Kubernetes AI Agent
 
+[![Build and Push](https://github.com/kdubois/kubernetes-agent/actions/workflows/build.yml/badge.svg)](https://github.com/kdubois/kubernetes-agent/actions/workflows/build.yml)
+[![codecov](https://codecov.io/gh/kdubois/kubernetes-agent/branch/main/graph/badge.svg)](https://codecov.io/gh/kdubois/kubernetes-agent)
+
 An autonomous AI agent for Kubernetes debugging and remediation, powered by Quarkus LangChain4j with support for Google Gemini AI and OpenAI.
 
 ## Overview
@@ -49,6 +52,21 @@ Kubernetes Agent (Quarkus LangChain4j)
 	├── GitHub PR (Quarkus Rest Client)
 	└── AI Analysis (Gemini or OpenAI)
 ```
+
+## CI/CD
+
+The project uses GitHub Actions for automated builds and deployments:
+
+- **Automated Builds**: Every push to `main` triggers a build, runs tests, and pushes container images to GitHub Container Registry (GHCR)
+- **Test Coverage**: Code coverage reports are automatically uploaded to Codecov
+- **Pull Request Validation**: PRs are built and tested automatically without pushing images
+- **Container Images**: Available at `ghcr.io/kdubois/kubernetes-agent`
+- **Dependency Management**: Dependabot automatically creates PRs for Maven dependencies, GitHub Actions, and Docker base images
+
+Container images are tagged with:
+- `latest` for the main branch
+- Version tags for releases (e.g., `v1.0.0`)
+- SHA-based tags for all builds
 
 ## Prerequisites
 
