@@ -5,7 +5,6 @@ import dev.kevindubois.rollout.agent.agents.RemediationAgent;
 import dev.kevindubois.rollout.agent.model.AnalysisResult;
 import dev.langchain4j.service.MemoryId;
 import dev.langchain4j.service.UserMessage;
-import dev.langchain4j.service.V;
 import dev.langchain4j.agentic.declarative.SequenceAgent;
 
 public interface KubernetesWorkflow {
@@ -22,7 +21,7 @@ public interface KubernetesWorkflow {
     AnalysisResult execute(
         @MemoryId String memoryId,
         @UserMessage String message,
-        @V("repoUrl") String repoUrl,
-        @V("baseBranch") String baseBranch
+        String repoUrl,
+        String baseBranch
     );
 }

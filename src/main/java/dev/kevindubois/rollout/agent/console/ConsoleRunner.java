@@ -11,7 +11,8 @@ import java.util.Scanner;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-import dev.kevindubois.rollout.agent.agents.KubernetesAgent;
+import dev.kevindubois.rollout.agent.workflow.KubernetesWorkflow;
+import dev.kevindubois.rollout.agent.model.AnalysisResult;
 
 /**
  * Handles console mode operation for the Kubernetes Agent
@@ -19,13 +20,13 @@ import dev.kevindubois.rollout.agent.agents.KubernetesAgent;
 @ApplicationScoped
 public class ConsoleRunner {
     
-    private final KubernetesAgent agentService;
+    private final KubernetesWorkflow kubernetesWorkflow;
     private final ExecutorService executorService;
     private boolean consoleMode = false;
     
     @Inject
-    public ConsoleRunner(KubernetesAgent agentService) {
-        this.agentService = agentService;
+    public ConsoleRunner(KubernetesWorkflow kubernetesWorkflow) {
+        this.kubernetesWorkflow = kubernetesWorkflow;
         this.executorService = Executors.newSingleThreadExecutor();
     }
     
@@ -77,8 +78,22 @@ public class ConsoleRunner {
                 }
                 
                 System.out.print("\nAgent > ");
-                String response = agentService.chat(memoryId, userInput);
-                System.out.println(response);
+                // Execute the workflow with null repoUrl and baseBranch for console mode
+                AnalysisResult result = kubernetesWorkflow.execute(memoryId, userInput, null, "main");
+                
+                // Format the response for console output
+                System.out.println("\n=== Analysis ===");
+                System.out.println(result.analysis());
+                System.out.println("\n=== Root Cause ===");
+                System.out.println(result.rootCause());
+                System.out.println("\n=== Remediation ===");
+                System.out.println(result.remediation());
+                System.out.println("\n=== Decision ===");
+                System.out.println("Promote: " + result.promote());
+                System.out.println("Confidence: " + result.confidence() + "%");
+                if (result.prLink() != null) {
+                    System.out.println("PR Link: " + result.prLink());
+                }
             }
         } catch (Exception e) {
             Log.error("Error in console mode", e);
