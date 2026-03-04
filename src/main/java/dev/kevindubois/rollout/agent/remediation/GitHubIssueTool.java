@@ -58,10 +58,6 @@ public class GitHubIssueTool {
     ) {
         Log.info("=== Executing Tool: createGitHubIssue ===");
         
-        if (githubToken == null || githubToken.isEmpty()) {
-            return Map.of("success", false, "error", "GITHUB_TOKEN environment variable is required");
-        }
-        
         if (repoUrl == null || title == null || description == null) {
             return Map.of("success", false, "error", "Missing required parameters: repoUrl, title, description");
         }
@@ -73,7 +69,7 @@ public class GitHubIssueTool {
             String[] ownerRepo = extractOwnerAndRepo(repoUrl);
             String owner = ownerRepo[0];
             String repo = ownerRepo[1];
-            String authHeader = "Bearer " + githubToken;
+            String authHeader = "Bearer " + (githubToken != null ? githubToken : "");
             
             // Build issue body
             String issueBody = generateIssueBody(description, rootCause, namespace, podName);

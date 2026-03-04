@@ -64,10 +64,6 @@ public class GitHubPRTool {
     ) {
         Log.info("=== Executing Tool: createGitHubPR ===");
         
-        if (githubToken == null || githubToken.isEmpty()) {
-            return Map.of("success", false, "error", "GITHUB_TOKEN environment variable is required");
-        }
-        
         if (repoUrl == null || fileChanges == null || fixDescription == null) {
             return Map.of("success", false, "error", "Missing required parameters: repoUrl, fileChanges, fixDescription");
         }
@@ -76,12 +72,11 @@ public class GitHubPRTool {
         
         // Deterministic git workflow (HOW to fix):
         String branchName = MessageFormat.format("fix/k8s-issue-{0}", System.currentTimeMillis());
-        String token = System.getenv("GITHUB_TOKEN");
         Path repoPath = null;
         
         try {
             // 1. Clone (library)
-            repoPath = gitOps.cloneRepository(repoUrl, token);
+            repoPath = gitOps.cloneRepository(repoUrl, githubToken);
             
             // 2. Create branch (library)
             gitOps.createBranch(repoPath, branchName);
@@ -91,7 +86,7 @@ public class GitHubPRTool {
             
             // 4. Commit and push (library)
             String commitMsg = MessageFormat.format("fix: {0}", fixDescription);
-            gitOps.commitAndPush(repoPath, commitMsg, token);
+            gitOps.commitAndPush(repoPath, commitMsg, githubToken);
             
             // 5. Create PR via GitHub REST API
             String[] ownerRepo = extractOwnerAndRepo(repoUrl);
