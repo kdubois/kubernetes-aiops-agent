@@ -6,11 +6,14 @@ import io.fabric8.kubernetes.api.model.apps.Deployment;
 import io.fabric8.kubernetes.api.model.metrics.v1beta1.PodMetrics;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.quarkus.logging.Log;
+import io.quarkus.virtual.threads.VirtualThreads;
+import io.smallrye.common.annotation.RunOnVirtualThread;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
 import java.text.MessageFormat;
 import java.util.*;
+import java.util.concurrent.*;
 import java.util.stream.Collectors;
 
 /**
@@ -773,6 +776,128 @@ public class K8sTools {
         }
         
         return metrics;
+    }
+    
+    /**
+     * Fetches both stable and canary pod information and logs in a single call.
+     * 
+     * Functionality:
+     * 1. Fetches all pods with role=stable label
+     * 2. Fetches all pods with role=canary label  
+     * 3. Gets logs from the first stable pod (if exists)
+     * 4. Gets logs from the first canary pod (if exists)
+     * 5. Returns combined data structure with pod info and logs for both
+     * 
+     * 
+     * @param namespace The Kubernetes namespace (e.g., 'default')
+     * @param containerName The container name to get logs from (e.g., 'quarkus-demo')
+     * @param tailLines Number of log lines to fetch per pod (default: 200)
+     * @return Combined diagnostic data for both stable and canary deployments
+     */
+    @Tool("canary diagnostics - fetches both stable and canary pod info and logs.")
+    @RunOnVirtualThread
+    public Map<String, Object> getCanaryDiagnostics(String namespace, String containerName, Integer tailLines) {
+        Log.info("=== Executing Tool: getCanaryDiagnostics (with virtual threads) ===");
+        
+        if (namespace == null || namespace.isEmpty()) {
+            return Map.of("error", "namespace is required");
+        }
+        
+        int lines = (tailLines != null && tailLines > 0) ? tailLines : 200;
+        Log.info(MessageFormat.format("Getting canary diagnostics for namespace: {0}, container: {1}, lines: {2}",
+                namespace, containerName, lines));
+        
+        try {
+            Map<String, Object> result = new HashMap<>();
+            result.put("namespace", namespace);
+            
+            // Fetch stable and canary pods in parallel using CompletableFuture
+            CompletableFuture<List<Pod>> stablePodsFuture = CompletableFuture.supplyAsync(() ->
+                k8sClient.pods()
+                    .inNamespace(namespace)
+                    .withLabels(Map.of("role", "stable"))
+                    .list()
+                    .getItems()
+            );
+            
+            CompletableFuture<List<Pod>> canaryPodsFuture = CompletableFuture.supplyAsync(() ->
+                k8sClient.pods()
+                    .inNamespace(namespace)
+                    .withLabels(Map.of("role", "canary"))
+                    .list()
+                    .getItems()
+            );
+            
+            // Wait for both pod lists
+            List<Pod> stablePods = stablePodsFuture.join();
+            List<Pod> canaryPods = canaryPodsFuture.join();
+            
+            // Process stable and canary pods in parallel
+            CompletableFuture<Map<String, Object>> stableInfoFuture = CompletableFuture.supplyAsync(() -> {
+                Map<String, Object> stableInfo = new HashMap<>();
+                if (!stablePods.isEmpty()) {
+                    Pod stablePod = stablePods.get(0);
+                    stableInfo.put("podName", stablePod.getMetadata().getName());
+                    stableInfo.put("phase", stablePod.getStatus().getPhase());
+                    stableInfo.put("podCount", stablePods.size());
+                    
+                    if (stablePod.getStatus().getContainerStatuses() != null) {
+                        long readyCount = stablePod.getStatus().getContainerStatuses().stream()
+                            .filter(ContainerStatus::getReady)
+                            .count();
+                        stableInfo.put("readyContainers", readyCount + "/" + stablePod.getStatus().getContainerStatuses().size());
+                    }
+                    
+                    Map<String, Object> logsResult = getLogs(namespace, stablePod.getMetadata().getName(), containerName, false, lines);
+                    if (logsResult.containsKey("logs")) {
+                        stableInfo.put("logs", logsResult.get("logs"));
+                    } else if (logsResult.containsKey("error")) {
+                        stableInfo.put("logsError", logsResult.get("error"));
+                    }
+                } else {
+                    stableInfo.put("error", "No stable pods found");
+                }
+                return stableInfo;
+            });
+            
+            CompletableFuture<Map<String, Object>> canaryInfoFuture = CompletableFuture.supplyAsync(() -> {
+                Map<String, Object> canaryInfo = new HashMap<>();
+                if (!canaryPods.isEmpty()) {
+                    Pod canaryPod = canaryPods.get(0);
+                    canaryInfo.put("podName", canaryPod.getMetadata().getName());
+                    canaryInfo.put("phase", canaryPod.getStatus().getPhase());
+                    canaryInfo.put("podCount", canaryPods.size());
+                    
+                    if (canaryPod.getStatus().getContainerStatuses() != null) {
+                        long readyCount = canaryPod.getStatus().getContainerStatuses().stream()
+                            .filter(ContainerStatus::getReady)
+                            .count();
+                        canaryInfo.put("readyContainers", readyCount + "/" + canaryPod.getStatus().getContainerStatuses().size());
+                    }
+                    
+                    Map<String, Object> logsResult = getLogs(namespace, canaryPod.getMetadata().getName(), containerName, false, lines);
+                    if (logsResult.containsKey("logs")) {
+                        canaryInfo.put("logs", logsResult.get("logs"));
+                    } else if (logsResult.containsKey("error")) {
+                        canaryInfo.put("logsError", logsResult.get("error"));
+                    }
+                } else {
+                    canaryInfo.put("error", "No canary pods found");
+                }
+                return canaryInfo;
+            });
+            
+            // Wait for both processing tasks to complete
+            result.put("stable", stableInfoFuture.join());
+            result.put("canary", canaryInfoFuture.join());
+            
+            Log.info("Successfully retrieved canary diagnostics (parallel execution)");
+            return result;
+            
+        } catch (Exception e) {
+            Log.error("Error getting canary diagnostics", e);
+            return Map.of("error", e.getMessage());
+        }
     }
 }
 

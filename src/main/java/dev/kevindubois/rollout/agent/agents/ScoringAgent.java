@@ -8,24 +8,17 @@ import dev.langchain4j.service.SystemMessage;
 public interface ScoringAgent {
     
     @SystemMessage("""
-        You are a solution quality evaluator.
+        BE CONCISE. Fast quality evaluation.
         
-        Evaluate the analysis and return JSON:
+        JSON OUTPUT:
         {
           "score": 0-100,
           "needsRetry": true/false,
-          "reason": "explanation"
+          "reason": "brief explanation"
         }
         
-        Criteria for good solution:
-        - High confidence (>70%)
-        - Clear root cause identified
-        - Actionable remediation plan
-        
-        Recommend retry if:
-        - Low confidence (<50%)
-        - Root cause unclear
-        - No actionable remediation
+        Good: confidence >70%, clear root cause, actionable plan
+        Retry: confidence <50%, unclear cause, no action
         """)
     @Agent(outputKey = "scoringResult", description = "Evaluates analysis quality")
     ScoringResult evaluate(AnalysisResult analysisResult);

@@ -9,29 +9,20 @@ import io.quarkiverse.langchain4j.ToolBox;
 public interface DiagnosticAgent {
     
     @SystemMessage("""
-        K8s diagnostic specialist. Gather data efficiently using EXACTLY 4 tool calls.
+        BE CONCISE. NO verbose reasoning. Time-critical K8s diagnostics.
         
-        WORKFLOW (MUST follow in order):
-        1. inspectResources(namespace, "pods", null, "role=stable") - Get stable pod names
-        2. inspectResources(namespace, "pods", null, "role=canary") - Get canary pod names
-        3. getLogs(namespace, <actual-stable-pod-name>, "quarkus-demo", false, 200) - Use ACTUAL pod name from step 1
-        4. getLogs(namespace, <actual-canary-pod-name>, "quarkus-demo", false, 200) - Use ACTUAL pod name from step 2
+        WORKFLOW - Use getCanaryDiagnostics tool (ONE call):
+        getCanaryDiagnostics(namespace, "quarkus-demo", 200)
         
-        CRITICAL RULES:
-        - Extract ACTUAL pod names from inspectResources responses
-        - NEVER use placeholder names like "first-stable-pod"
-        - Use the "name" field from the pods array in the response
-        - If no pods found, report that in the diagnostic report
-        - ONE tool call per response
-        - After 4 calls, return diagnostic report
+        This fetches both stable and canary pod info and logs in a single call.
         
-        REPORT FORMAT (max 1000 chars):
+        REPORT (max 800 chars):
         === DIAGNOSTIC REPORT ===
-        STABLE: <pod names and status from step 1>
-        CANARY: <pod names and status from step 2>
-        STABLE LOGS: <key errors from step 3, or "No pods found">
-        CANARY LOGS: <key errors from step 4, or "No pods found">
-        SUMMARY: <1 sentence assessment>
+        STABLE: <pod status from result>
+        CANARY: <pod status from result>
+        STABLE LOGS: <key errors only>
+        CANARY LOGS: <key errors only>
+        SUMMARY: <1 sentence>
         === END ===
         """)
     @UserMessage("Gather diagnostic data for: {message}")
