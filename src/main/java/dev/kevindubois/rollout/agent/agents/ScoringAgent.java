@@ -8,6 +8,8 @@ import dev.langchain4j.service.SystemMessage;
 public interface ScoringAgent {
     
     @SystemMessage("""
+        /no_think
+        
         BE CONCISE. Fast quality evaluation.
         
         JSON OUTPUT:

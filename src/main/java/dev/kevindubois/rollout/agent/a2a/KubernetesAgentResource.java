@@ -9,8 +9,10 @@ import jakarta.ws.rs.core.Response.Status;
 
 import java.text.MessageFormat;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 import dev.kevindubois.rollout.agent.workflow.KubernetesWorkflow;
+import dev.kevindubois.rollout.agent.agents.RemediationAgent;
 import dev.kevindubois.rollout.agent.model.AnalysisResult;
 import dev.kevindubois.rollout.agent.model.KubernetesAgentRequest;
 import dev.kevindubois.rollout.agent.model.KubernetesAgentResponse;
@@ -26,6 +28,9 @@ public class KubernetesAgentResource {
 
     @Inject
     KubernetesWorkflow kubernetesWorkflow;
+    
+    @Inject
+    RemediationAgent remediationAgent;
      
     /**
      * Main analyze endpoint
@@ -103,6 +108,34 @@ public class KubernetesAgentResource {
             );
             
             Log.info("Multi-agent workflow completed successfully");
+            
+            // Trigger async remediation if needed (fire-and-forget)
+            final AnalysisResult finalResult = analysisResult;
+            final String finalPrompt = buildPrompt(request);
+            if (!finalResult.promote() && repoUrl != null && !repoUrl.isEmpty()) {
+                Log.info("Triggering async remediation for rollback decision");
+                CompletableFuture.runAsync(() -> {
+                    try {
+                        Log.info("Starting async remediation");
+                        AnalysisResult remediationResult = remediationAgent.implementRemediation(
+                            finalPrompt, finalResult, repoUrl, baseBranch
+                        );
+                        if (remediationResult.prLink() != null && !remediationResult.prLink().isEmpty()) {
+                            Log.info(MessageFormat.format(
+                                "Async remediation completed - GitHub artifact created: {0}",
+                                remediationResult.prLink()
+                            ));
+                        } else {
+                            Log.info("Async remediation completed - no GitHub artifact created");
+                        }
+                    } catch (Exception e) {
+                        Log.error("Async remediation failed (non-critical)", e);
+                    }
+                });
+            } else {
+                Log.debug("Skipping remediation - promote=true or no repoUrl configured");
+            }
+            
             return Response.ok(response).build();
             
         } catch (Exception e) {
@@ -158,27 +191,24 @@ public class KubernetesAgentResource {
             });
         }
 
-        prompt.append("\n⚠️ CRITICAL: EXECUTE ONE TOOL CALL AT A TIME ⚠️\n");
-        prompt.append("⚠️ MAXIMUM 3-4 TOOL CALLS - BE EFFICIENT ⚠️\n\n");
-        prompt.append("EFFICIENT SEQUENTIAL EXECUTION RULES:\n");
-        prompt.append("1. Call ONE tool and STOP - wait for the result\n");
-        prompt.append("2. Review the result before deciding the next step\n");
-        prompt.append("3. ALWAYS call inspectResources FIRST to discover actual pod names\n");
-        prompt.append("4. NEVER hallucinate or guess pod/resource names\n");
-        prompt.append("5. Use actual names from previous tool results\n");
-        prompt.append("6. Maximum 3-4 tool calls total (not 5-7!)\n");
-        prompt.append("7. Each tool can only be called ONCE with the same parameters\n");
-        prompt.append("8. Get logs from ONE representative pod per group (not all pods)\n");
-        prompt.append("9. Skip getEvents if pods are Running/Ready\n");
-        prompt.append("10. Return immediately once you have pod names and logs from both stable and canary\n\n");
-        prompt.append("EFFICIENT WORKFLOW (3-4 calls):\n");
-        prompt.append("1. inspectResources for stable pods\n");
-        prompt.append("2. inspectResources for canary pods\n");
-        prompt.append("3. getLogs from ONE stable pod\n");
-        prompt.append("4. getLogs from ONE canary pod\n");
-        prompt.append("→ RETURN IMMEDIATELY\n\n");
+        prompt.append("\n⚠️ CRITICAL: USE getCanaryDiagnostics TOOL FIRST ⚠️\n");
+        prompt.append("⚠️ MAXIMUM 1-2 TOOL CALLS - BE EFFICIENT ⚠️\n\n");
+        prompt.append("EFFICIENT WORKFLOW:\n");
+        prompt.append("1. ALWAYS call getCanaryDiagnostics(namespace, containerName, tailLines) FIRST\n");
+        prompt.append("   - This fetches BOTH stable AND canary pod info and logs in ONE call\n");
+        prompt.append("   - Returns pod names, phases, ready status, and logs for both stable and canary\n");
+        prompt.append("   - Container name can be null/empty for auto-detection\n");
+        prompt.append("2. Analyze the results from getCanaryDiagnostics\n");
+        prompt.append("3. Only call additional tools if absolutely necessary (e.g., getEvents for pod failures)\n");
+        prompt.append("4. Return your analysis immediately\n\n");
+        prompt.append("RULES:\n");
+        prompt.append("- Call ONE tool at a time and wait for results\n");
+        prompt.append("- NEVER hallucinate or guess pod/resource names\n");
+        prompt.append("- Use actual names from tool results\n");
+        prompt.append("- Skip getEvents if pods are Running/Ready\n");
+        prompt.append("- Each tool can only be called ONCE with the same parameters\n\n");
         prompt.append("The multi-agent workflow will:\n");
-        prompt.append("1. DiagnosticAgent: Gather minimum necessary data efficiently (3-4 tool calls)\n");
+        prompt.append("1. DiagnosticAgent: Gather data efficiently (1-2 tool calls using getCanaryDiagnostics)\n");
         prompt.append("2. AnalysisAgent: Analyze the gathered data\n");
         prompt.append("3. RemediationAgent: Implement fixes if needed\n");
         

@@ -15,6 +15,26 @@ The Kubernetes Agent is an intelligent system that:
 - **Creates** GitHub pull requests with fixes
 - **Integrates** with Argo Rollouts for canary analysis
 
+## Bug Scenario Testing
+
+The agent can automatically analyze and diagnose production issues. Test with realistic bug scenarios:
+
+- **Memory Leak Detection**: Identifies gradual memory exhaustion and heap pressure
+- **Connection Pool Exhaustion**: Detects resource leaks causing sharp failures  
+- **CPU Spike Analysis**: Diagnoses periodic performance degradation
+
+See [BUG_SCENARIO_TESTING.md](BUG_SCENARIO_TESTING.md) for detailed testing guide.
+
+### Quick Test
+
+```bash
+# Test memory leak scenario
+./test-bug-scenario.sh memory-leak
+
+# Test all scenarios
+./test-bug-scenario.sh all
+```
+
 ## Features
 
 ### Kubernetes Debugging Tools

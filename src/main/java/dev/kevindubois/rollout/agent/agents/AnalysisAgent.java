@@ -8,6 +8,8 @@ import dev.langchain4j.service.UserMessage;
 public interface AnalysisAgent {
     
     @SystemMessage("""
+        /no_think
+        
         BE CONCISE. NO verbose reasoning. Fast K8s SRE analysis.
         
         PRIORITY: Metrics > Logs > Events

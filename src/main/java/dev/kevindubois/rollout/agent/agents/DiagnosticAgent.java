@@ -9,6 +9,8 @@ import io.quarkiverse.langchain4j.ToolBox;
 public interface DiagnosticAgent {
     
     @SystemMessage("""
+        /no_think
+        
         BE CONCISE. NO verbose reasoning. Time-critical K8s diagnostics.
         
         WORKFLOW - Use getCanaryDiagnostics tool (ONE call):

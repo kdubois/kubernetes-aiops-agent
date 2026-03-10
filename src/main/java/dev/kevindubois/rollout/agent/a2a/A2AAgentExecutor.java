@@ -18,14 +18,20 @@ import jakarta.inject.Inject;
 
 import java.text.MessageFormat;
 import java.util.List;
+import java.util.Map;
 
 import dev.kevindubois.rollout.agent.workflow.KubernetesWorkflow;
 import dev.kevindubois.rollout.agent.model.AnalysisResult;
+import dev.kevindubois.rollout.agent.utils.RetryHelper;
+import dev.kevindubois.rollout.agent.utils.ToolCallLimiter;
 
 /**
  * A2A framework integration for the KubernetesAgent.
- * Handles the integration between the A2A framework and the KubernetesAgent.
- * Processes requests from A2A clients and passes them to the Quarkus LangChain4j AI service.
+ * Simplified implementation using Quarkus LangChain4j patterns.
+ *
+ * This executor bridges the A2A protocol with the LangChain4j-based
+ * KubernetesWorkflow, handling message extraction, context management,
+ * and response formatting.
  */
 @ApplicationScoped
 public class A2AAgentExecutor {
@@ -38,9 +44,8 @@ public class A2AAgentExecutor {
         return new AgentExecutor() {
             @Override
             public void execute(RequestContext context, EventQueue eventQueue) throws JSONRPCError {
-                Log.info("A2AAgentExecutor: Processing A2A request");
+                Log.info("A2A: Processing request");
                 
-                // Create task updater to manage the A2A task lifecycle
                 TaskUpdater updater = new TaskUpdater(context, eventQueue);
                 if (context.getTask() == null) {
                     updater.submit();
@@ -48,175 +53,130 @@ public class A2AAgentExecutor {
                 updater.startWork();
 
                 try {
-                    // Extract message content from the request
+                    // Extract request parameters
                     String messageContent = extractMessageContent(context.getMessage());
-                    Log.debug(MessageFormat.format("Extracted message content: {0}", messageContent));
-                    
-                    // Extract persistent memory ID from message metadata or use task ID as fallback
                     String memoryId = extractMemoryId(context);
-                    Log.debug(MessageFormat.format("Using memory ID: {0}", memoryId));
+                    Map<String, String> metadata = extractMetadata(context.getMessage());
                     
-                    // Extract context values from message metadata
-                    String repoUrl = extractFromMetadata(context.getMessage(), "repoUrl");
-                    String baseBranch = extractFromMetadata(context.getMessage(), "baseBranch", "main");
-                    Log.debug(MessageFormat.format("Context - repoUrl: {0}, baseBranch: {1}", repoUrl, baseBranch));
+                    String repoUrl = metadata.get("repoUrl");
+                    String baseBranch = metadata.getOrDefault("baseBranch", "main");
                     
-                    // Execute the workflow
-                    AnalysisResult result = workflow.execute(memoryId, messageContent, repoUrl, baseBranch);
-                    Log.info("Workflow executed successfully");
+                    Log.debug(MessageFormat.format("Memory ID: {0}, RepoUrl: {1}, Branch: {2}",
+                        memoryId, repoUrl, baseBranch));
                     
-                    // Format the response
-                    String formattedResponse = formatAnalysisResult(result);
-                    TextPart responsePart = new TextPart(formattedResponse, null);
-                    List<Part<?>> parts = List.of(responsePart);
-                    updater.addArtifact(parts, null, null, null);
+                    // Reset tool call limiter for new session
+                    ToolCallLimiter.resetSession(memoryId);
+                    
+                    // Execute workflow with retry logic
+                    AnalysisResult result = RetryHelper.executeWithRetryOnTransientErrors(
+                        () -> workflow.execute(memoryId, messageContent, repoUrl, baseBranch),
+                        "A2A workflow execution"
+                    );
+                    
+                    // Return formatted response
+                    String response = formatAnalysisResult(result);
+                    updater.addArtifact(List.of(new TextPart(response, null)), null, null, null);
                     updater.complete();
                     
-                } catch (Exception e) {
-                    Log.error("Error processing KubernetesAgent request", e);
+                    Log.info("A2A: Request completed successfully");
                     
-                    // Handle error and return error response
-                    String errorMessage = "Error processing Kubernetes analysis request: " + e.getMessage();
-                    TextPart errorPart = new TextPart(errorMessage, null);
-                    List<Part<?>> parts = List.of(errorPart);
-                    updater.addArtifact(parts, null, null, null);
+                } catch (Exception e) {
+                    Log.error("A2A: Error processing request", e);
+                    String errorMessage = "Error: " + e.getMessage();
+                    updater.addArtifact(List.of(new TextPart(errorMessage, null)), null, null, null);
                     updater.complete();
                 }
             }
 
             @Override
-            public void cancel(RequestContext context, EventQueue eventQueue) throws JSONRPCError { 
+            public void cancel(RequestContext context, EventQueue eventQueue) throws JSONRPCError {
                 Task task = context.getTask();
-
-                if (task.getStatus().state() == TaskState.CANCELED) {
-                    // task already cancelled
+                if (task.getStatus().state() == TaskState.CANCELED ||
+                    task.getStatus().state() == TaskState.COMPLETED) {
                     throw new TaskNotCancelableError();
                 }
-
-                if (task.getStatus().state() == TaskState.COMPLETED) {
-                    // task already completed
-                    throw new TaskNotCancelableError();
-                }
-
-                // cancel the task
-                TaskUpdater updater = new TaskUpdater(context, eventQueue);
-                updater.cancel();
+                new TaskUpdater(context, eventQueue).cancel();
             }
             
             /**
-             * Extract persistent memory ID from the request context.
-             * Priority order:
-             * 1. "memoryId" from message metadata
-             * 2. "userId" from message metadata
-             * 3. "sessionId" from message metadata
-             * 4. Task ID (fallback for backward compatibility)
-             * 5. "default" (last resort)
+             * Extract memory ID with priority: memoryId > userId > sessionId > taskId > default
              */
             private String extractMemoryId(RequestContext context) {
                 Message message = context.getMessage();
-                
-                // Try to extract from message metadata
                 if (message.getMetadata() != null) {
-                    // First priority: explicit memoryId
                     Object memoryId = message.getMetadata().get("memoryId");
-                    if (memoryId != null) {
-                        Log.debug(MessageFormat.format("Using memoryId from metadata: {0}", memoryId));
-                        return memoryId.toString();
-                    }
+                    if (memoryId != null) return memoryId.toString();
                     
-                    // Second priority: userId
                     Object userId = message.getMetadata().get("userId");
-                    if (userId != null) {
-                        Log.debug(MessageFormat.format("Using userId from metadata as memoryId: {0}", userId));
-                        return userId.toString();
-                    }
+                    if (userId != null) return userId.toString();
                     
-                    // Third priority: sessionId
                     Object sessionId = message.getMetadata().get("sessionId");
-                    if (sessionId != null) {
-                        Log.debug(MessageFormat.format("Using sessionId from metadata as memoryId: {0}", sessionId));
-                        return sessionId.toString();
-                    }
+                    if (sessionId != null) return sessionId.toString();
                 }
                 
-                // Fallback to task ID for backward compatibility
                 if (context.getTask() != null) {
-                    String taskId = context.getTask().getId();
-                    Log.warn(MessageFormat.format("No persistent identifier found in metadata, falling back to task ID: {0}. " +
-                        "This will NOT maintain conversation history across requests.", taskId));
-                    return taskId;
+                    Log.warn("Using task ID as memory ID - conversation history will not persist");
+                    return context.getTask().getId();
                 }
                 
-                // Last resort
-                Log.warn("No memory identifier found, using 'default'. Conversation history will be shared across all sessions.");
                 return "default";
             }
             
             /**
-             * Extract a value from message metadata
+             * Extract all metadata as a map
              */
-            private String extractFromMetadata(Message message, String key) {
-                return extractFromMetadata(message, key, null);
-            }
-            
-            /**
-             * Extract a value from message metadata with default
-             */
-            private String extractFromMetadata(Message message, String key, String defaultValue) {
-                if (message.getMetadata() != null) {
-                    Object value = message.getMetadata().get(key);
-                    if (value != null) {
-                        return value.toString();
-                    }
+            private Map<String, String> extractMetadata(Message message) {
+                if (message.getMetadata() == null) {
+                    return Map.of();
                 }
-                return defaultValue;
+                return message.getMetadata().entrySet().stream()
+                    .collect(java.util.stream.Collectors.toMap(
+                        e -> e.getKey(),
+                        e -> e.getValue() != null ? e.getValue().toString() : ""
+                    ));
             }
             
             /**
-             * Extract message content from the A2A message
+             * Extract text content from message parts
              */
             private String extractMessageContent(Message message) {
-                StringBuilder content = new StringBuilder();
-                
-                if (message.getParts() != null) {
-                    for (Part<?> part : message.getParts()) {
-                        if (part instanceof TextPart textPart) {
-                            Log.debug(MessageFormat.format("Processing text part: {0}", textPart.getText()));
-                            content.append(textPart.getText()).append("\n");
-                        }
-                    }
+                if (message.getParts() == null) {
+                    return "";
                 }
                 
-                return content.toString().trim();
+                return message.getParts().stream()
+                    .filter(part -> part instanceof TextPart)
+                    .map(part -> ((TextPart) part).getText())
+                    .reduce("", (a, b) -> a + "\n" + b)
+                    .trim();
             }
             
             /**
-             * Format AnalysisResult into a readable response
+             * Format analysis result as markdown
              */
             private String formatAnalysisResult(AnalysisResult result) {
-                StringBuilder response = new StringBuilder();
-                
-                response.append("## Analysis Result\n\n");
-                response.append("**Decision:** ").append(result.promote() ? "PROMOTE" : "ROLLBACK").append("\n");
-                response.append("**Confidence:** ").append(result.confidence()).append("%\n\n");
+                StringBuilder sb = new StringBuilder();
+                sb.append("## Analysis Result\n\n");
+                sb.append("**Decision:** ").append(result.promote() ? "✅ PROMOTE" : "❌ ROLLBACK").append("\n");
+                sb.append("**Confidence:** ").append(result.confidence()).append("%\n\n");
                 
                 if (result.analysis() != null && !result.analysis().isEmpty()) {
-                    response.append("### Analysis\n").append(result.analysis()).append("\n\n");
+                    sb.append("### Analysis\n").append(result.analysis()).append("\n\n");
                 }
                 
                 if (result.rootCause() != null && !result.rootCause().isEmpty()) {
-                    response.append("### Root Cause\n").append(result.rootCause()).append("\n\n");
+                    sb.append("### Root Cause\n").append(result.rootCause()).append("\n\n");
                 }
                 
                 if (result.remediation() != null && !result.remediation().isEmpty()) {
-                    response.append("### Remediation\n").append(result.remediation()).append("\n\n");
+                    sb.append("### Remediation\n").append(result.remediation()).append("\n\n");
                 }
                 
                 if (result.prLink() != null && !result.prLink().isEmpty()) {
-                    response.append("### Pull Request\n").append(result.prLink()).append("\n");
+                    sb.append("### Pull Request\n").append(result.prLink()).append("\n");
                 }
                 
-                return response.toString();
+                return sb.toString();
             }
         };
     }

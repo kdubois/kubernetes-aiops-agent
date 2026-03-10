@@ -10,6 +10,7 @@ import io.quarkus.logging.Log;
 import java.nio.file.Path;
 import java.text.MessageFormat;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * Tool that creates GitHub PRs with fixes.
@@ -64,14 +65,15 @@ public class GitHubPRTool {
     ) {
         Log.info("=== Executing Tool: createGitHubPR ===");
         
+        // Validate required parameters
         if (repoUrl == null || fileChanges == null || fixDescription == null) {
             return Map.of("success", false, "error", "Missing required parameters: repoUrl, fileChanges, fixDescription");
         }
+        
         Log.info(MessageFormat.format("Creating PR for repository: {0}", repoUrl));
         
-        
         // Deterministic git workflow (HOW to fix):
-        String branchName = MessageFormat.format("fix/k8s-issue-{0}", System.currentTimeMillis());
+        String branchName = "fix/k8s-issue-" + UUID.randomUUID().toString().substring(0, 8);
         Path repoPath = null;
         
         try {
@@ -85,29 +87,14 @@ public class GitHubPRTool {
             gitOps.applyChanges(repoPath, fileChanges);
             
             // 4. Commit and push (library)
-            String commitMsg = MessageFormat.format("fix: {0}", fixDescription);
+            String commitMsg = formatCommitMessage(fixDescription);
             gitOps.commitAndPush(repoPath, commitMsg, githubToken);
             
             // 5. Create PR via GitHub REST API
-            String[] ownerRepo = extractOwnerAndRepo(repoUrl);
-            String owner = ownerRepo[0];
-            String repo = ownerRepo[1];
-            String authHeader = "Bearer " + githubToken;
-            
-            // Get repository to find default branch
-            GitHubRestClient.GitHubRepository repository =
-                githubClient.getRepository(owner, repo, authHeader);
-            
-            String baseBranch = repository.default_branch();
-            String prTitle = MessageFormat.format("Fix: {0}", fixDescription);
-            String prBody = generatePRBody(rootCause, fixDescription, testingRecommendations, namespace, podName, fileChanges);
-            
-            // Create pull request
-            GitHubRestClient.CreatePullRequestRequest prRequest =
-                new GitHubRestClient.CreatePullRequestRequest(prTitle, branchName, baseBranch, prBody);
-            
-            GitHubRestClient.GitHubPullRequest pr =
-                githubClient.createPullRequest(owner, repo, authHeader, prRequest);
+            GitHubRestClient.GitHubPullRequest pr = createPullRequestOnGitHub(
+                repoUrl, branchName, fixDescription, rootCause,
+                testingRecommendations, namespace, podName, fileChanges
+            );
             
             Log.info(MessageFormat.format("Successfully created PR: {0}", pr.html_url()));
             
@@ -130,6 +117,53 @@ public class GitHubPRTool {
                 gitOps.cleanup(repoPath);
             }
         }
+    }
+    
+    /**
+     * Create a pull request on GitHub via REST API
+     */
+    private GitHubRestClient.GitHubPullRequest createPullRequestOnGitHub(
+            String repoUrl,
+            String branchName,
+            String fixDescription,
+            String rootCause,
+            String testingRecommendations,
+            String namespace,
+            String podName,
+            Map<String, String> fileChanges
+    ) throws Exception {
+        String[] ownerRepo = extractOwnerAndRepo(repoUrl);
+        String owner = ownerRepo[0];
+        String repo = ownerRepo[1];
+        String authHeader = formatAuthHeader(githubToken);
+        
+        // Get repository to find default branch
+        GitHubRestClient.GitHubRepository repository =
+            githubClient.getRepository(owner, repo, authHeader);
+        
+        String baseBranch = repository.default_branch();
+        String prTitle = MessageFormat.format("Fix: {0}", fixDescription);
+        String prBody = generatePRBody(rootCause, fixDescription, testingRecommendations, namespace, podName, fileChanges);
+        
+        // Create pull request
+        GitHubRestClient.CreatePullRequestRequest prRequest =
+            new GitHubRestClient.CreatePullRequestRequest(prTitle, branchName, baseBranch, prBody);
+        
+        return githubClient.createPullRequest(owner, repo, authHeader, prRequest);
+    }
+    
+    /**
+     * Format commit message with conventional commit prefix
+     */
+    private String formatCommitMessage(String fixDescription) {
+        return MessageFormat.format("fix: {0}", fixDescription);
+    }
+    
+    /**
+     * Format authorization header for GitHub API
+     */
+    private String formatAuthHeader(String token) {
+        return "Bearer " + token;
     }
     
     /**

@@ -244,28 +244,13 @@ public class K8sTools {
             List<Container> containers = pod.getSpec().getContainers();
             String targetContainer;
             
-            // If container name is provided, verify it exists in the pod
-            if (containerName != null && !containerName.isEmpty()) {
-                final String requestedContainer = containerName;
-                boolean containerExists = containers.stream()
-                    .anyMatch(c -> c.getName().equals(requestedContainer));
-                
-                if (!containerExists) {
-                    Log.warn(MessageFormat.format("Container ''{0}'' not found in pod. Available containers: {1}. Auto-detecting...",
-                        requestedContainer,
-                        containers.stream().map(Container::getName).collect(Collectors.joining(", "))));
-                    // Fall through to auto-detection
-                    targetContainer = null;
-                } else {
-                    targetContainer = containerName;
-                }
-            } else {
-                targetContainer = null;
-            }
-            
-            // If no container name specified or invalid name provided, auto-detect
-            if (targetContainer == null) {
-                if (containers != null && containers.size() > 1) {
+            // If no container name specified, auto-detect efficiently
+            if (containerName == null || containerName.isEmpty()) {
+                if (containers != null && containers.size() == 1) {
+                    // Single-container pod - use it directly without warning
+                    targetContainer = containers.get(0).getName();
+                    Log.debug(MessageFormat.format("Single-container pod. Using container: {0}", targetContainer));
+                } else if (containers != null && containers.size() > 1) {
                     // Multi-container pod - default to the first non-sidecar container
                     // Typically istio-proxy, envoy, etc. are sidecars
                     targetContainer = containers.stream()
@@ -277,9 +262,39 @@ public class K8sTools {
                         .orElse(containers.get(0).getName());
                     
                     Log.info(MessageFormat.format("Multi-container pod detected. Using container: {0}", targetContainer));
-                } else if (containers != null && !containers.isEmpty()) {
-                    targetContainer = containers.get(0).getName();
-                    Log.info(MessageFormat.format("Single-container pod. Using container: {0}", targetContainer));
+                } else {
+                    targetContainer = null;
+                }
+            } else {
+                // Container name provided - verify it exists in the pod
+                final String requestedContainer = containerName;
+                boolean containerExists = containers.stream()
+                    .anyMatch(c -> c.getName().equals(requestedContainer));
+                
+                if (!containerExists) {
+                    // Only log warning if multiple containers exist
+                    if (containers != null && containers.size() > 1) {
+                        Log.warn(MessageFormat.format("Container ''{0}'' not found in pod. Available containers: {1}. Auto-detecting...",
+                            requestedContainer,
+                            containers.stream().map(Container::getName).collect(Collectors.joining(", "))));
+                    }
+                    // Fall through to auto-detection for single-container pods
+                    if (containers != null && containers.size() == 1) {
+                        targetContainer = containers.get(0).getName();
+                        Log.debug(MessageFormat.format("Using single available container: {0}", targetContainer));
+                    } else if (containers != null && containers.size() > 1) {
+                        targetContainer = containers.stream()
+                            .filter(c -> !c.getName().contains("proxy") &&
+                                       !c.getName().contains("envoy") &&
+                                       !c.getName().contains("sidecar"))
+                            .findFirst()
+                            .map(Container::getName)
+                            .orElse(containers.get(0).getName());
+                    } else {
+                        targetContainer = null;
+                    }
+                } else {
+                    targetContainer = containerName;
                 }
             }
             

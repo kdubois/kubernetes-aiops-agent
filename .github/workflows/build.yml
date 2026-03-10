@@ -38,18 +38,6 @@ jobs:
       - name: Run tests
         run: ./mvnw -B test
 
-      - name: Generate test coverage report
-        run: ./mvnw -B jacoco:report
-
-      - name: Upload coverage to Codecov
-        if: github.event_name != 'pull_request'
-        uses: codecov/codecov-action@v4
-        with:
-          files: ./target/site/jacoco/jacoco.xml
-          flags: unittests
-          name: codecov-kubernetes-agent
-          fail_ci_if_error: false
-
       - name: Log in to GitHub Container Registry
         if: github.event_name != 'pull_request'
         uses: docker/login-action@v3.7.0

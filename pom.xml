@@ -92,6 +92,7 @@
             <groupId>io.quarkiverse.langchain4j</groupId>
             <artifactId>quarkus-langchain4j-ai-gemini</artifactId>
         </dependency>
+        <!-- A2A Protocol Support -->
         <dependency>
             <groupId>dev.langchain4j</groupId>
             <artifactId>langchain4j-agentic-a2a</artifactId>

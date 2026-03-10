@@ -29,10 +29,11 @@ public class GitOperations {
 		Path localPath = Files.createTempDirectory("k8s-agent-fix-");
 		Log.info(MessageFormat.format("Cloning repository {0} to {1}", repoUrl, localPath));
 		
+		// For GitHub, use token as username with empty password
 		Git.cloneRepository()
 			.setURI(repoUrl)
 			.setDirectory(localPath.toFile())
-			.setCredentialsProvider(new UsernamePasswordCredentialsProvider("git", token))
+			.setCredentialsProvider(new UsernamePasswordCredentialsProvider(token, ""))
 			.call();
 		
 		Log.info("Successfully cloned repository");
@@ -100,10 +101,16 @@ public class GitOperations {
 				.call();
 			Log.info(MessageFormat.format("Committed changes with message: {0}", message));
 			
+			// Get current branch name
+			String branchName = git.getRepository().getBranch();
+			Log.info(MessageFormat.format("Pushing branch: {0}", branchName));
 			
-			// Push
+			// Push - use token as username with empty password (GitHub standard)
+			// Set upstream to create the branch on remote
 			git.push()
-				.setCredentialsProvider(new UsernamePasswordCredentialsProvider("git", token))
+				.setCredentialsProvider(new UsernamePasswordCredentialsProvider(token, ""))
+				.setRemote("origin")
+				.setRefSpecs(new org.eclipse.jgit.transport.RefSpec(branchName + ":" + branchName))
 				.call();
 			
 			Log.info("Successfully pushed changes to remote");

@@ -10,12 +10,11 @@ import dev.langchain4j.agentic.declarative.SequenceAgent;
 public interface KubernetesWorkflow {
     
     @SequenceAgent(
-        description = "Complete Kubernetes rollout analysis and remediation workflow",
-        outputKey = "finalResult",
+        description = "Complete Kubernetes rollout analysis workflow",
+        outputKey = "analysisResult",
         subAgents = {
             DiagnosticAgent.class,
-            AnalysisLoop.class,
-            RemediationAgent.class
+            AnalysisLoop.class
         }
     )
     AnalysisResult execute(

@@ -1,6 +1,5 @@
 package dev.kevindubois.rollout.agent.a2a;
 
-import java.util.Collections;
 import java.util.List;
 
 import io.a2a.spec.AgentInterface;
@@ -14,52 +13,58 @@ import io.a2a.spec.AgentCapabilities;
 import io.a2a.spec.AgentCard;
 import io.a2a.spec.AgentSkill;
 
+/**
+ * A2A Agent Card configuration for Kubernetes Agent.
+ * Defines the agent's capabilities, skills, and endpoints for A2A protocol discovery.
+ */
 @ApplicationScoped
 public class KubernetesAgentCard {
 
     @Inject
-    @ConfigProperty(name = "url", defaultValue = "http://localhost")
-    String url;
+    @ConfigProperty(name = "a2a.agent.url", defaultValue = "http://localhost")
+    String agentUrl;
 
     @Inject
     @ConfigProperty(name = "quarkus.http.port", defaultValue = "8080")
     int serverPort;
     
     @Inject
-    @ConfigProperty(name = "quarkus.application.name", defaultValue = "kubernetes-agent")
-    String applicationName;
-    
-    @Inject
-    @ConfigProperty(name = "agent.version", defaultValue = "1.0.0")
+    @ConfigProperty(name = "a2a.agent.version", defaultValue = "1.0.1")
     String agentVersion;
     
     @Produces
     @PublicAgentCard
     public AgentCard agentCard() {
-        String baseUrl = url + ":" + serverPort;
+        String baseUrl = agentUrl + ":" + serverPort;
         
         return new AgentCard.Builder()
                 .name("Kubernetes Agent")
-                .description("An expert Kubernetes SRE specializing in canary deployment analysis. It analyzes the provided metrics and logs to determine if a canary deployment is healthy.")
+                .description("Expert Kubernetes SRE agent for canary deployment analysis. " +
+                           "Analyzes metrics, logs, and pod health to determine deployment safety. " +
+                           "Provides automated remediation via GitHub PRs when issues are detected.")
                 .url(baseUrl + "/")
                 .version(agentVersion)
                 .protocolVersion("1.0.0")
                 .capabilities(new AgentCapabilities.Builder()
-                        .streaming(false) // Set to false until streaming is implemented
+                        .streaming(false)
                         .pushNotifications(false)
                         .stateTransitionHistory(false)
                         .build())
-                .defaultInputModes(Collections.singletonList("text"))
-                .defaultOutputModes(Collections.singletonList("text"))
-                .skills(Collections.singletonList(new AgentSkill.Builder()
-                                .id("kubernetes-analysis")
-                                .name("Kubernetes Analysis")
-                                .description("Analyzes canary deployment logs and metrics to determine if a canary deployment is healthy.")
-                                .tags(List.of("analysis", "kubernetes", "canary"))
-                                .build()))
+                .defaultInputModes(List.of("text"))
+                .defaultOutputModes(List.of("text"))
+                .skills(List.of(
+                    new AgentSkill.Builder()
+                        .id("kubernetes-analysis")
+                        .name("Kubernetes Canary Analysis")
+                        .description("Analyzes canary deployments using multi-agent workflow: " +
+                                   "diagnostic data gathering, analysis, and automated remediation")
+                        .tags(List.of("kubernetes", "canary", "analysis", "sre", "remediation"))
+                        .build()
+                ))
                 .preferredTransport("jsonrpc")
                 .additionalInterfaces(List.of(
-                        new AgentInterface("jsonrpc", baseUrl + "/a2a")))
+                    new AgentInterface("jsonrpc", baseUrl + "/a2a")
+                ))
                 .build();
     }
 }
