@@ -47,12 +47,32 @@ See [BUG_SCENARIO_TESTING.md](BUG_SCENARIO_TESTING.md) for detailed testing guid
 
 ### Remediation Capabilities
 
+- **Source Code Analysis**: Read repository files to understand code structure and make informed fixes
 - **Git Operations**: Clone, branch, commit, push (using JGit library)
 - **GitHub PRs**: Automatically create pull requests with:
     - Root cause analysis
-    - Code fixes
+    - Code fixes based on actual source code
     - Testing recommendations
     - Links to Kubernetes resources
+
+### Source Code Access
+
+The remediation agent can read source files from the repository to make more accurate fix decisions:
+
+- **On-Demand File Reading**: Agent requests specific files only when needed
+- **Batch Operations**: Read multiple files in a single operation for efficiency
+- **Common Use Cases**:
+  - Analyze configuration files (`application.properties`, YAML configs)
+  - Review dependency files (`pom.xml`, `build.gradle`, `package.json`)
+  - Examine application code referenced in error logs
+  - Identify exact line numbers for precise fixes
+- **Smart Analysis**: Agent uses actual source code context to propose better fixes
+
+**Example**: When detecting a NullPointerException in logs, the agent can:
+1. Read the source file mentioned in the stack trace
+2. Analyze the actual code structure
+3. Propose a fix with exact line numbers
+4. Create a PR with the corrected code
 
 ### A2A Communication
 

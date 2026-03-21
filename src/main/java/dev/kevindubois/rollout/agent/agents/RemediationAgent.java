@@ -3,6 +3,7 @@ package dev.kevindubois.rollout.agent.agents;
 import dev.kevindubois.rollout.agent.model.AnalysisResult;
 import dev.kevindubois.rollout.agent.remediation.GitHubPRTool;
 import dev.kevindubois.rollout.agent.remediation.GitHubIssueTool;
+import dev.kevindubois.rollout.agent.remediation.SourceCodeTool;
 import dev.langchain4j.agentic.Agent;
 import dev.langchain4j.service.SystemMessage;
 import dev.langchain4j.service.UserMessage;
@@ -25,7 +26,18 @@ public interface RemediationAgent {
            d. If NOT fixable (infrastructure, external dependencies, unclear) → call createGitHubIssue tool
         3. If promote=false AND cannot identify specific fix → call createGitHubIssue tool
         
+        WHEN YOU NEED SOURCE CODE:
+        - Call readSourceFiles tool to read files from the repository before creating fixes
+        - Common files to check:
+          * src/main/resources/application.properties (configuration)
+          * pom.xml or build.gradle (dependencies)
+          * Deployment YAMLs in kubernetes/, deployment/, or k8s/ folders
+          * Main application class files mentioned in error logs
+        - Analyze source code to identify exact issues and line numbers
+        - Use actual file content when creating PR fixes (more accurate than guessing)
+        
         WHEN CREATING GITHUB PRs (PREFERRED for code-fixable issues):
+        - First, use readSourceFiles to get current file content if needed
         - Analyze the rootCause and diagnosticData to identify the exact files and changes needed
         - fileChanges: Map of file paths to complete new file content (e.g., {"src/main/resources/application.properties": "new content"})
         - fixDescription: Brief description of what the fix does
@@ -71,7 +83,7 @@ public interface RemediationAgent {
         Extract namespace, rolloutName, and pod names from the diagnostic data to use when creating GitHub issues.
         """)
     @Agent(outputKey = "finalResult", description = "Implements remediation fixes")
-    @ToolBox({GitHubPRTool.class, GitHubIssueTool.class})
+    @ToolBox({GitHubPRTool.class, GitHubIssueTool.class, SourceCodeTool.class})
     AnalysisResult implementRemediation(
         String diagnosticData,
         AnalysisResult analysisResult,

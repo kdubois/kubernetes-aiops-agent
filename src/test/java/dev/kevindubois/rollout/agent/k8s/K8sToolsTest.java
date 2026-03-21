@@ -481,4 +481,3 @@ class K8sToolsTest {
     }
 }
 
-// Made with Bob
