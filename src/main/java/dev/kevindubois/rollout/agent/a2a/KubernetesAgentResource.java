@@ -142,6 +142,8 @@ public class KubernetesAgentResource {
 
                 CompletableFuture.runAsync(() -> {
                     try {
+                        // Brief delay to avoid rate limiting from rapid sequential LLM calls
+                        Thread.sleep(3000);
                         Log.info("Starting async remediation");
                         AnalysisResult remediationResult = remediationAgent.implementRemediation(
                             enrichedPrompt, finalResult, repoUrl, baseBranch

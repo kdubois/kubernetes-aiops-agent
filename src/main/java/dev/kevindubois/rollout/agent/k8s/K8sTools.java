@@ -676,8 +676,7 @@ public class K8sTools {
         String path = (metricsPath != null && !metricsPath.isEmpty()) ? metricsPath : "/q/metrics";
         int targetPort = (port != null && port > 0) ? port : 8080;
         
-        Log.info(MessageFormat.format("Fetching application metrics from pod: {0}/{1} at {2}:{3}",
-                namespace, podName, path, targetPort));
+        Log.info("Fetching application metrics from pod: " + namespace + "/" + podName + " at " + path + ":" + targetPort);
         
         try {
             Pod pod = k8sClient.pods()
@@ -695,8 +694,8 @@ public class K8sTools {
             }
             
             try {
-                String metricsUrl = MessageFormat.format("http://{0}:{1}{2}", podIP, targetPort, path);
-                Log.info(MessageFormat.format("Fetching metrics from URL: {0}", metricsUrl));
+                String metricsUrl = "http://" + podIP + ":" + targetPort + path;
+                Log.info("Fetching metrics from URL: " + metricsUrl);
                 
                 java.net.http.HttpClient client = java.net.http.HttpClient.newBuilder()
                     .connectTimeout(java.time.Duration.ofSeconds(5))
@@ -814,6 +813,80 @@ public class K8sTools {
         return metrics;
     }
     
+    /**
+     * Fetches application metrics from the /q/metrics endpoint of both stable and canary pods.
+     *
+     * @param namespace The Kubernetes namespace (e.g., 'default')
+     * @return Combined application metrics for both stable and canary deployments
+     */
+    @Tool("Fetch application metrics from /q/metrics endpoints of both stable and canary pods in parallel.")
+    @RunOnVirtualThread
+    public Map<String, Object> getCanaryMetrics(String namespace) {
+        Log.info("=== Executing Tool: getCanaryMetrics ===");
+
+        if (namespace == null || namespace.isEmpty()) {
+            return Map.of("error", "namespace is required");
+        }
+
+        Log.info(MessageFormat.format("Getting canary metrics for namespace: {0}", namespace));
+
+        try {
+            Map<String, Object> result = new HashMap<>();
+            result.put("namespace", namespace);
+
+            // Fetch stable and canary pods in parallel
+            CompletableFuture<List<Pod>> stablePodsFuture = CompletableFuture.supplyAsync(() ->
+                k8sClient.pods()
+                    .inNamespace(namespace)
+                    .withLabels(Map.of("role", "stable"))
+                    .list()
+                    .getItems()
+            );
+
+            CompletableFuture<List<Pod>> canaryPodsFuture = CompletableFuture.supplyAsync(() ->
+                k8sClient.pods()
+                    .inNamespace(namespace)
+                    .withLabels(Map.of("role", "canary"))
+                    .list()
+                    .getItems()
+            );
+
+            List<Pod> stablePods = stablePodsFuture.join();
+            List<Pod> canaryPods = canaryPodsFuture.join();
+
+            // Fetch metrics from both pods in parallel
+            CompletableFuture<Map<String, Object>> stableMetricsFuture = CompletableFuture.supplyAsync(() -> {
+                if (!stablePods.isEmpty()) {
+                    Pod stablePod = stablePods.get(0);
+                    Map<String, Object> metrics = fetchApplicationMetrics(namespace, stablePod.getMetadata().getName(), "/q/metrics", 8080);
+                    metrics.put("podName", stablePod.getMetadata().getName());
+                    return metrics;
+                }
+                return Map.of("error", "No stable pods found");
+            });
+
+            CompletableFuture<Map<String, Object>> canaryMetricsFuture = CompletableFuture.supplyAsync(() -> {
+                if (!canaryPods.isEmpty()) {
+                    Pod canaryPod = canaryPods.get(0);
+                    Map<String, Object> metrics = fetchApplicationMetrics(namespace, canaryPod.getMetadata().getName(), "/q/metrics", 8080);
+                    metrics.put("podName", canaryPod.getMetadata().getName());
+                    return metrics;
+                }
+                return Map.of("error", "No canary pods found");
+            });
+
+            result.put("stable", stableMetricsFuture.join());
+            result.put("canary", canaryMetricsFuture.join());
+
+            Log.info("Successfully retrieved canary metrics (parallel execution)");
+            return result;
+
+        } catch (Exception e) {
+            Log.error("Error getting canary metrics", e);
+            return Map.of("error", e.getMessage());
+        }
+    }
+
     /**
      * Fetches both stable and canary pod information and logs in a single call.
      * 
