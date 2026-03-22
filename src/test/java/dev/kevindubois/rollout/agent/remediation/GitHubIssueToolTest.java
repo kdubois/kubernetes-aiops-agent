@@ -68,6 +68,7 @@ class GitHubIssueToolTest {
             TEST_ROOT_CAUSE,
             TEST_NAMESPACE,
             TEST_POD_NAME,
+            "Error logs show connection timeout. Recent events indicate network policy changes.",
             "bug,kubernetes",
             "devops-team"
         );
@@ -116,6 +117,7 @@ class GitHubIssueToolTest {
             TEST_NAMESPACE,
             TEST_POD_NAME,
             null,
+            null,
             null
         );
 
@@ -150,6 +152,7 @@ class GitHubIssueToolTest {
             TEST_ROOT_CAUSE,
             TEST_NAMESPACE,
             TEST_POD_NAME,
+            "Pod restart count: 5. Last exit code: 137 (OOMKilled)",
             labels,
             assignees
         );
@@ -182,6 +185,7 @@ class GitHubIssueToolTest {
             TEST_NAMESPACE,
             TEST_POD_NAME,
             null,
+            null,
             null
         );
 
@@ -207,6 +211,7 @@ class GitHubIssueToolTest {
             TEST_ROOT_CAUSE,
             TEST_NAMESPACE,
             TEST_POD_NAME,
+            null,
             null,
             null
         );
@@ -244,6 +249,7 @@ class GitHubIssueToolTest {
             "default",
             "pod-1",
             null,
+            null,
             null
         );
 
@@ -275,6 +281,7 @@ class GitHubIssueToolTest {
             "default",
             "pod-1",
             null,
+            null,
             null
         );
 
@@ -296,6 +303,7 @@ class GitHubIssueToolTest {
             "Root cause",
             "default",
             "pod-1",
+            null,
             null,
             null
         );
@@ -333,6 +341,7 @@ class GitHubIssueToolTest {
             rootCause,
             namespace,
             podName,
+            "Memory usage: 95%, CPU throttling detected",
             null,
             null
         );
@@ -375,6 +384,7 @@ class GitHubIssueToolTest {
             null,  // null root cause
             null,  // null namespace
             null,  // null pod name
+            null,  // null diagnosticSummary
             null,  // null labels
             null   // null assignees
         );
@@ -408,6 +418,7 @@ class GitHubIssueToolTest {
             TEST_NAMESPACE,
             TEST_POD_NAME,
             null,
+            null,
             null
         );
 
@@ -439,6 +450,7 @@ class GitHubIssueToolTest {
             TEST_ROOT_CAUSE,
             TEST_NAMESPACE,
             TEST_POD_NAME,
+            null,
             "",  // empty labels
             ""   // empty assignees
         );
@@ -478,6 +490,7 @@ class GitHubIssueToolTest {
             TEST_ROOT_CAUSE,
             TEST_NAMESPACE,
             TEST_POD_NAME,
+            null,
             labelsWithSpaces,
             null
         );
@@ -486,11 +499,71 @@ class GitHubIssueToolTest {
         assertThat(result).containsEntry("success", true);
 
         // Verify labels were trimmed
-        ArgumentCaptor<GitHubRestClient.CreateIssueRequest> requestCaptor = 
+        ArgumentCaptor<GitHubRestClient.CreateIssueRequest> requestCaptor =
             ArgumentCaptor.forClass(GitHubRestClient.CreateIssueRequest.class);
         verify(githubClient).createIssue(anyString(), anyString(), anyString(), requestCaptor.capture());
 
         GitHubRestClient.CreateIssueRequest request = requestCaptor.getValue();
         assertThat(request.labels()).containsExactly("bug", "critical", "kubernetes");
+    }
+
+    @Test
+    void testCreateIssue_withDiagnosticSummary() {
+        // Given: Issue creation with detailed diagnostic summary
+        String diagnosticSummary = """
+            **Error Logs:**
+            ```
+            java.lang.NullPointerException: Cannot invoke method on null object
+                at com.example.Service.process(Service.java:42)
+            ```
+            
+            **Recent Events:**
+            - Warning: BackOff restarting failed container (5 times)
+            - Error: Liveness probe failed: HTTP probe failed with statuscode: 500
+            
+            **Metrics:**
+            - Restart count: 5
+            - Memory usage: 450Mi/512Mi (88%)
+            - CPU throttling: Yes
+            """;
+
+        GitHubRestClient.GitHubIssue mockIssue = new GitHubRestClient.GitHubIssue(
+            1,
+            "https://github.com/test-org/test-repo/issues/1",
+            "open",
+            TEST_TITLE
+        );
+        when(githubClient.createIssue(anyString(), anyString(), anyString(), any()))
+            .thenReturn(mockIssue);
+
+        // When: Creating issue with diagnostic summary
+        Map<String, Object> result = gitHubIssueTool.createGitHubIssue(
+            TEST_REPO_URL,
+            TEST_TITLE,
+            TEST_DESCRIPTION,
+            TEST_ROOT_CAUSE,
+            TEST_NAMESPACE,
+            TEST_POD_NAME,
+            diagnosticSummary,
+            "bug,kubernetes",
+            "devops-team"
+        );
+
+        // Then: Should succeed
+        assertThat(result).containsEntry("success", true);
+
+        // Verify diagnostic summary is included in issue body
+        ArgumentCaptor<GitHubRestClient.CreateIssueRequest> requestCaptor =
+            ArgumentCaptor.forClass(GitHubRestClient.CreateIssueRequest.class);
+        verify(githubClient).createIssue(anyString(), anyString(), anyString(), requestCaptor.capture());
+
+        String issueBody = requestCaptor.getValue().body();
+        
+        // Verify diagnostic section is present
+        assertThat(issueBody).contains("## Diagnostic Information");
+        assertThat(issueBody).contains("NullPointerException");
+        assertThat(issueBody).contains("BackOff restarting failed container");
+        assertThat(issueBody).contains("Restart count: 5");
+        assertThat(issueBody).contains("Memory usage: 450Mi/512Mi");
     }
 }

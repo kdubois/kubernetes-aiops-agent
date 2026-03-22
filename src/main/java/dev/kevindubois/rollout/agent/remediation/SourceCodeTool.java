@@ -2,32 +2,36 @@ package dev.kevindubois.rollout.agent.remediation;
 
 import dev.langchain4j.agent.tool.Tool;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+import org.eclipse.microprofile.rest.client.inject.RestClient;
 import io.quarkus.logging.Log;
 
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.text.MessageFormat;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
- * Tool for reading source code files from a Git repository.
+ * Tool for reading source code files from a Git repository using GitHub API.
  * Enables the remediation agent to analyze actual code before creating fixes.
+ * Uses GitHub API to fetch files directly without cloning the entire repository.
  */
 @ApplicationScoped
 public class SourceCodeTool {
     
-    private final GitOperations gitOps;
     private final String githubToken;
     
+    @Inject
+    @RestClient
+    GitHubRestClient githubClient;
+    
     public SourceCodeTool() {
-        this(new GitOperations(), System.getenv("GITHUB_TOKEN"));
+        this(System.getenv("GITHUB_TOKEN"));
     }
     
     // Package-private constructor for testing
-    SourceCodeTool(GitOperations gitOps, String githubToken) {
-        this.gitOps = gitOps;
+    SourceCodeTool(String githubToken) {
         this.githubToken = githubToken;
         if (githubToken == null || githubToken.isEmpty()) {
             Log.warn("GITHUB_TOKEN environment variable not set");
@@ -37,15 +41,24 @@ public class SourceCodeTool {
     }
     
     /**
-     * Read source code files from a Git repository.
-     * Supports reading multiple files in a single call for efficiency.
-     * 
+     * Read source code files from a Git repository using GitHub API.
+     * Fetches only the requested files without cloning the entire repository.
+     *
+     * IMPORTANT: File paths must match the actual repository structure.
+     * Common Java project structure:
+     * - src/main/java/[package]/ClassName.java
+     * - src/main/resources/application.properties
+     * - pom.xml (Maven) or build.gradle (Gradle)
+     *
+     * Example: For package "dev.kevindubois.demo" and class "LoadGeneratorService":
+     * Path should be: "src/main/java/dev/kevindubois/demo/LoadGeneratorService.java"
+     *
      * @param repoUrl URL of the GitHub repository (e.g., "https://github.com/owner/repo")
-     * @param filePaths List of file paths to read (e.g., ["src/main/resources/application.properties", "pom.xml"])
+     * @param filePaths List of file paths to read (e.g., ["src/main/java/dev/kevindubois/demo/LoadGeneratorService.java"])
      * @param branch Branch name to read from (e.g., "main", "develop")
      * @return Map containing file contents and metadata
      */
-    @Tool("Read source code files from a Git repository. Can read multiple files in one call for efficiency.")
+    @Tool("Read source code files from a Git repository using GitHub API. Returns file content with line numbers to help identify correct insertion points. CRITICAL: Use correct file paths matching repository structure (e.g., src/main/java/[package]/ClassName.java for Java files).")
     public Map<String, Object> readSourceFiles(
             String repoUrl,
             List<String> filePaths,
@@ -66,41 +79,44 @@ public class SourceCodeTool {
             branch = "main"; // Default to main branch
         }
         
-        Log.info(MessageFormat.format("Reading {0} files from repository: {1}, branch: {2}", 
+        Log.info(MessageFormat.format("Reading {0} files from repository: {1}, branch: {2}",
                 filePaths.size(), repoUrl, branch));
         
-        Path repoPath = null;
-        
         try {
-            // Clone repository (shallow clone for efficiency)
-            repoPath = gitOps.cloneRepository(repoUrl, githubToken);
+            String[] ownerRepo = extractOwnerAndRepo(repoUrl);
+            String owner = ownerRepo[0];
+            String repo = ownerRepo[1];
+            String authHeader = formatAuthHeader(githubToken);
             
-            // Checkout specific branch if not main/master
-            if (!branch.equals("main") && !branch.equals("master")) {
-                gitOps.createBranch(repoPath, branch);
-            }
-            
-            // Read requested files
+            // Read requested files via GitHub API
             Map<String, Object> result = new HashMap<>();
             Map<String, String> fileContents = new HashMap<>();
+            Map<String, String> fileContentsWithLineNumbers = new HashMap<>();
             List<String> notFound = new java.util.ArrayList<>();
             
             for (String filePath : filePaths) {
-                Path fullPath = repoPath.resolve(filePath);
-                
-                if (Files.exists(fullPath) && Files.isRegularFile(fullPath)) {
-                    try {
-                        String content = Files.readString(fullPath);
-                        fileContents.put(filePath, content);
-                        Log.debug(MessageFormat.format("Read file: {0} ({1} chars)", 
-                                filePath, content.length()));
-                    } catch (Exception e) {
-                        Log.warn(MessageFormat.format("Failed to read file {0}: {1}", 
-                                filePath, e.getMessage()));
-                        notFound.add(filePath + " (read error: " + e.getMessage() + ")");
+                try {
+                    GitHubRestClient.GitHubFileContent fileContent =
+                        githubClient.getFileContent(owner, repo, filePath, branch, authHeader);
+                    
+                    // Decode base64 content
+                    String content = new String(Base64.getDecoder().decode(fileContent.content().replace("\n", "")));
+                    fileContents.put(filePath, content);
+                    
+                    // Add line numbers to help agent understand structure
+                    String[] lines = content.split("\n");
+                    StringBuilder numberedContent = new StringBuilder();
+                    for (int i = 0; i < lines.length; i++) {
+                        numberedContent.append(String.format("%4d | %s\n", i + 1, lines[i]));
                     }
-                } else {
-                    Log.warn(MessageFormat.format("File not found: {0}", filePath));
+                    fileContentsWithLineNumbers.put(filePath, numberedContent.toString());
+                    
+                    Log.debug(MessageFormat.format("Read file: {0} ({1} lines, {2} chars)",
+                            filePath, lines.length, content.length()));
+                    
+                } catch (Exception e) {
+                    Log.warn(MessageFormat.format("File not found or error reading: {0} - {1}",
+                            filePath, e.getMessage()));
                     notFound.add(filePath);
                 }
             }
@@ -110,12 +126,14 @@ public class SourceCodeTool {
             result.put("branch", branch);
             result.put("filesRead", fileContents.size());
             result.put("files", fileContents);
+            result.put("filesWithLineNumbers", fileContentsWithLineNumbers);
             
             if (!notFound.isEmpty()) {
                 result.put("notFound", notFound);
+                result.put("hint", "File paths must match repository structure. For Java: src/main/java/[package]/ClassName.java");
             }
             
-            Log.info(MessageFormat.format("Successfully read {0}/{1} files", 
+            Log.info(MessageFormat.format("Successfully read {0}/{1} files",
                     fileContents.size(), filePaths.size()));
             
             return result;
@@ -128,11 +146,24 @@ public class SourceCodeTool {
                 "repoUrl", repoUrl,
                 "branch", branch
             );
-        } finally {
-            // Cleanup temporary directory
-            if (repoPath != null) {
-                gitOps.cleanup(repoPath);
-            }
         }
+    }
+    
+    /**
+     * Format authorization header for GitHub API
+     */
+    private String formatAuthHeader(String token) {
+        return "Bearer " + token;
+    }
+    
+    /**
+     * Extract owner and repository name from URL
+     * @return Array with [owner, repo]
+     */
+    private String[] extractOwnerAndRepo(String repoUrl) {
+        // Handle formats: https://github.com/owner/repo or https://github.com/owner/repo.git
+        String cleaned = repoUrl.replace("https://github.com/", "")
+            .replace(".git", "");
+        return cleaned.split("/", 2);
     }
 }

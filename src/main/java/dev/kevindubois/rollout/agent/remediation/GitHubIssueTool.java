@@ -34,18 +34,19 @@ public class GitHubIssueTool {
     
     /**
      * Create a GitHub issue to report a problem
-     * 
+     *
      * @param repoUrl URL of the GitHub repository
      * @param title Issue title
      * @param description Detailed description of the problem
      * @param rootCause Root cause analysis
      * @param namespace Kubernetes namespace
      * @param podName Kubernetes pod name
+     * @param diagnosticSummary Additional diagnostic information (logs, events, metrics)
      * @param labels Comma-separated list of labels to apply
      * @param assignees Comma-separated list of GitHub usernames to assign
      * @return Result of the issue creation
      */
-    @Tool("Create a GitHub issue to report a problem that needs human attention")
+    @Tool("Create a GitHub issue to report a problem that needs human attention. Include detailed diagnostic information to help pinpoint the issue.")
     public Map<String, Object> createGitHubIssue(
             String repoUrl,
             String title,
@@ -53,6 +54,7 @@ public class GitHubIssueTool {
             String rootCause,
             String namespace,
             String podName,
+            String diagnosticSummary,
             String labels,
             String assignees
     ) {
@@ -72,7 +74,7 @@ public class GitHubIssueTool {
             String authHeader = "Bearer " + (githubToken != null ? githubToken : "");
             
             // Build issue body
-            String issueBody = generateIssueBody(description, rootCause, namespace, podName);
+            String issueBody = generateIssueBody(description, rootCause, namespace, podName, diagnosticSummary);
             
             // Parse labels and assignees with defensive sanitization
             // Strip out any brackets, quotes, or JSON-like formatting that LLM might add
@@ -136,7 +138,8 @@ public class GitHubIssueTool {
             String description,
             String rootCause,
             String namespace,
-            String podName
+            String podName,
+            String diagnosticSummary
     ) {
         if (rootCause == null || rootCause.isEmpty()) {
             rootCause = "Not available";
@@ -150,13 +153,23 @@ public class GitHubIssueTool {
             podName = "unknown";
         }
         
+        // Build diagnostic section if available
+        String diagnosticSection = "";
+        if (diagnosticSummary != null && !diagnosticSummary.isEmpty()) {
+            diagnosticSection = String.format("""
+                
+                ## Diagnostic Information
+                %s
+                """, diagnosticSummary);
+        }
+        
         return String.format("""
             ## Problem Description
             %s
             
             ## Root Cause Analysis
             %s
-            
+            %s
             ## Related Kubernetes Resources
             - **Namespace**: `%s`
             - **Pod**: `%s`
@@ -167,6 +180,7 @@ public class GitHubIssueTool {
             """,
             description,
             rootCause,
+            diagnosticSection,
             namespace,
             podName
         );
