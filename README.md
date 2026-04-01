@@ -1,9 +1,9 @@
-# Kubernetes AI Agent
+# Software Analysis and Remediation AI Agent
 
 [![Build and Push](https://github.com/kdubois/kubernetes-agent/actions/workflows/build.yml/badge.svg)](https://github.com/kdubois/kubernetes-agent/actions/workflows/build.yml)
 [![codecov](https://codecov.io/gh/kdubois/kubernetes-agent/branch/main/graph/badge.svg)](https://codecov.io/gh/kdubois/kubernetes-agent)
 
-An autonomous AI agent for Kubernetes debugging and remediation, powered by Quarkus LangChain4j with support for Google Gemini AI and OpenAI.
+An autonomous AI agent for Kubernetes software delivery debugging and remediation, powered by Quarkus LangChain4j with support for Google Gemini AI and OpenAI.
 
 ## Overview
 
