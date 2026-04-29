@@ -17,6 +17,7 @@ import java.util.regex.Pattern;
 
 import dev.kevindubois.rollout.agent.workflow.KubernetesWorkflow;
 import dev.kevindubois.rollout.agent.agents.RemediationAgent;
+import dev.kevindubois.rollout.agent.model.ActivityEventStore;
 import dev.kevindubois.rollout.agent.model.AnalysisResult;
 import dev.kevindubois.rollout.agent.model.KubernetesAgentRequest;
 import dev.kevindubois.rollout.agent.model.KubernetesAgentResponse;
@@ -45,6 +46,9 @@ public class KubernetesAgentResource {
     @Inject
     @RestClient
     GitHubRestClient githubClient;
+
+    @Inject
+    ActivityEventStore activityEvents;
      
     /**
      * Main analyze endpoint
@@ -55,7 +59,8 @@ public class KubernetesAgentResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response analyze(KubernetesAgentRequest request) {
         Log.info(MessageFormat.format("Received analysis request from user: {0}", request.userId()));
-        
+        activityEvents.publish("ANALYSIS_START", "Analysis request received", "User: " + request.userId());
+
         try {
             // Extract context values for later use
             Map<String, Object> context = request.context();
@@ -82,6 +87,10 @@ public class KubernetesAgentResource {
                 "Multi-agent workflow analysis"
             );
             
+            activityEvents.publish("DECISION",
+                analysisResult.promote() ? "PROMOTE canary" : "ROLLBACK canary",
+                "Confidence: " + analysisResult.confidence() + "% | " + analysisResult.analysis());
+
             // Add context to result if not already present (fallback mechanism)
             if (analysisResult.repoUrl() == null && repoUrl != null) {
                 analysisResult = new AnalysisResult(
@@ -128,6 +137,7 @@ public class KubernetesAgentResource {
             final String finalPrompt = buildPrompt(request);
             if (!finalResult.promote() && repoUrl != null && !repoUrl.isEmpty()) {
                 Log.info("Triggering async remediation for rollback decision");
+                activityEvents.publish("REMEDIATION", "Remediation triggered", "Analyzing root cause for automated fix");
 
                 // Only pre-fetch source code for code bugs, not operational issues
                 final String enrichedPrompt;
@@ -153,8 +163,10 @@ public class KubernetesAgentResource {
                                 "Async remediation completed - GitHub artifact created: {0}",
                                 remediationResult.prLink()
                             ));
+                            activityEvents.publish("REMEDIATION", "GitHub artifact created", remediationResult.prLink());
                         } else {
                             Log.info("Async remediation completed - no GitHub artifact created");
+                            activityEvents.publish("REMEDIATION", "Remediation completed", "No GitHub artifact created");
                         }
                     } catch (Exception e) {
                         Log.error("Async remediation failed (non-critical)", e);
@@ -170,6 +182,7 @@ public class KubernetesAgentResource {
             Log.error(MessageFormat.format("Error processing request from user: {0}", request.userId()), e);
             Log.error(MessageFormat.format("Request details - Prompt: {0}", request.prompt()));
             Log.error(MessageFormat.format("Request details - Context: {0}", request.context()));
+            activityEvents.publish("ERROR", "Analysis failed", e.getMessage());
             
             // Log additional details for debugging
             if (e instanceof NullPointerException) {
