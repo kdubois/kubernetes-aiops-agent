@@ -1,5 +1,6 @@
 package dev.kevindubois.rollout.agent.workflow;
 
+import dev.kevindubois.rollout.agent.agents.DiagnosticAgent;
 import dev.kevindubois.rollout.agent.model.AnalysisResult;
 import dev.kevindubois.rollout.agent.observability.ActivityEventListener;
 import dev.langchain4j.agentic.declarative.AgentListenerSupplier;
@@ -20,7 +21,7 @@ public interface KubernetesWorkflow {
         description = "Complete Kubernetes rollout analysis workflow",
         outputKey = "analysisResult",
         subAgents = {
-            DataCollectionWorkflow.class,
+            DiagnosticAgent.class,
             AnalysisLoop.class
         }
     )

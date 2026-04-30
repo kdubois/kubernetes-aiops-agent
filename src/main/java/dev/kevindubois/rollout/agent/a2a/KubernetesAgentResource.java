@@ -244,7 +244,7 @@ public class KubernetesAgentResource {
         prompt.append("- Skip getEvents if pods are Running/Ready\n");
         prompt.append("- Each tool can only be called ONCE with the same parameters\n\n");
         prompt.append("The multi-agent workflow will:\n");
-        prompt.append("1. DataCollectionWorkflow: Gather logs and metrics in parallel\n");
+        prompt.append("1. DiagnosticAgent: Gather data efficiently (1-2 tool calls using getCanaryDiagnostics)\n");
         prompt.append("2. AnalysisAgent: Analyze the gathered data\n");
         prompt.append("3. RemediationAgent: Implement fixes if needed\n");
         
