@@ -150,21 +150,33 @@ public class KubernetesAgentResource {
                         // Brief delay to avoid rate limiting from rapid sequential LLM calls
                         Thread.sleep(3000);
                         Log.info("Starting async remediation");
-                        AnalysisResult remediationResult = remediationAgent.implementRemediation(
-                            enrichedPrompt, finalResult, repoUrl, baseBranch
-                        );
-                        if (remediationResult.prLink() != null && !remediationResult.prLink().isEmpty()) {
+                        AnalysisResult remediationResult = null;
+                        try {
+                            remediationResult = remediationAgent.implementRemediation(
+                                enrichedPrompt, finalResult, repoUrl, baseBranch
+                            );
+                        } catch (dev.langchain4j.service.output.OutputParsingException e) {
+                            Log.error("RemediationAgent failed to parse LLM output - the model may not have returned valid JSON", e);
+                            activityEvents.publish("REMEDIATION", "Failed", "Output parsing error: " + e.getMessage());
+                            return;
+                        }
+                        
+                        if (remediationResult != null && remediationResult.prLink() != null && !remediationResult.prLink().isEmpty()) {
                             Log.info(MessageFormat.format(
                                 "Async remediation completed - GitHub artifact created: {0}",
                                 remediationResult.prLink()
                             ));
                             activityEvents.publish("REMEDIATION", "GitHub artifact created", remediationResult.prLink());
+                        } else if (remediationResult == null) {
+                            Log.warn("Remediation agent returned null - LLM may have failed to produce valid JSON output");
+                            activityEvents.publish("REMEDIATION", "Failed", "Agent returned null");
                         } else {
                             Log.info("Async remediation completed - no GitHub artifact created");
                             activityEvents.publish("REMEDIATION", "Remediation completed", "No GitHub artifact created");
                         }
                     } catch (Exception e) {
                         Log.error("Async remediation failed (non-critical)", e);
+                        activityEvents.publish("REMEDIATION", "Failed", "Exception: " + e.getMessage());
                     }
                 });
             } else {
