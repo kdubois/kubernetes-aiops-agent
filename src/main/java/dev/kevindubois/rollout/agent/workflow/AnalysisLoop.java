@@ -11,12 +11,12 @@ import dev.langchain4j.agentic.declarative.ExitCondition;
 public interface AnalysisLoop {
     
     @LoopAgent(
-        description = "Analyze Kubernetes diagnostics with retry until confidence threshold is met",
+        description = "Analyze Kubernetes data with retry until confidence threshold is met",
         outputKey = "analysisResult",
         maxIterations = 3,
         subAgents = {AnalysisAgent.class, ScoringAgent.class}
     )
-    AnalysisResult analyzeWithRetry(String diagnosticData);
+    AnalysisResult analyzeWithRetry(String collectedData);
     
     @ExitCondition
     static boolean shouldExit(AgenticScope scope) {

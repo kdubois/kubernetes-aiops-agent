@@ -335,7 +335,7 @@ class K8sToolsTest {
         when(canaryPodResource.getLog(anyBoolean())).thenReturn("Canary logs");
         
         // When
-        Map<String, Object> result = k8sTools.getCanaryDiagnostics(namespace, "app", 200);
+        Map<String, Object> result = k8sTools.getCanaryLogsAndPodInfo(namespace, "app", 200);
         
         // Then
         assertNotNull(result);
@@ -382,7 +382,7 @@ class K8sToolsTest {
         when(canaryPodResource.getLog(anyBoolean())).thenReturn("Canary logs");
         
         // When
-        Map<String, Object> result = k8sTools.getCanaryDiagnostics(namespace, "app", 200);
+        Map<String, Object> result = k8sTools.getCanaryLogsAndPodInfo(namespace, "app", 200);
         
         // Then
         assertNotNull(result);
@@ -422,7 +422,7 @@ class K8sToolsTest {
         when(stablePodResource.getLog(anyBoolean())).thenReturn("Stable logs");
         
         // When
-        Map<String, Object> result = k8sTools.getCanaryDiagnostics(namespace, "app", 200);
+        Map<String, Object> result = k8sTools.getCanaryLogsAndPodInfo(namespace, "app", 200);
         
         // Then
         assertNotNull(result);
@@ -437,7 +437,7 @@ class K8sToolsTest {
     @Test
     void testGetCanaryDiagnostics_EmptyNamespace() {
         // When
-        Map<String, Object> result = k8sTools.getCanaryDiagnostics("", "app", 200);
+        Map<String, Object> result = k8sTools.getCanaryLogsAndPodInfo("", "app", 200);
         
         // Then
         assertNotNull(result);
@@ -473,7 +473,7 @@ class K8sToolsTest {
         when(stablePodResource.getLog(anyBoolean())).thenReturn("Stable logs");
         
         // When - passing null for tailLines to test default value
-        Map<String, Object> result = k8sTools.getCanaryDiagnostics(namespace, "app", null);
+        Map<String, Object> result = k8sTools.getCanaryLogsAndPodInfo(namespace, "app", null);
         
         // Then
         assertNotNull(result);

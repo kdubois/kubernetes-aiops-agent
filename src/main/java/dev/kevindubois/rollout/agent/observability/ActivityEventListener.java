@@ -26,8 +26,8 @@ public class ActivityEventListener implements AgentListener {
     public void beforeAgentInvocation(AgentRequest request) {
         String name = request.agentName();
         String message = switch (name) {
-            case "DiagnosticAgent" -> "Gathering stable and canary pod logs";
-            case "MetricsDiagnosticAgent" -> "Collecting stable and canary metrics";
+            case "LogsAgent" -> "Gathering stable and canary pod logs";
+            case "MetricsAgent" -> "Collecting stable and canary metrics";
             case "AnalysisAgent" -> "Analyzing collected logs and metrics";
             case "ScoringAgent" -> "Evaluating analysis quality and confidence";
             default -> name + " starting";

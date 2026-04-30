@@ -36,8 +36,8 @@ public interface RemediationAgent {
             - content: The new line content (for insert/replace actions)
         - fixDescription: Brief description of what the fix does
         - rootCause: Use rootCause field from analysisResult
-        - namespace: Extract from diagnosticData
-        - podName: Extract canary pod name from diagnosticData
+        - namespace: Extract from collectedData
+        - podName: Extract canary pod name from collectedData
         - testingRecommendations: Suggest how to verify the fix
 
         LINE NUMBER RULES:

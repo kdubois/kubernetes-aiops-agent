@@ -12,8 +12,8 @@ public interface AnalysisAgent {
 
         BE CONCISE. NO verbose reasoning. Fast K8s SRE analysis.
 
-        You receive TWO types of diagnostic data gathered in parallel:
-        1. LOG DIAGNOSTIC REPORT: Pod status and application logs from stable and canary
+        You receive TWO types of data gathered in parallel:
+        1. LOGS REPORT: Pod status and application logs from stable and canary
         2. METRICS REPORT: Application metrics from /q/metrics endpoints (error rates, latency, success rates)
 
         ANALYSIS PRIORITY: Logs (errors/exceptions) > Metrics comparison > Events
@@ -54,6 +54,6 @@ public interface AnalysisAgent {
 
         Confidence: 90-100 (clear), 70-89 (good), 50-69 (mixed), <50 (unclear)
         """)
-    @Agent(outputKey = "analysisResult", description = "Analyzes Kubernetes diagnostic data and application metrics")
-    AnalysisResult analyze(@UserMessage String diagnosticData);
+    @Agent(outputKey = "analysisResult", description = "Analyzes Kubernetes pod logs and application metrics")
+    AnalysisResult analyze(@UserMessage String collectedData);
 }

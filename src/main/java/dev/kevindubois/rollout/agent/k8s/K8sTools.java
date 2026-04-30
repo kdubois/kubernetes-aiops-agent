@@ -921,31 +921,31 @@ public class K8sTools {
 
     /**
      * Fetches both stable and canary pod information and logs in a single call.
-     * 
+     *
      * Functionality:
      * 1. Fetches all pods with role=stable label
-     * 2. Fetches all pods with role=canary label  
+     * 2. Fetches all pods with role=canary label
      * 3. Gets logs from the first stable pod (if exists)
      * 4. Gets logs from the first canary pod (if exists)
      * 5. Returns combined data structure with pod info and logs for both
-     * 
-     * 
+     *
+     *
      * @param namespace The Kubernetes namespace (e.g., 'default')
      * @param containerName The container name to get logs from (e.g., 'quarkus-demo')
      * @param tailLines Number of log lines to fetch per pod (default: 200)
-     * @return Combined diagnostic data for both stable and canary deployments
+     * @return Combined pod info and logs for both stable and canary deployments
      */
-    @Tool("canary diagnostics - fetches both stable and canary pod info and logs.")
+    @Tool("Fetches both stable and canary pod info and logs in a single call.")
     @RunOnVirtualThread
-    public Map<String, Object> getCanaryDiagnostics(String namespace, String containerName, Integer tailLines) {
-        Log.info("=== Executing Tool: getCanaryDiagnostics (with virtual threads) ===");
+    public Map<String, Object> getCanaryLogsAndPodInfo(String namespace, String containerName, Integer tailLines) {
+        Log.info("=== Executing Tool: getCanaryLogsAndPodInfo (with virtual threads) ===");
 
         if (namespace == null || namespace.isEmpty()) {
             return Map.of("error", "namespace is required");
         }
 
         int lines = (tailLines != null && tailLines > 0) ? tailLines : 200;
-        Log.info(MessageFormat.format("Getting canary diagnostics for namespace: {0}, container: {1}, lines: {2}",
+        Log.info(MessageFormat.format("Getting canary logs and pod info for namespace: {0}, container: {1}, lines: {2}",
                 namespace, containerName, lines));
 
         try {
@@ -1049,7 +1049,7 @@ public class K8sTools {
             result.put("stable", stableData);
             result.put("canary", canaryData);
 
-            Log.info("Successfully retrieved canary diagnostics (parallel execution)");
+            Log.info("Successfully retrieved canary logs and pod info (parallel execution)");
 
             // Publish separate completion events for stable and canary
             String stableStatus = stableData.containsKey("podName") ? stableData.get("phase") + "" : "not found";
@@ -1067,7 +1067,7 @@ public class K8sTools {
             return result;
 
         } catch (Exception e) {
-            Log.error("Error getting canary diagnostics", e);
+            Log.error("Error getting canary logs and pod info", e);
             return Map.of("error", e.getMessage());
         }
     }

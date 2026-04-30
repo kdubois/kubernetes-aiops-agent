@@ -6,7 +6,7 @@ import dev.langchain4j.service.SystemMessage;
 import dev.langchain4j.service.UserMessage;
 import io.quarkiverse.langchain4j.ToolBox;
 
-public interface MetricsDiagnosticAgent {
+public interface MetricsAgent {
 
     @SystemMessage("""
         /no_think
@@ -28,7 +28,7 @@ public interface MetricsDiagnosticAgent {
         === END ===
         """)
     @UserMessage("Gather application metrics for: {message}")
-    @Agent(outputKey = "metricsDiagnosticData", description = "Gathers application metrics from /q/metrics endpoints of stable and canary pods")
+    @Agent(outputKey = "metricsData", description = "Gathers application metrics from /q/metrics endpoints of stable and canary pods")
     @ToolBox(K8sTools.class)
     String gatherMetrics(String message);
 }

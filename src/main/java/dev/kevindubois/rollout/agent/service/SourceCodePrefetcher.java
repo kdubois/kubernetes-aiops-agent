@@ -17,7 +17,7 @@ import dev.kevindubois.rollout.agent.remediation.SourceCodeTool;
 
 /**
  * Service for pre-fetching source code files from GitHub repositories.
- * Extracts file paths from diagnostic data and fetches relevant source files.
+ * Extracts file paths from collected data and fetches relevant source files.
  */
 @ApplicationScoped
 public class SourceCodePrefetcher {
@@ -32,13 +32,13 @@ public class SourceCodePrefetcher {
     GitHubRestClient githubClient;
 
     /**
-     * Pre-fetch source code files by extracting file paths from diagnostic/analysis data.
+     * Pre-fetch source code files by extracting file paths from collected/analysis data.
      */
-    public String prefetchSourceCode(String diagnosticData, String repoUrl, String baseBranch) {
-        List<String> filePaths = extractFilePathsFromStackTraces(diagnosticData);
+    public String prefetchSourceCode(String collectedData, String repoUrl, String baseBranch) {
+        List<String> filePaths = extractFilePathsFromStackTraces(collectedData);
 
         if (filePaths.isEmpty()) {
-            List<String> classNames = extractClassNames(diagnosticData);
+            List<String> classNames = extractClassNames(collectedData);
             if (!classNames.isEmpty()) {
                 Log.info(MessageFormat.format("No file paths from stack traces, searching repo for classes: {0}", classNames));
                 filePaths = searchRepoForClasses(repoUrl, baseBranch, classNames);
