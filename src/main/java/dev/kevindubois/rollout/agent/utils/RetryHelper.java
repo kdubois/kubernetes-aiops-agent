@@ -18,14 +18,17 @@ public class RetryHelper {
 	private static final Duration INITIAL_BACKOFF = Duration.ofSeconds(1);
 	private static final Duration MAX_BACKOFF = Duration.ofSeconds(60);
 	private static final double BACKOFF_MULTIPLIER = 2.0;
-	
-	// Pattern to extract retry time from error message: "Please retry in 59.955530121s"
 	private static final Pattern RETRY_PATTERN = Pattern.compile("Please retry in ([0-9.]+)s");
 	
-	/**
-	 * Execute an operation with exponential backoff retry on 429 errors
-	 */
+	public static <T> T executeWithRetryOnTransientErrors(Callable<T> operation, String operationName) throws Exception {
+		return executeWithRetry(operation, operationName, true);
+	}
+	
 	public static <T> T executeWithRetry(Callable<T> operation, String operationName) throws Exception {
+		return executeWithRetry(operation, operationName, false);
+	}
+	
+	private static <T> T executeWithRetry(Callable<T> operation, String operationName, boolean includeTransientErrors) throws Exception {
 		int attempt = 0;
 		Duration currentBackoff = INITIAL_BACKOFF;
 		Exception lastException = null;
@@ -39,41 +42,16 @@ public class RetryHelper {
 				
 			} catch (Exception e) {
 				lastException = e;
+				boolean shouldRetry = is429Error(e) || (includeTransientErrors && isTransientGeminiError(e));
 				
-				// Check if it's a 429 rate limit error
-				if (is429Error(e)) {
-					// Extract retry delay from error message if available
-					Duration waitTime = extractRetryDelay(e);
-					if (waitTime != null) {
-						Log.warn(MessageFormat.format("Rate limit exceeded for {0}, API suggests waiting {1} seconds",
-							operationName, waitTime.getSeconds()));
-						currentBackoff = waitTime;
-					} else {
-						Log.warn(MessageFormat.format("Rate limit exceeded for {0} (attempt {1}/{2}), using exponential backoff: {3} seconds",
-							operationName, attempt, MAX_RETRIES, currentBackoff.getSeconds()));
-					}
-					
-					// Log quota details if available
-					logQuotaDetails(e);
-					
-					if (attempt < MAX_RETRIES) {
-						try {
-							Log.info(MessageFormat.format("Waiting {0} seconds before retry...", currentBackoff.getSeconds()));
-							Thread.sleep(currentBackoff.toMillis());
-						} catch (InterruptedException ie) {
-							Thread.currentThread().interrupt();
-							throw new RuntimeException("Interrupted during retry backoff", ie);
-						}
-						
-						// Calculate next backoff (exponential)
-						currentBackoff = Duration.ofMillis((long) (currentBackoff.toMillis() * BACKOFF_MULTIPLIER));
-						if (currentBackoff.compareTo(MAX_BACKOFF) > 0) {
-							currentBackoff = MAX_BACKOFF;
-						}
-					}
-				} else {
-					// For non-429 errors, don't retry
+				if (!shouldRetry) {
 					throw e;
+				}
+				
+				handleRetryableError(e, operationName, attempt, includeTransientErrors);
+				
+				if (attempt < MAX_RETRIES) {
+					currentBackoff = waitAndCalculateNextBackoff(e, operationName, currentBackoff);
 				}
 			}
 		}
@@ -83,16 +61,10 @@ public class RetryHelper {
 		throw new RuntimeException(MessageFormat.format("Max retries exceeded after {0} attempts for {1}", attempt, operationName), lastException);
 	}
 	
-	/**
-	 * Check if the exception is a 429 rate limit error
-	 */
 	private static boolean is429Error(Exception e) {
 		String message = e.getMessage();
-		if (message == null) {
-			return false;
-		}
+		if (message == null) return false;
 		
-		// Check for common 429 error patterns (case-insensitive)
 		String lowerMessage = message.toLowerCase();
 		return lowerMessage.contains("429") ||
 			lowerMessage.contains("quota") ||
@@ -101,18 +73,13 @@ public class RetryHelper {
 			lowerMessage.contains("exceeded your current quota");
 	}
 	
-	/**
-	 * Check if the exception is a transient Gemini API error that should be retried
-	 */
 	private static boolean isTransientGeminiError(Exception e) {
-		// Check for NullPointerException from Gemini response handler
 		if (e instanceof NullPointerException) {
 			String message = e.getMessage();
 			if (message != null && message.contains("\"parts\" is null")) {
 				return true;
 			}
 			
-			// Check stack trace for Gemini response handler
 			StackTraceElement[] stackTrace = e.getStackTrace();
 			if (stackTrace != null && stackTrace.length > 0) {
 				for (StackTraceElement element : stackTrace) {
@@ -123,7 +90,6 @@ public class RetryHelper {
 			}
 		}
 		
-		// Check for other transient errors
 		String message = e.getMessage();
 		if (message != null) {
 			return message.contains("503") ||
@@ -135,77 +101,39 @@ public class RetryHelper {
 		return false;
 	}
 	
-	/**
-	 * Execute an operation with retry on transient errors (429 and Gemini API errors)
-	 */
-	public static <T> T executeWithRetryOnTransientErrors(Callable<T> operation, String operationName) throws Exception {
-		int attempt = 0;
-		Duration currentBackoff = INITIAL_BACKOFF;
-		Exception lastException = null;
-		
-		while (attempt < MAX_RETRIES) {
-			attempt++;
-			
-			try {
-				Log.debug(MessageFormat.format("Executing {0} (attempt {1}/{2})", operationName, attempt, MAX_RETRIES));
-				return operation.call();
-				
-			} catch (Exception e) {
-				lastException = e;
-				
-				// Check if it's a retryable error
-				boolean shouldRetry = is429Error(e) || isTransientGeminiError(e);
-				
-				if (shouldRetry) {
-					if (is429Error(e)) {
-						// Extract retry delay from error message if available
-						Duration waitTime = extractRetryDelay(e);
-						if (waitTime != null) {
-							Log.warn(MessageFormat.format("Rate limit exceeded for {0}, API suggests waiting {1} seconds",
-								operationName, waitTime.getSeconds()));
-							currentBackoff = waitTime;
-						} else {
-							Log.warn(MessageFormat.format("Rate limit exceeded for {0} (attempt {1}/{2}), using exponential backoff: {3} seconds",
-								operationName, attempt, MAX_RETRIES, currentBackoff.getSeconds()));
-						}
-						logQuotaDetails(e);
-					} else {
-						Log.warn(MessageFormat.format("Transient Gemini API error for {0} (attempt {1}/{2}): {3}",
-							operationName, attempt, MAX_RETRIES, e.getClass().getSimpleName()));
-						Log.warn(MessageFormat.format("Error details: {0}", e.getMessage()));
-					}
-					
-					if (attempt < MAX_RETRIES) {
-						try {
-							Log.info(MessageFormat.format("Waiting {0} seconds before retry...", currentBackoff.getSeconds()));
-							Thread.sleep(currentBackoff.toMillis());
-						} catch (InterruptedException ie) {
-							Thread.currentThread().interrupt();
-							throw new RuntimeException("Interrupted during retry backoff", ie);
-						}
-						
-						// Calculate next backoff (exponential)
-						currentBackoff = Duration.ofMillis((long) (currentBackoff.toMillis() * BACKOFF_MULTIPLIER));
-						if (currentBackoff.compareTo(MAX_BACKOFF) > 0) {
-							currentBackoff = MAX_BACKOFF;
-						}
-					}
-				} else {
-					// For non-retryable errors, don't retry
-					throw e;
-				}
+	private static void handleRetryableError(Exception e, String operationName, int attempt, boolean includeTransientErrors) {
+		if (is429Error(e)) {
+			Duration waitTime = extractRetryDelay(e);
+			if (waitTime != null) {
+				Log.warn(MessageFormat.format("Rate limit exceeded for {0}, API suggests waiting {1} seconds",
+					operationName, waitTime.getSeconds()));
+			} else {
+				Log.warn(MessageFormat.format("Rate limit exceeded for {0} (attempt {1}/{2})",
+					operationName, attempt, MAX_RETRIES));
 			}
+			logQuotaDetails(e);
+		} else if (includeTransientErrors) {
+			Log.warn(MessageFormat.format("Transient API error for {0} (attempt {1}/{2}): {3}",
+				operationName, attempt, MAX_RETRIES, e.getClass().getSimpleName()));
 		}
-		
-		// Max retries exceeded
-		Log.error(MessageFormat.format("Max retries ({0}) exceeded for {1}", MAX_RETRIES, operationName));
-		throw new RuntimeException(MessageFormat.format("Max retries exceeded after {0} attempts for {1}", attempt, operationName), lastException);
 	}
 	
-	/**
-	 * Extract retry delay from error message
-	 * Looks for patterns like "Please retry in 59.955530121s"
-	 */
+	private static Duration waitAndCalculateNextBackoff(Exception e, String operationName, Duration currentBackoff) throws RuntimeException {
+		Duration waitTime = extractRetryDelay(e);
+		Duration effectiveBackoff = waitTime != null ? waitTime : currentBackoff;
+		
+		try {
+			Log.info(MessageFormat.format("Waiting {0} seconds before retry...", effectiveBackoff.getSeconds()));
+			Thread.sleep(effectiveBackoff.toMillis());
+		} catch (InterruptedException ie) {
+			Thread.currentThread().interrupt();
+			throw new RuntimeException("Interrupted during retry backoff", ie);
+		}
+		
+		Duration nextBackoff = Duration.ofMillis((long) (currentBackoff.toMillis() * BACKOFF_MULTIPLIER));
+		return nextBackoff.compareTo(MAX_BACKOFF) > 0 ? MAX_BACKOFF : nextBackoff;
+	}
+	
 	private static Duration extractRetryDelay(Exception e) {
 		String message = e.getMessage();
 		if (message == null) {

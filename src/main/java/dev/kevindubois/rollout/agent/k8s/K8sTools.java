@@ -223,44 +223,40 @@ public class K8sTools {
     public Map<String, Object> getLogs(String namespace, String podName, String containerName, Boolean previous, Integer tailLines) {
         Log.info("=== Executing Tool: getLogs ===");
         activityEvents.publish("TOOL_CALL", "Fetching pod logs", "pod=" + podName);
+        return getLogsInternal(namespace, podName, containerName, previous, tailLines);
+    }
 
+    private Map<String, Object> getLogsInternal(String namespace, String podName, String containerName, Boolean previous, Integer tailLines) {
         if (namespace == null || namespace.isEmpty() || podName == null || podName.isEmpty()) {
             return Map.of("error", "namespace and podName are required and cannot be empty");
         }
-        
+
         boolean getPrevious = previous != null && previous;
-        // Default to 200 lines to capture runtime errors, not just startup logs
         int lines = (tailLines != null && tailLines > 0) ? tailLines : 200;
         Log.info(MessageFormat.format("Getting logs for pod: {0}/{1}, container: {2}, previous: {3}, lines: {4}",
                 namespace, podName, containerName, getPrevious, lines));
-        
-        
+
+
         try {
-            // First, check if the pod exists
             Pod pod = k8sClient.pods()
                 .inNamespace(namespace)
                 .withName(podName)
                 .get();
-            
+
             if (pod == null) {
                 String errorMsg = MessageFormat.format("Pod not found: {0}/{1}", namespace, podName);
                 Log.warn(errorMsg);
                 return Map.of("error", errorMsg);
             }
-            
-            // Validate and auto-detect container name if needed
+
             List<Container> containers = pod.getSpec().getContainers();
             String targetContainer;
-            
-            // If no container name specified, auto-detect efficiently
+
             if (containerName == null || containerName.isEmpty()) {
                 if (containers != null && containers.size() == 1) {
-                    // Single-container pod - use it directly without warning
                     targetContainer = containers.get(0).getName();
                     Log.debug(MessageFormat.format("Single-container pod. Using container: {0}", targetContainer));
                 } else if (containers != null && containers.size() > 1) {
-                    // Multi-container pod - default to the first non-sidecar container
-                    // Typically istio-proxy, envoy, etc. are sidecars
                     targetContainer = containers.stream()
                         .filter(c -> !c.getName().contains("proxy") &&
                                    !c.getName().contains("envoy") &&
@@ -268,25 +264,22 @@ public class K8sTools {
                         .findFirst()
                         .map(Container::getName)
                         .orElse(containers.get(0).getName());
-                    
+
                     Log.info(MessageFormat.format("Multi-container pod detected. Using container: {0}", targetContainer));
                 } else {
                     targetContainer = null;
                 }
             } else {
-                // Container name provided - verify it exists in the pod
                 final String requestedContainer = containerName;
                 boolean containerExists = containers.stream()
                     .anyMatch(c -> c.getName().equals(requestedContainer));
-                
+
                 if (!containerExists) {
-                    // Only log warning if multiple containers exist
                     if (containers != null && containers.size() > 1) {
                         Log.warn(MessageFormat.format("Container ''{0}'' not found in pod. Available containers: {1}. Auto-detecting...",
                             requestedContainer,
                             containers.stream().map(Container::getName).collect(Collectors.joining(", "))));
                     }
-                    // Fall through to auto-detection for single-container pods
                     if (containers != null && containers.size() == 1) {
                         targetContainer = containers.get(0).getName();
                         Log.debug(MessageFormat.format("Using single available container: {0}", targetContainer));
@@ -305,23 +298,23 @@ public class K8sTools {
                     targetContainer = containerName;
                 }
             }
-            
+
             var podResource = k8sClient.pods()
                 .inNamespace(namespace)
                 .withName(podName);
-            
+
             String logs;
             if (targetContainer != null && !targetContainer.isEmpty()) {
                 logs = podResource.inContainer(targetContainer).tailingLines(lines).getLog(getPrevious);
             } else {
                 logs = podResource.tailingLines(lines).getLog(getPrevious);
             }
-            
+
             if (logs == null) {
                 logs = "(no logs available)";
             }
             Log.info(MessageFormat.format("Retrieved {0} characters of logs", logs.length()));
-            
+
             return Map.of(
                 "namespace", namespace,
                 "podName", podName,
@@ -329,7 +322,7 @@ public class K8sTools {
                 "previous", getPrevious,
                 "logs", logs
             );
-            
+
         } catch (Exception e) {
             Log.error("Error getting logs", e);
             return Map.of("error", e.getMessage());
@@ -679,16 +672,19 @@ public class K8sTools {
     public Map<String, Object> fetchApplicationMetrics(String namespace, String podName, String metricsPath, Integer port) {
         Log.info("=== Executing Tool: fetchApplicationMetrics ===");
         activityEvents.publish("TOOL_CALL", "Fetching app metrics", "pod=" + podName);
+        return fetchApplicationMetricsInternal(namespace, podName, metricsPath, port);
+    }
 
+    private Map<String, Object> fetchApplicationMetricsInternal(String namespace, String podName, String metricsPath, Integer port) {
         if (namespace == null || namespace.isEmpty() || podName == null || podName.isEmpty()) {
             return Map.of("error", "namespace and podName are required and cannot be empty");
         }
-        
+
         String path = (metricsPath != null && !metricsPath.isEmpty()) ? metricsPath : "/q/metrics";
         int targetPort = (port != null && port > 0) ? port : 8080;
-        
+
         Log.info("Fetching application metrics from pod: " + namespace + "/" + podName + " at " + path + ":" + targetPort);
-        
+
         try {
             Pod pod = k8sClient.pods()
                 .inNamespace(namespace)
@@ -834,7 +830,6 @@ public class K8sTools {
     @RunOnVirtualThread
     public Map<String, Object> getCanaryMetrics(String namespace) {
         Log.info("=== Executing Tool: getCanaryMetrics ===");
-        activityEvents.publish("TOOL_CALL", "Fetching canary metrics", "namespace=" + namespace);
 
         if (namespace == null || namespace.isEmpty()) {
             return Map.of("error", "namespace is required");
@@ -866,11 +861,23 @@ public class K8sTools {
             List<Pod> stablePods = stablePodsFuture.join();
             List<Pod> canaryPods = canaryPodsFuture.join();
 
+            // Publish events after pod discovery so we can report the count
+            if (!stablePods.isEmpty()) {
+                activityEvents.publish("TOOL_CALL", "Fetching stable pod metrics",
+                    "pod=" + stablePods.get(0).getMetadata().getName()
+                    + " (selected 1 of " + stablePods.size() + " stable pods)");
+            }
+            if (!canaryPods.isEmpty()) {
+                activityEvents.publish("TOOL_CALL", "Fetching canary pod metrics",
+                    "pod=" + canaryPods.get(0).getMetadata().getName()
+                    + " (selected 1 of " + canaryPods.size() + " canary pods)");
+            }
+
             // Fetch metrics from both pods in parallel
             CompletableFuture<Map<String, Object>> stableMetricsFuture = CompletableFuture.supplyAsync(() -> {
                 if (!stablePods.isEmpty()) {
                     Pod stablePod = stablePods.get(0);
-                    Map<String, Object> metrics = fetchApplicationMetrics(namespace, stablePod.getMetadata().getName(), "/q/metrics", 8080);
+                    Map<String, Object> metrics = fetchApplicationMetricsInternal(namespace, stablePod.getMetadata().getName(), "/q/metrics", 8080);
                     metrics.put("podName", stablePod.getMetadata().getName());
                     return metrics;
                 }
@@ -880,15 +887,28 @@ public class K8sTools {
             CompletableFuture<Map<String, Object>> canaryMetricsFuture = CompletableFuture.supplyAsync(() -> {
                 if (!canaryPods.isEmpty()) {
                     Pod canaryPod = canaryPods.get(0);
-                    Map<String, Object> metrics = fetchApplicationMetrics(namespace, canaryPod.getMetadata().getName(), "/q/metrics", 8080);
+                    Map<String, Object> metrics = fetchApplicationMetricsInternal(namespace, canaryPod.getMetadata().getName(), "/q/metrics", 8080);
                     metrics.put("podName", canaryPod.getMetadata().getName());
                     return metrics;
                 }
                 return Map.of("error", "No canary pods found");
             });
 
-            result.put("stable", stableMetricsFuture.join());
-            result.put("canary", canaryMetricsFuture.join());
+            Map<String, Object> stableMetrics = stableMetricsFuture.join();
+            Map<String, Object> canaryMetrics = canaryMetricsFuture.join();
+            
+            result.put("stable", stableMetrics);
+            result.put("canary", canaryMetrics);
+
+            // Publish separate completion events
+            if (!stableMetrics.containsKey("error")) {
+                activityEvents.publish("TOOL_RESULT", "Stable pod metrics retrieved",
+                    "pod=" + stableMetrics.get("podName"));
+            }
+            if (!canaryMetrics.containsKey("error")) {
+                activityEvents.publish("TOOL_RESULT", "Canary pod metrics retrieved",
+                    "pod=" + canaryMetrics.get("podName"));
+            }
 
             Log.info("Successfully retrieved canary metrics (parallel execution)");
             return result;
@@ -919,7 +939,6 @@ public class K8sTools {
     @RunOnVirtualThread
     public Map<String, Object> getCanaryDiagnostics(String namespace, String containerName, Integer tailLines) {
         Log.info("=== Executing Tool: getCanaryDiagnostics (with virtual threads) ===");
-        activityEvents.publish("TOOL_CALL", "Gathering canary diagnostics", "namespace=" + namespace);
 
         if (namespace == null || namespace.isEmpty()) {
             return Map.of("error", "namespace is required");
@@ -928,11 +947,11 @@ public class K8sTools {
         int lines = (tailLines != null && tailLines > 0) ? tailLines : 200;
         Log.info(MessageFormat.format("Getting canary diagnostics for namespace: {0}, container: {1}, lines: {2}",
                 namespace, containerName, lines));
-        
+
         try {
             Map<String, Object> result = new HashMap<>();
             result.put("namespace", namespace);
-            
+
             // Fetch stable and canary pods in parallel using CompletableFuture
             CompletableFuture<List<Pod>> stablePodsFuture = CompletableFuture.supplyAsync(() ->
                 k8sClient.pods()
@@ -941,7 +960,7 @@ public class K8sTools {
                     .list()
                     .getItems()
             );
-            
+
             CompletableFuture<List<Pod>> canaryPodsFuture = CompletableFuture.supplyAsync(() ->
                 k8sClient.pods()
                     .inNamespace(namespace)
@@ -949,11 +968,23 @@ public class K8sTools {
                     .list()
                     .getItems()
             );
-            
+
             // Wait for both pod lists
             List<Pod> stablePods = stablePodsFuture.join();
             List<Pod> canaryPods = canaryPodsFuture.join();
-            
+
+            // Publish events after pod discovery so we can report the count
+            if (!stablePods.isEmpty()) {
+                activityEvents.publish("TOOL_CALL", "Fetching stable pod logs",
+                    "pod=" + stablePods.get(0).getMetadata().getName()
+                    + " (selected 1 of " + stablePods.size() + " stable pods)");
+            }
+            if (!canaryPods.isEmpty()) {
+                activityEvents.publish("TOOL_CALL", "Fetching canary pod logs",
+                    "pod=" + canaryPods.get(0).getMetadata().getName()
+                    + " (selected 1 of " + canaryPods.size() + " canary pods)");
+            }
+
             // Process stable and canary pods in parallel
             CompletableFuture<Map<String, Object>> stableInfoFuture = CompletableFuture.supplyAsync(() -> {
                 Map<String, Object> stableInfo = new HashMap<>();
@@ -962,17 +993,16 @@ public class K8sTools {
                     stableInfo.put("podName", stablePod.getMetadata().getName());
                     stableInfo.put("phase", stablePod.getStatus().getPhase());
                     stableInfo.put("podCount", stablePods.size());
-                    
+
                     if (stablePod.getStatus().getContainerStatuses() != null) {
                         long readyCount = stablePod.getStatus().getContainerStatuses().stream()
                             .filter(ContainerStatus::getReady)
                             .count();
                         stableInfo.put("readyContainers", readyCount + "/" + stablePod.getStatus().getContainerStatuses().size());
                     }
-                    
-                    // Pass null/empty to let getLogs auto-detect the correct container name
+
                     String actualContainerName = (containerName != null && !containerName.isEmpty()) ? containerName : null;
-                    Map<String, Object> logsResult = getLogs(namespace, stablePod.getMetadata().getName(), actualContainerName, false, lines);
+                    Map<String, Object> logsResult = getLogsInternal(namespace, stablePod.getMetadata().getName(), actualContainerName, false, lines);
                     if (logsResult.containsKey("logs")) {
                         stableInfo.put("logs", logsResult.get("logs"));
                     } else if (logsResult.containsKey("error")) {
@@ -983,7 +1013,7 @@ public class K8sTools {
                 }
                 return stableInfo;
             });
-            
+
             CompletableFuture<Map<String, Object>> canaryInfoFuture = CompletableFuture.supplyAsync(() -> {
                 Map<String, Object> canaryInfo = new HashMap<>();
                 if (!canaryPods.isEmpty()) {
@@ -991,17 +1021,16 @@ public class K8sTools {
                     canaryInfo.put("podName", canaryPod.getMetadata().getName());
                     canaryInfo.put("phase", canaryPod.getStatus().getPhase());
                     canaryInfo.put("podCount", canaryPods.size());
-                    
+
                     if (canaryPod.getStatus().getContainerStatuses() != null) {
                         long readyCount = canaryPod.getStatus().getContainerStatuses().stream()
                             .filter(ContainerStatus::getReady)
                             .count();
                         canaryInfo.put("readyContainers", readyCount + "/" + canaryPod.getStatus().getContainerStatuses().size());
                     }
-                    
-                    // Pass null/empty to let getLogs auto-detect the correct container name
+
                     String actualContainerName = (containerName != null && !containerName.isEmpty()) ? containerName : null;
-                    Map<String, Object> logsResult = getLogs(namespace, canaryPod.getMetadata().getName(), actualContainerName, false, lines);
+                    Map<String, Object> logsResult = getLogsInternal(namespace, canaryPod.getMetadata().getName(), actualContainerName, false, lines);
                     if (logsResult.containsKey("logs")) {
                         canaryInfo.put("logs", logsResult.get("logs"));
                     } else if (logsResult.containsKey("error")) {
@@ -1012,20 +1041,29 @@ public class K8sTools {
                 }
                 return canaryInfo;
             });
-            
+
             // Wait for both processing tasks to complete
-            result.put("stable", stableInfoFuture.join());
-            result.put("canary", canaryInfoFuture.join());
-            
+            Map<String, Object> stableData = stableInfoFuture.join();
+            Map<String, Object> canaryData = canaryInfoFuture.join();
+
+            result.put("stable", stableData);
+            result.put("canary", canaryData);
+
             Log.info("Successfully retrieved canary diagnostics (parallel execution)");
-            @SuppressWarnings("unchecked")
-            Map<String, Object> stableData = (Map<String, Object>) result.get("stable");
-            @SuppressWarnings("unchecked")
-            Map<String, Object> canaryData = (Map<String, Object>) result.get("canary");
+
+            // Publish separate completion events for stable and canary
             String stableStatus = stableData.containsKey("podName") ? stableData.get("phase") + "" : "not found";
             String canaryStatus = canaryData.containsKey("podName") ? canaryData.get("phase") + "" : "not found";
-            activityEvents.publish("TOOL_RESULT", "Diagnostics gathered",
-                "Stable: " + stableStatus + " | Canary: " + canaryStatus);
+
+            if (stableData.containsKey("podName")) {
+                activityEvents.publish("TOOL_RESULT", "Stable pod logs retrieved",
+                    "pod=" + stableData.get("podName") + ", status=" + stableStatus);
+            }
+            if (canaryData.containsKey("podName")) {
+                activityEvents.publish("TOOL_RESULT", "Canary pod logs retrieved",
+                    "pod=" + canaryData.get("podName") + ", status=" + canaryStatus);
+            }
+
             return result;
 
         } catch (Exception e) {

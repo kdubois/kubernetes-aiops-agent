@@ -6,7 +6,6 @@ import io.a2a.server.events.EventQueue;
 import io.a2a.server.tasks.TaskUpdater;
 import io.a2a.spec.JSONRPCError;
 import io.a2a.spec.Message;
-import io.a2a.spec.Part;
 import io.a2a.spec.TaskNotCancelableError;
 import io.a2a.spec.TaskState;
 import io.a2a.spec.TextPart;
@@ -21,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 
 import dev.kevindubois.rollout.agent.workflow.KubernetesWorkflow;
+import dev.kevindubois.rollout.agent.model.ActivityEventStore;
 import dev.kevindubois.rollout.agent.model.AnalysisResult;
 import dev.kevindubois.rollout.agent.utils.RetryHelper;
 import dev.kevindubois.rollout.agent.utils.ToolCallLimiter;
@@ -39,6 +39,9 @@ public class A2AAgentExecutor {
     @Inject
     KubernetesWorkflow workflow;
 
+    @Inject
+    ActivityEventStore activityEvents;
+
     @Produces
     public AgentExecutor agentExecutor() {
         return new AgentExecutor() {
@@ -53,26 +56,26 @@ public class A2AAgentExecutor {
                 updater.startWork();
 
                 try {
-                    // Extract request parameters
                     String messageContent = extractMessageContent(context.getMessage());
                     String memoryId = extractMemoryId(context);
-                    Map<String, String> metadata = extractMetadata(context.getMessage());
-                    
-                    String repoUrl = metadata.get("repoUrl");
-                    String baseBranch = metadata.getOrDefault("baseBranch", "main");
+                    String repoUrl = extractMetadataValue(context.getMessage(), "repoUrl");
+                    String baseBranch = extractMetadataValue(context.getMessage(), "baseBranch", "main");
                     
                     Log.debug(MessageFormat.format("Memory ID: {0}, RepoUrl: {1}, Branch: {2}",
                         memoryId, repoUrl, baseBranch));
                     
-                    // Reset tool call limiter for new session
                     ToolCallLimiter.resetSession(memoryId);
                     
-                    // Execute workflow with retry logic
                     AnalysisResult result = RetryHelper.executeWithRetryOnTransientErrors(
                         () -> workflow.execute(memoryId, messageContent, repoUrl, baseBranch),
                         "A2A workflow execution"
                     );
                     
+                    String summary = extractSummary(result.analysis());
+                    if (summary != null) {
+                        activityEvents.publish("ANALYSIS_SUMMARY", "Analysis complete", summary);
+                    }
+
                     // Return formatted response
                     String response = formatAnalysisResult(result);
                     updater.addArtifact(List.of(new TextPart(response, null)), null, null, null);
@@ -98,9 +101,6 @@ public class A2AAgentExecutor {
                 new TaskUpdater(context, eventQueue).cancel();
             }
             
-            /**
-             * Extract memory ID with priority: memoryId > userId > sessionId > taskId > default
-             */
             private String extractMemoryId(RequestContext context) {
                 Message message = context.getMessage();
                 if (message.getMetadata() != null) {
@@ -122,27 +122,18 @@ public class A2AAgentExecutor {
                 return "default";
             }
             
-            /**
-             * Extract all metadata as a map
-             */
-            private Map<String, String> extractMetadata(Message message) {
-                if (message.getMetadata() == null) {
-                    return Map.of();
-                }
-                return message.getMetadata().entrySet().stream()
-                    .collect(java.util.stream.Collectors.toMap(
-                        e -> e.getKey(),
-                        e -> e.getValue() != null ? e.getValue().toString() : ""
-                    ));
+            private String extractMetadataValue(Message message, String key) {
+                return extractMetadataValue(message, key, null);
             }
             
-            /**
-             * Extract text content from message parts
-             */
+            private String extractMetadataValue(Message message, String key, String defaultValue) {
+                if (message.getMetadata() == null) return defaultValue;
+                Object value = message.getMetadata().get(key);
+                return value != null ? value.toString() : defaultValue;
+            }
+            
             private String extractMessageContent(Message message) {
-                if (message.getParts() == null) {
-                    return "";
-                }
+                if (message.getParts() == null) return "";
                 
                 return message.getParts().stream()
                     .filter(part -> part instanceof TextPart)
@@ -151,9 +142,18 @@ public class A2AAgentExecutor {
                     .trim();
             }
             
-            /**
-             * Format analysis result as markdown
-             */
+            private String extractSummary(String analysis) {
+                if (analysis == null || analysis.isBlank()) return null;
+                String firstSentence = analysis.split("[.!?]\\s", 2)[0].trim();
+                if (firstSentence.length() > 150) {
+                    firstSentence = firstSentence.substring(0, 147) + "...";
+                }
+                if (!firstSentence.endsWith(".") && !firstSentence.endsWith("!") && !firstSentence.endsWith("?")) {
+                    firstSentence += ".";
+                }
+                return firstSentence;
+            }
+
             private String formatAnalysisResult(AnalysisResult result) {
                 StringBuilder sb = new StringBuilder();
                 sb.append("## Analysis Result\n\n");

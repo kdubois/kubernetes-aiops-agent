@@ -26,9 +26,9 @@ public class ActivityEventListener implements AgentListener {
     public void beforeAgentInvocation(AgentRequest request) {
         String name = request.agentName();
         String message = switch (name) {
-            case "DiagnosticAgent" -> "Gathering pod info and application logs";
-            case "MetricsDiagnosticAgent" -> "Collecting application metrics from pods";
-            case "AnalysisAgent" -> "Evaluating metrics and logs for anomalies";
+            case "DiagnosticAgent" -> "Gathering stable and canary pod logs";
+            case "MetricsDiagnosticAgent" -> "Collecting stable and canary metrics";
+            case "AnalysisAgent" -> "Analyzing collected logs and metrics";
             case "ScoringAgent" -> "Evaluating analysis quality and confidence";
             default -> name + " starting";
         };
@@ -42,6 +42,12 @@ public class ActivityEventListener implements AgentListener {
 
         if (output instanceof AnalysisResult result) {
             String recommendation = result.promote() ? "PROMOTE" : "ROLLBACK";
+
+            String summary = extractSummary(result.analysis());
+            if (summary != null) {
+                activityEvents.publish("ANALYSIS_SUMMARY", "Analysis summary", summary);
+            }
+
             String insight = result.analysis();
             if (insight != null && insight.length() > 200) {
                 insight = insight.substring(0, 200) + "...";
@@ -78,5 +84,19 @@ public class ActivityEventListener implements AgentListener {
         String message = error.error() != null ? error.error().getMessage() : "Unknown error";
         Log.errorf("Agent %s failed: %s", error.agentName(), message);
         activityEvents.publish("ERROR", error.agentName() + " failed", message);
+    }
+
+    private String extractSummary(String analysis) {
+        if (analysis == null || analysis.isBlank()) {
+            return null;
+        }
+        String firstSentence = analysis.split("[.!?]\\s", 2)[0].trim();
+        if (firstSentence.length() > 150) {
+            firstSentence = firstSentence.substring(0, 147) + "...";
+        }
+        if (!firstSentence.endsWith(".") && !firstSentence.endsWith("!") && !firstSentence.endsWith("?")) {
+            firstSentence += ".";
+        }
+        return firstSentence;
     }
 }

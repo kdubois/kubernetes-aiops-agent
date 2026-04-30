@@ -159,13 +159,6 @@
             <scope>test</scope>
         </dependency>
 
-        <!-- Mockito inline for static mocking -->
-        <dependency>
-            <groupId>org.mockito</groupId>
-            <artifactId>mockito-inline</artifactId>
-            <version>5.2.0</version>
-            <scope>test</scope>
-        </dependency>
 
         <!-- Awaitility for async testing -->
         <dependency>
