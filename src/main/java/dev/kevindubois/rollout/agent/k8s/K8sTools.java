@@ -10,6 +10,8 @@ import io.smallrye.common.annotation.RunOnVirtualThread;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
+import dev.kevindubois.rollout.agent.model.ActivityEventStore;
+
 import java.text.MessageFormat;
 import java.util.*;
 import java.util.concurrent.*;
@@ -20,9 +22,12 @@ import java.util.stream.Collectors;
  */
 @ApplicationScoped
 public class K8sTools {
-    
+
     @Inject
     KubernetesClient k8sClient;
+
+    @Inject
+    ActivityEventStore activityEvents;
     
     /**
      * Debug a Kubernetes pod to get detailed information about its status and conditions
@@ -32,7 +37,8 @@ public class K8sTools {
     @Tool("Debug a Kubernetes pod to get detailed information about its status and conditions")
     public Map<String, Object> debugPod(String namespace, String podName) {
         Log.info("=== Executing Tool: debugPod ===");
-        
+        activityEvents.publish("TOOL_CALL", "Debugging pod", namespace + "/" + podName);
+
         if (namespace == null || namespace.isEmpty() || podName == null || podName.isEmpty()) {
             return Map.of("error", "namespace and podName are required and cannot be empty");
         }
@@ -141,11 +147,12 @@ public class K8sTools {
     @Tool("Get Kubernetes events for a namespace or specific pod")
     public Map<String, Object> getEvents(String namespace, String podName, Integer limit) {
         Log.info("=== Executing Tool: getEvents ===");
-        
+        activityEvents.publish("TOOL_CALL", "Fetching K8s events", "namespace=" + namespace);
+
         if (namespace == null || namespace.isEmpty()) {
             return Map.of("error", "namespace is required and cannot be empty");
         }
-        
+
         int eventLimit = (limit != null && limit > 0) ? limit : 50;
         Log.info(MessageFormat.format("Getting events for namespace: {0}, pod: {1}, limit: {2}", namespace, podName, eventLimit));
         
@@ -215,7 +222,8 @@ public class K8sTools {
     @Tool("Get logs from a Kubernetes pod. Returns recent log entries including ERROR, CRITICAL, and ALERT messages if present.")
     public Map<String, Object> getLogs(String namespace, String podName, String containerName, Boolean previous, Integer tailLines) {
         Log.info("=== Executing Tool: getLogs ===");
-        
+        activityEvents.publish("TOOL_CALL", "Fetching pod logs", "pod=" + podName);
+
         if (namespace == null || namespace.isEmpty() || podName == null || podName.isEmpty()) {
             return Map.of("error", "namespace and podName are required and cannot be empty");
         }
@@ -339,7 +347,8 @@ public class K8sTools {
     @Tool("Get resource metrics (CPU and memory usage) for a Kubernetes pod. IMPORTANT: You must provide both the namespace and the exact pod name.")
     public Map<String, Object> getMetrics(String namespace, String podName) {
         Log.info("=== Executing Tool: getMetrics ===");
-        
+        activityEvents.publish("TOOL_CALL", "Fetching pod metrics", "pod=" + podName);
+
         if (namespace == null || namespace.isEmpty() || podName == null || podName.isEmpty()) {
             return Map.of("error", "namespace and podName are required and cannot be empty");
         }
@@ -445,7 +454,8 @@ public class K8sTools {
     @Tool("Inspect Kubernetes resources in a namespace. Use labelSelector to filter pods by labels (e.g., 'role=stable' or 'role=canary')")
     public Map<String, Object> inspectResources(String namespace, String resourceType, String resourceName, String labelSelector) {
         Log.info("=== Executing Tool: inspectResources ===");
-        
+        activityEvents.publish("TOOL_CALL", "Inspecting resources", "namespace=" + namespace);
+
         if (namespace == null || namespace.isEmpty()) {
             return Map.of("error", "namespace is required and cannot be empty");
         }
@@ -668,7 +678,8 @@ public class K8sTools {
     @Tool("Fetch application metrics from a pod's Prometheus metrics endpoint. Returns error rates, request counts, latency, and custom application metrics.")
     public Map<String, Object> fetchApplicationMetrics(String namespace, String podName, String metricsPath, Integer port) {
         Log.info("=== Executing Tool: fetchApplicationMetrics ===");
-        
+        activityEvents.publish("TOOL_CALL", "Fetching app metrics", "pod=" + podName);
+
         if (namespace == null || namespace.isEmpty() || podName == null || podName.isEmpty()) {
             return Map.of("error", "namespace and podName are required and cannot be empty");
         }
@@ -823,6 +834,7 @@ public class K8sTools {
     @RunOnVirtualThread
     public Map<String, Object> getCanaryMetrics(String namespace) {
         Log.info("=== Executing Tool: getCanaryMetrics ===");
+        activityEvents.publish("TOOL_CALL", "Fetching canary metrics", "namespace=" + namespace);
 
         if (namespace == null || namespace.isEmpty()) {
             return Map.of("error", "namespace is required");
@@ -907,11 +919,12 @@ public class K8sTools {
     @RunOnVirtualThread
     public Map<String, Object> getCanaryDiagnostics(String namespace, String containerName, Integer tailLines) {
         Log.info("=== Executing Tool: getCanaryDiagnostics (with virtual threads) ===");
-        
+        activityEvents.publish("TOOL_CALL", "Gathering canary diagnostics", "namespace=" + namespace);
+
         if (namespace == null || namespace.isEmpty()) {
             return Map.of("error", "namespace is required");
         }
-        
+
         int lines = (tailLines != null && tailLines > 0) ? tailLines : 200;
         Log.info(MessageFormat.format("Getting canary diagnostics for namespace: {0}, container: {1}, lines: {2}",
                 namespace, containerName, lines));
@@ -1005,8 +1018,16 @@ public class K8sTools {
             result.put("canary", canaryInfoFuture.join());
             
             Log.info("Successfully retrieved canary diagnostics (parallel execution)");
+            @SuppressWarnings("unchecked")
+            Map<String, Object> stableData = (Map<String, Object>) result.get("stable");
+            @SuppressWarnings("unchecked")
+            Map<String, Object> canaryData = (Map<String, Object>) result.get("canary");
+            String stableStatus = stableData.containsKey("podName") ? stableData.get("phase") + "" : "not found";
+            String canaryStatus = canaryData.containsKey("podName") ? canaryData.get("phase") + "" : "not found";
+            activityEvents.publish("TOOL_RESULT", "Diagnostics gathered",
+                "Stable: " + stableStatus + " | Canary: " + canaryStatus);
             return result;
-            
+
         } catch (Exception e) {
             Log.error("Error getting canary diagnostics", e);
             return Map.of("error", e.getMessage());
