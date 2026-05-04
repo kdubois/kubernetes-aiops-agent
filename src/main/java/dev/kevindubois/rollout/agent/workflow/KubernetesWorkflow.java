@@ -1,5 +1,6 @@
 package dev.kevindubois.rollout.agent.workflow;
 
+import dev.kevindubois.rollout.agent.agents.DataCombinerAgent;
 import dev.kevindubois.rollout.agent.model.AnalysisResult;
 import dev.kevindubois.rollout.agent.observability.ActivityEventListener;
 import dev.langchain4j.agentic.declarative.AgentListenerSupplier;
@@ -11,6 +12,9 @@ import io.quarkus.arc.Arc;
 
 /**
  * Main workflow orchestrating the complete Kubernetes rollout analysis.
+ * 1. ParallelDataWorkflow: Non-AI agents fetch diagnostics and metrics in parallel
+ * 2. DataCombinerAgent: Non-AI agent combines the parallel reports into a single string
+ * 3. AnalysisLoop: AI agents analyze the data and make promote/rollback decision
  */
 public interface KubernetesWorkflow {
 
@@ -20,10 +24,11 @@ public interface KubernetesWorkflow {
     }
 
     @SequenceAgent(
-        description = "Complete Kubernetes rollout analysis workflow with parallel analysis",
+        description = "Complete Kubernetes rollout analysis workflow",
         outputKey = "analysisResult",
         subAgents = {
-            ParallelAnalysisWorkflow.class,
+            ParallelDataWorkflow.class,
+            DataCombinerAgent.class,
             AnalysisLoop.class
         }
     )

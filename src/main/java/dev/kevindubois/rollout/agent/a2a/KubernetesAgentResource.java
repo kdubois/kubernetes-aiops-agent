@@ -238,27 +238,6 @@ public class KubernetesAgentResource {
                 }
             });
         }
-
-        prompt.append("\n⚠️ CRITICAL: USE getCanaryDiagnostics TOOL FIRST ⚠️\n");
-        prompt.append("⚠️ MAXIMUM 1-2 TOOL CALLS - BE EFFICIENT ⚠️\n\n");
-        prompt.append("EFFICIENT WORKFLOW:\n");
-        prompt.append("1. ALWAYS call getCanaryDiagnostics(namespace, containerName, tailLines) FIRST\n");
-        prompt.append("   - This fetches BOTH stable AND canary pod info and logs in ONE call\n");
-        prompt.append("   - Returns pod names, phases, ready status, and logs for both stable and canary\n");
-        prompt.append("   - Container name can be null/empty for auto-detection\n");
-        prompt.append("2. Analyze the results from getCanaryDiagnostics\n");
-        prompt.append("3. Only call additional tools if absolutely necessary (e.g., getEvents for pod failures)\n");
-        prompt.append("4. Return your analysis immediately\n\n");
-        prompt.append("RULES:\n");
-        prompt.append("- Call ONE tool at a time and wait for results\n");
-        prompt.append("- NEVER hallucinate or guess pod/resource names\n");
-        prompt.append("- Use actual names from tool results\n");
-        prompt.append("- Skip getEvents if pods are Running/Ready\n");
-        prompt.append("- Each tool can only be called ONCE with the same parameters\n\n");
-        prompt.append("The multi-agent workflow will:\n");
-        prompt.append("1. DiagnosticAgent: Gather data efficiently (1-2 tool calls using getCanaryDiagnostics)\n");
-        prompt.append("2. AnalysisAgent: Analyze the gathered data\n");
-        prompt.append("3. RemediationAgent: Implement fixes if needed\n");
         
         return prompt.toString();
     }

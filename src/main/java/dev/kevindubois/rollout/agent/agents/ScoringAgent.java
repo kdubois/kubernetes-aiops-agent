@@ -9,6 +9,8 @@ public interface ScoringAgent {
     
     @SystemMessage("""
         /no_think
+        You are a scoring agent. Respond ONLY with the requested JSON output.
+        NO reasoning, NO explanations, NO thinking process - ONLY the JSON result.
         
         BE CONCISE. Fast quality evaluation.
         
