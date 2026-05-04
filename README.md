@@ -49,11 +49,13 @@ See [BUG_SCENARIO_TESTING.md](BUG_SCENARIO_TESTING.md) for detailed testing guid
 
 - **Source Code Analysis**: Read repository files to understand code structure and make informed fixes
 - **Git Operations**: Clone, branch, commit, push (using JGit library)
+- **Line-Based Patching**: Surgical code fixes using precise line-level changes
 - **GitHub PRs**: Automatically create pull requests with:
     - Root cause analysis
     - Code fixes based on actual source code
     - Testing recommendations
     - Links to Kubernetes resources
+- **Validation**: Built-in checks to prevent bad PRs (excessive deletions, structural damage)
 
 ### Source Code Access
 
@@ -71,8 +73,15 @@ The remediation agent can read source files from the repository to make more acc
 **Example**: When detecting a NullPointerException in logs, the agent can:
 1. Read the source file mentioned in the stack trace
 2. Analyze the actual code structure
-3. Propose a fix with exact line numbers
-4. Create a PR with the corrected code
+3. Propose a surgical fix targeting only the buggy line
+4. Create a PR with precise line-based changes
+5. Validate the patch to prevent accidental code deletion
+
+**Line-Based Patching**: The agent uses surgical precision to fix bugs:
+- **Replace**: Fix the exact buggy line (e.g., `nullString.length()` → `versionUpper.length()`)
+- **Insert**: Add new lines (e.g., null checks, validation)
+- **Delete**: Remove problematic lines (used sparingly)
+- **Validation**: Warns about potentially destructive changes (deleting return statements, closing braces, etc.)
 
 ### A2A Communication
 

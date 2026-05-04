@@ -1,8 +1,17 @@
 package dev.kevindubois.rollout.agent.agents;
 
 import dev.kevindubois.rollout.agent.model.AnalysisResult;
+import dev.kevindubois.rollout.agent.remediation.GitHubIssueTool;
+import dev.kevindubois.rollout.agent.remediation.GitHubPatchPRTool;
+import dev.langchain4j.agentic.Agent;
+import dev.langchain4j.agentic.declarative.ChatModelSupplier;
+import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.service.SystemMessage;
 import dev.langchain4j.service.UserMessage;
+import io.quarkiverse.langchain4j.ModelName;
+import io.quarkiverse.langchain4j.ToolBox;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 
 public interface RemediationAgent {
     
@@ -42,11 +51,33 @@ public interface RemediationAgent {
         - podName: Extract canary pod name from diagnosticData
         - testingRecommendations: Suggest how to verify the fix
 
-        LINE NUMBER RULES:
-        - NULL CHECKS must go INSIDE methods, NOT in field declarations
-        - Use "replace" when FIXING BUGGY CODE (e.g., removing intentional bugs)
-        - Use "insert_after"/"insert_before" when ADDING NEW CODE (e.g., null checks)
-        - When inserting multiple consecutive lines, use INCREMENTING line numbers (59, 60, 61), NOT the same number
+        CRITICAL LINE-BASED PATCH RULES:
+        1. SURGICAL PRECISION: Only modify the EXACT lines that contain bugs. DO NOT delete surrounding code.
+        2. ACTION SELECTION:
+           - "replace": ONLY for fixing the EXACT buggy line (e.g., line 127: "length = nullString.length();" → "length = versionUpper.length();")
+           - "delete": ONLY when removing an entire line that shouldn't exist (rare - usually you want "replace")
+           - "insert_after"/"insert_before": For ADDING new lines (e.g., null checks, validation)
+        3. PRESERVE CONTEXT: Never delete try-catch blocks, return statements, or closing braces unless they are the actual bug
+        4. ONE LINE AT A TIME: Each LineChange should target exactly ONE line. Don't bundle multiple lines into one change.
+        5. NULL CHECKS: Must go INSIDE methods, NOT in field declarations
+        6. CONSECUTIVE INSERTS: Use INCREMENTING line numbers (59, 60, 61), NOT the same number
+
+        EXAMPLE - Fixing NullPointerException on line 127:
+        WRONG ❌: Delete lines 127-136 (removes try-catch and return statement)
+        RIGHT ✅: Replace ONLY line 127 with the fixed version
+        
+        patches: [
+          {
+            "filePath": "src/main/java/dev/example/Service.java",
+            "changes": [
+              {
+                "lineNumber": 127,
+                "action": "replace",
+                "content": "        length = versionUpper.length(); // Fixed: use correct variable"
+              }
+            ]
+          }
+        ]
 
         CREATING GITHUB ISSUES (for operational issues or when no source code available):
         - title: "Canary Deployment Failed: [rootCause]"
@@ -90,11 +121,27 @@ public interface RemediationAgent {
         Implement remediation if needed and return the updated AnalysisResult with prLink set if a PR was created.
         Extract namespace, rolloutName, and pod names from the diagnostic data to use when creating GitHub issues.
         """)
+    @Agent(outputKey = "remediationResult", description = "Implements remediation by creating GitHub PRs or Issues")
+    @ToolBox({GitHubPatchPRTool.class, GitHubIssueTool.class})
     AnalysisResult implementRemediation(
         String diagnosticData,
         AnalysisResult analysisResult,
         String repoUrl,
         String baseBranch
     );
-}
 
+    @ChatModelSupplier
+    static ChatModel chatModel() {
+        return RemediationModel.model;
+    }
+
+    @ApplicationScoped
+    class RemediationModel {
+        private static ChatModel model;
+
+        @Inject
+        void init(@ModelName("remediation") ChatModel remediationModel) {
+            model = remediationModel;
+        }
+    }
+}

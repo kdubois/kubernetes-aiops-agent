@@ -241,6 +241,9 @@ public class GitHubPatchPRTool {
         // Read current file content
         List<String> lines = Files.readAllLines(filePath);
         
+        // Validate patch for common mistakes
+        validatePatch(patch, lines);
+        
         // Group changes by line number and action type
         // For insert_after on consecutive lines, we need to process them in ascending order
         // For other operations, descending order avoids offset issues
@@ -318,8 +321,58 @@ public class GitHubPatchPRTool {
         
         // Write modified content back to file
         Files.write(filePath, lines);
-        Log.info(MessageFormat.format("Applied {0} changes to {1}", 
+        Log.info(MessageFormat.format("Applied {0} changes to {1}",
                 patch.changes.size(), patch.filePath));
+    }
+    
+    /**
+     * Validate patch for common mistakes that could lead to bad PRs
+     */
+    private void validatePatch(FilePatch patch, List<String> originalLines) {
+        for (LineChange change : patch.changes) {
+            int lineIndex = change.lineNumber - 1;
+            
+            // Check if deleting/replacing important structural lines
+            if (("delete".equalsIgnoreCase(change.action) || "replace".equalsIgnoreCase(change.action))
+                && lineIndex >= 0 && lineIndex < originalLines.size()) {
+                
+                String line = originalLines.get(lineIndex).trim();
+                
+                // Warn about deleting/replacing structural elements
+                if (line.startsWith("return ") || line.equals("return;")) {
+                    Log.warn(MessageFormat.format(
+                        "⚠️  VALIDATION WARNING: Patch attempts to {0} a return statement at line {1} in {2}. " +
+                        "This may indicate the patch is too broad. Verify this is intentional.",
+                        change.action, change.lineNumber, patch.filePath));
+                }
+                
+                if (line.equals("}") || line.equals("} catch")) {
+                    Log.warn(MessageFormat.format(
+                        "⚠️  VALIDATION WARNING: Patch attempts to {0} a closing brace at line {1} in {2}. " +
+                        "This may break code structure. Verify this is intentional.",
+                        change.action, change.lineNumber, patch.filePath));
+                }
+                
+                if (line.startsWith("} catch") || line.startsWith("catch (")) {
+                    Log.warn(MessageFormat.format(
+                        "⚠️  VALIDATION WARNING: Patch attempts to {0} a catch block at line {1} in {2}. " +
+                        "This may remove error handling. Verify this is intentional.",
+                        change.action, change.lineNumber, patch.filePath));
+                }
+            }
+        }
+        
+        // Check for excessive deletions
+        long deleteCount = patch.changes.stream()
+            .filter(c -> "delete".equalsIgnoreCase(c.action))
+            .count();
+        
+        if (deleteCount > 5) {
+            Log.warn(MessageFormat.format(
+                "⚠️  VALIDATION WARNING: Patch contains {0} delete operations in {1}. " +
+                "This seems excessive for a typical bug fix. Consider using 'replace' instead of 'delete' for most fixes.",
+                deleteCount, patch.filePath));
+        }
     }
     
     /**
