@@ -5,6 +5,7 @@ import io.fabric8.kubernetes.api.model.*;
 import io.fabric8.kubernetes.api.model.apps.Deployment;
 import io.fabric8.kubernetes.api.model.metrics.v1beta1.PodMetrics;
 import io.fabric8.kubernetes.client.KubernetesClient;
+import io.quarkus.arc.Unremovable;
 import io.quarkus.logging.Log;
 import io.smallrye.common.annotation.RunOnVirtualThread;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -19,8 +20,12 @@ import java.util.stream.Collectors;
 
 /**
  * Kubernetes tools for LangChain4j
+ *
+ * Note: @Unremovable is required because this bean is accessed via programmatic lookup
+ * in DiagnosticsDataAgent and MetricsDataAgent, which Quarkus cannot detect at build time.
  */
 @ApplicationScoped
+@Unremovable
 public class K8sTools {
 
     @Inject
