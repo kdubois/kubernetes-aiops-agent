@@ -15,24 +15,21 @@ The Kubernetes Agent is an intelligent system that:
 - **Creates** GitHub pull requests with fixes
 - **Integrates** with Argo Rollouts for canary analysis
 
-## Bug Scenario Testing
+## Testing
 
-The agent can automatically analyze and diagnose production issues. Test with realistic bug scenarios:
+The agent can automatically analyze and diagnose production issues. Test with realistic scenarios using the demo application in the `argo-rollouts-quarkus-demo` directory.
 
-- **Memory Leak Detection**: Identifies gradual memory exhaustion and heap pressure
-- **Connection Pool Exhaustion**: Detects resource leaks causing sharp failures  
-- **CPU Spike Analysis**: Diagnoses periodic performance degradation
-
-See [BUG_SCENARIO_TESTING.md](BUG_SCENARIO_TESTING.md) for detailed testing guide.
+See the [Demo Script](../argo-rollouts-quarkus-demo/DEMO_SCRIPT.md) for detailed testing scenarios including:
+- **Happy Path**: Successful deployment with AI analysis
+- **NullPointerException Bug**: Bug detection with automatic rollback and PR creation
+- **Memory Leak**: Performance issue detection with automatic rollback
 
 ### Quick Test
 
 ```bash
-# Test memory leak scenario
-./test-bug-scenario.sh memory-leak
-
-# Test all scenarios
-./test-bug-scenario.sh all
+# Test the agent with the demo application
+cd ../argo-rollouts-quarkus-demo
+./test-scenarios.sh
 ```
 
 ## Features
@@ -532,11 +529,11 @@ export OPENAI_API_KEY="dummy"
 export OPENAI_BASE_URL="http://vllm-service:8000/v1"
 export OPENAI_MODEL="gemma-2-9b-it"
 ```
-
 ## Support
 
 For issues or questions:
-- **GitHub Issues**: Create an issue in the repository
-- **Documentation**: See ARCHITECTURE.md and agents.md for detailed information
+- **GitHub Issues**: [Create an issue](https://github.com/kdubois/kubernetes-aiops-agent/issues)
+- **Documentation**: See [ARCHITECTURE.md](ARCHITECTURE.md) and [agents.md](agents.md) for detailed information
+
 
 

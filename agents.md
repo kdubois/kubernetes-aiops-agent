@@ -17,7 +17,7 @@ Quarkus-based AI agent using LangChain4j's declarative framework to analyze Kube
 
 ## Prerequisites
 
-Java 17+, Maven 3.8+, kubectl, Google/OpenAI API key, GitHub token, Kubernetes cluster with Argo Rollouts + rollouts-plugin-metric-ai
+Java 21+, Maven 3.8+, kubectl, Google/OpenAI API key, GitHub token, Kubernetes cluster with Argo Rollouts + rollouts-plugin-metric-ai
 
 ## Development
 
