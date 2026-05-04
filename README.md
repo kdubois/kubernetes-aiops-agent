@@ -87,16 +87,38 @@ The remediation agent can read source files from the repository to make more acc
 
 ## Architecture
 
-```
-Argo Rollouts Analysis
-	↓
-rollouts-plugin-metric-ai
-	↓ (A2A HTTP)
-Kubernetes Agent (Quarkus LangChain4j)
-	├── K8s Tools (Quarkus Kubernetes)
-	├── Git Operations (JGit)
-	├── GitHub PR (Quarkus Rest Client)
-	└── AI Analysis (Gemini or OpenAI)
+```mermaid
+flowchart LR
+    A([Plugin]) --> B
+
+    subgraph B[Diagnostic Agents]
+        direction TB
+        B1[DiagnosticsDataAgent]
+        B2[MetricsDataAgent]
+        B3[K8sTools<br/>canary/stable logs, events, metrics]
+        B1 --> B3
+        B2 --> B3
+    end
+
+    B --> C[DataCombinerAgent]
+    C --> D[AnalysisAgent<br/>AI evaluation]
+    D --> E[ScoringAgent<br/>quality check]
+
+    E -->|retry| D
+    E -->|return decision| F([Return])
+
+    E -->|async remediation| G
+
+    subgraph G[RemediationAgent]
+        direction TB
+        G1{Code fixable?}
+        G2[SourceCodePrefetcher]
+        G3[Create PR]
+        G4[Create Issue]
+        G1 -->|Yes| G2
+        G2 --> G3
+        G1 -->|No| G4
+    end
 ```
 
 ## CI/CD
