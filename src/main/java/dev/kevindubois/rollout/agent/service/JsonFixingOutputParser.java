@@ -104,6 +104,65 @@ public class JsonFixingOutputParser {
         
         return json;
     }
+    /**
+     * Remove comments and calculations from JSON
+     * Examples:
+     * - "errorRateDifference" : (2.4 -1.5) = .9 -> "errorRateDifference": 0.9
+     * - // Calculations -> (removed)
+     * - confidence:7s -> confidence: 7
+     */
+    private String removeCommentsAndCalculations(String json) {
+        // Remove single-line comments (// ...)
+        json = json.replaceAll("//[^\n]*", "");
+        
+        // Remove multi-line comments (/* ... */)
+        json = json.replaceAll("/\\*.*?\\*/", "");
+        
+        // Fix calculations in values: "property" : (2.4 - 1.5) = 0.9 -> "property": 0.9
+        json = json.replaceAll("\"([^\"]+)\"\\s*:\\s*\\([^)]+\\)\\s*=\\s*([0-9.]+)", "\"$1\": $2");
+        
+        // Fix values with trailing letters: 7s -> 7, 85o -> 85
+        json = json.replaceAll(":\\s*([0-9]+)[a-zA-Z]+([,\\s}])", ": $1$2");
+        
+        // Fix typos in property values: canarry -> canary, p9p -> p99
+        json = json.replaceAll("canarry", "canary");
+        json = json.replaceAll("p9p", "p99");
+        
+        return json;
+    }
+    
+    /**
+     * Fix missing opening quotes on property names
+     * Examples:
+     * - "errorRateDifference: -16.83 -> "errorRateDifference": -16.83
+     * - "comparison:"text" -> "comparison": "text"
+     * - confidence$:4 -> "confidence": 4
+     * - "errorRateWithinThreshold:true" -> "errorRateWithinThreshold": true
+     */
+    private String fixMissingPropertyQuotes(String json) {
+        // Fix property names missing closing quote before colon
+        // Pattern: "propertyName:value" -> "propertyName": value
+        json = json.replaceAll("\"([a-zA-Z_][a-zA-Z0-9_]*):([^\"\\s])", "\"$1\": $2");
+        
+        // Fix property names that are missing opening quote but have closing quote and colon
+        // Pattern: \n"propertyName: value -> \n"propertyName": value
+        json = json.replaceAll("\\n\"([a-zA-Z_][a-zA-Z0-9_]*):\\s*", "\n\"$1\": ");
+        
+        // Fix property names with special characters like $ at the end
+        // Pattern: propertyName$: value -> "propertyName": value
+        json = json.replaceAll("([a-zA-Z_][a-zA-Z0-9_]*)\\$:\\s*", "\"$1\": ");
+        
+        // Fix property names that are completely missing quotes
+        // Pattern: ,\npropertyName: value -> ,\n"propertyName": value
+        json = json.replaceAll("([,{]\\s*\\n)([a-zA-Z_][a-zA-Z0-9_]*):\\s*", "$1\"$2\": ");
+        
+        // Fix missing opening quote on property names at start of line
+        // Pattern: \npropertyName": value -> \n"propertyName": value
+        json = json.replaceAll("\\n([a-zA-Z_][a-zA-Z0-9_]*)\":\\s*", "\n\"$1\": ");
+        
+        return json;
+    }
+    
     
     /**
      * Fix common JSON formatting issues:
@@ -112,10 +171,16 @@ public class JsonFixingOutputParser {
      * 3. Preserve escaped quotes
      */
     private String fixJsonFormatting(String json) {
-        // First pass: Fix malformed operators like := or = instead of :
+        // First pass: Remove comments and calculations
+        json = removeCommentsAndCalculations(json);
+        
+        // Second pass: Fix malformed operators like := or = instead of :
         json = fixMalformedOperators(json);
         
-        // Second pass: Replace single quotes with double quotes, but be careful about:
+        // Third pass: Fix missing opening quotes on property names
+        json = fixMissingPropertyQuotes(json);
+        
+        // Fourth pass: Replace single quotes with double quotes, but be careful about:
         // - Already escaped quotes
         // - Quotes inside string values
         // - Property names vs values

@@ -1,6 +1,5 @@
 package dev.kevindubois.rollout.agent.workflow;
 
-import dev.kevindubois.rollout.agent.agents.DiagnosticAgent;
 import dev.kevindubois.rollout.agent.model.AnalysisResult;
 import dev.kevindubois.rollout.agent.observability.ActivityEventListener;
 import dev.langchain4j.agentic.declarative.AgentListenerSupplier;
@@ -10,6 +9,9 @@ import dev.langchain4j.service.MemoryId;
 import dev.langchain4j.service.UserMessage;
 import io.quarkus.arc.Arc;
 
+/**
+ * Main workflow orchestrating the complete Kubernetes rollout analysis.
+ */
 public interface KubernetesWorkflow {
 
     @AgentListenerSupplier
@@ -18,10 +20,10 @@ public interface KubernetesWorkflow {
     }
 
     @SequenceAgent(
-        description = "Complete Kubernetes rollout analysis workflow",
+        description = "Complete Kubernetes rollout analysis workflow with parallel analysis",
         outputKey = "analysisResult",
         subAgents = {
-            DiagnosticAgent.class,
+            ParallelAnalysisWorkflow.class,
             AnalysisLoop.class
         }
     )

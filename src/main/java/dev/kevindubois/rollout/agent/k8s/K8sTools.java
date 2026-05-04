@@ -920,11 +920,87 @@ public class K8sTools {
     }
 
     /**
+     * Deduplicate and summarize repetitive log entries to reduce token usage.
+     * Groups identical error messages and shows count instead of repeating them.
+     */
+    private String deduplicateLogs(String logs, int maxLines) {
+        if (logs == null || logs.isEmpty()) {
+            return logs;
+        }
+        
+        String[] lines = logs.split("\n");
+        if (lines.length <= maxLines) {
+            return logs; // No need to deduplicate if under limit
+        }
+        
+        StringBuilder result = new StringBuilder();
+        Map<String, Integer> errorCounts = new LinkedHashMap<>();
+        String lastError = null;
+        int consecutiveCount = 0;
+        
+        for (String line : lines) {
+            // Check if this is an error line
+            if (line.contains("ERROR") || line.contains("Exception") || line.contains("WARN")) {
+                // Extract the error pattern (remove timestamps and thread names)
+                String errorPattern = line.replaceAll("^\\d{2}:\\d{2}:\\d{2}", "")
+                                         .replaceAll("\\(pool-\\d+-thread-\\d+\\)", "(thread)")
+                                         .trim();
+                
+                if (errorPattern.equals(lastError)) {
+                    consecutiveCount++;
+                } else {
+                    if (lastError != null && consecutiveCount > 1) {
+                        result.append("  [Previous error repeated ").append(consecutiveCount).append(" times]\n");
+                    }
+                    result.append(line).append("\n");
+                    lastError = errorPattern;
+                    consecutiveCount = 1;
+                }
+                
+                errorCounts.merge(errorPattern, 1, Integer::sum);
+            } else {
+                // Non-error line - include if it's important (INFO, startup, etc.)
+                if (consecutiveCount > 1 && lastError != null) {
+                    result.append("  [Previous error repeated ").append(consecutiveCount).append(" times]\n");
+                    consecutiveCount = 0;
+                    lastError = null;
+                }
+                
+                if (line.contains("INFO") || line.contains("WARN") ||
+                    line.contains("started") || line.contains("milestone")) {
+                    result.append(line).append("\n");
+                }
+            }
+        }
+        
+        // Handle final repetition
+        if (consecutiveCount > 1 && lastError != null) {
+            result.append("  [Previous error repeated ").append(consecutiveCount).append(" times]\n");
+        }
+        
+        // Add summary of error types
+        if (!errorCounts.isEmpty()) {
+            result.append("\n=== Error Summary ===\n");
+            errorCounts.entrySet().stream()
+                .sorted((a, b) -> b.getValue().compareTo(a.getValue()))
+                .limit(5)
+                .forEach(entry -> {
+                    String shortError = entry.getKey().length() > 100
+                        ? entry.getKey().substring(0, 100) + "..."
+                        : entry.getKey();
+                    result.append(String.format("- %dx: %s\n", entry.getValue(), shortError));
+                });
+        }
+        
+        return result.toString();
+    }
+
+    /**
      * Fetches both stable and canary pod information and logs in a single call.
-     * 
+     *
      * Functionality:
      * 1. Fetches all pods with role=stable label
-     * 2. Fetches all pods with role=canary label  
+     * 2. Fetches all pods with role=canary label
      * 3. Gets logs from the first stable pod (if exists)
      * 4. Gets logs from the first canary pod (if exists)
      * 5. Returns combined data structure with pod info and logs for both
@@ -1004,7 +1080,13 @@ public class K8sTools {
                     String actualContainerName = (containerName != null && !containerName.isEmpty()) ? containerName : null;
                     Map<String, Object> logsResult = getLogsInternal(namespace, stablePod.getMetadata().getName(), actualContainerName, false, lines);
                     if (logsResult.containsKey("logs")) {
-                        stableInfo.put("logs", logsResult.get("logs"));
+                        String rawLogs = (String) logsResult.get("logs");
+                        String dedupedLogs = deduplicateLogs(rawLogs, 30); // Limit to 30 unique lines
+                        // Hard limit to 3000 characters to prevent token overflow
+                        if (dedupedLogs.length() > 3000) {
+                            dedupedLogs = dedupedLogs.substring(0, 3000) + "\n... (truncated for brevity)";
+                        }
+                        stableInfo.put("logs", dedupedLogs);
                     } else if (logsResult.containsKey("error")) {
                         stableInfo.put("logsError", logsResult.get("error"));
                     }
@@ -1032,7 +1114,13 @@ public class K8sTools {
                     String actualContainerName = (containerName != null && !containerName.isEmpty()) ? containerName : null;
                     Map<String, Object> logsResult = getLogsInternal(namespace, canaryPod.getMetadata().getName(), actualContainerName, false, lines);
                     if (logsResult.containsKey("logs")) {
-                        canaryInfo.put("logs", logsResult.get("logs"));
+                        String rawLogs = (String) logsResult.get("logs");
+                        String dedupedLogs = deduplicateLogs(rawLogs, 30); // Limit to 30 unique lines
+                        // Hard limit to 3000 characters to prevent token overflow
+                        if (dedupedLogs.length() > 3000) {
+                            dedupedLogs = dedupedLogs.substring(0, 3000) + "\n... (truncated for brevity)";
+                        }
+                        canaryInfo.put("logs", dedupedLogs);
                     } else if (logsResult.containsKey("error")) {
                         canaryInfo.put("logsError", logsResult.get("error"));
                     }
