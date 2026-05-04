@@ -101,15 +101,22 @@ kubectl rollout status deployment/kubernetes-agent -n argo-rollouts
 
 ### Patterns
 
+```java
 // Records for DTOs
 public record AnalysisResult(boolean promote, int confidence, String analysis, String rootCause, String remediation, String prLink) {}
 
 // Declarative agents with clear system messages
 @Agent
 public interface AnalysisAgent {
-    @SystemMessage("You analyze Kubernetes logs and metrics. Return JSON: {promote, confidence, analysis, rootCause, remediation}")
-    @UserMessage("Analyze: {{diagnosticData}}")
-    AnalysisResult analyze(String diagnosticData);
+    @SystemMessage("You analyze combined Kubernetes diagnostics and metrics data. Return JSON: {promote, confidence, analysis, rootCause, remediation}")
+    @UserMessage("Analyze: {{combinedData}}")
+    AnalysisResult analyze(String combinedData);
+}
+
+// Parallel data gathering
+@ParallelAgent(subAgents = {DiagnosticsDataAgent.class, MetricsDataAgent.class})
+public interface ParallelDataWorkflow {
+    String execute(Object memoryId, String message);
 }
 
 // Dependency injection

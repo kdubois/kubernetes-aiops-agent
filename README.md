@@ -422,11 +422,16 @@ kubectl logs deployment/kubernetes-agent -n openshift-gitops | grep -i "git\|git
 kubernetes-agent/
 ├── src/main/java/dev/kevindubois/rollout/agent/
 │   ├── agents/                       # Agent interfaces
-│   │   ├── KubernetesAgent.java     # Main agent interface
+│   │   ├── DiagnosticsDataAgent.java # Pod diagnostics and logs gathering
+│   │   ├── MetricsDataAgent.java    # Metrics gathering
+│   │   ├── DataCombinerAgent.java   # Combine data sources
 │   │   ├── AnalysisAgent.java       # Analysis logic
-│   │   ├── DiagnosticAgent.java     # Data gathering
 │   │   ├── ScoringAgent.java        # Quality scoring
 │   │   └── RemediationAgent.java    # PR creation
+│   ├── workflow/                     # Workflow orchestration
+│   │   ├── KubernetesWorkflow.java  # Main workflow
+│   │   ├── ParallelDataWorkflow.java # Parallel data gathering
+│   │   └── AnalysisLoop.java        # Retry loop
 │   ├── k8s/                          # Kubernetes tools
 │   │   └── K8sTools.java            # K8s debugging tools
 │   ├── a2a/                          # A2A REST API

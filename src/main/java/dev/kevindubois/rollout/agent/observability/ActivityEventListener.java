@@ -28,8 +28,9 @@ public class ActivityEventListener implements AgentListener {
     public void beforeAgentInvocation(AgentRequest request) {
         String name = request.agentName();
         String message = switch (name) {
-            case "DiagnosticAgent" -> "Gathering stable and canary pod logs";
-            case "MetricsDiagnosticAgent" -> "Collecting stable and canary metrics";
+            case "DiagnosticsDataAgent" -> "Gathering stable and canary pod logs";
+            case "MetricsDataAgent" -> "Collecting stable and canary metrics";
+            case "DataCombinerAgent" -> "Combining logs and metrics data";
             case "AnalysisAgent" -> "Analyzing collected logs and metrics";
             case "ScoringAgent" -> "Evaluating analysis quality and confidence";
             default -> name + " starting";
@@ -69,12 +70,12 @@ public class ActivityEventListener implements AgentListener {
             activityEvents.publish("AGENT_COMPLETE",
                     "Scoring complete — " + (result.needsRetry() ? "retry needed" : "quality acceptable"), name);
 
-        } else if (output instanceof String diagnosticOutput) {
-            String summary = diagnosticOutput;
+        } else if (output instanceof String logOutput) {
+            String summary = logOutput;
             if (summary.length() > 150) {
                 summary = summary.substring(0, 150) + "...";
             }
-            activityEvents.publish("AGENT_COMPLETE", "Diagnostics gathered", summary);
+            activityEvents.publish("AGENT_COMPLETE", "Logs gathered", summary);
 
         } else {
             activityEvents.publish("AGENT_COMPLETE", name + " completed");
