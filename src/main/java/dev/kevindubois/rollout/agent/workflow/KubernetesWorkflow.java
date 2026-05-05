@@ -6,6 +6,7 @@ import dev.kevindubois.rollout.agent.observability.ActivityEventListener;
 import dev.langchain4j.agentic.declarative.AgentListenerSupplier;
 import dev.langchain4j.agentic.declarative.SequenceAgent;
 import dev.langchain4j.agentic.observability.AgentListener;
+import dev.langchain4j.agentic.observability.MonitoredAgent;
 import dev.langchain4j.service.MemoryId;
 import dev.langchain4j.service.UserMessage;
 import io.quarkus.arc.Arc;
@@ -16,7 +17,7 @@ import io.quarkus.arc.Arc;
  * 2. DataCombinerAgent: Non-AI agent combines the parallel reports into a single string
  * 3. AnalysisLoop: AI agents analyze the data and make promote/rollback decision
  */
-public interface KubernetesWorkflow {
+public interface KubernetesWorkflow extends MonitoredAgent {
 
     @AgentListenerSupplier
     static AgentListener listener() {

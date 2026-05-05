@@ -61,9 +61,9 @@ public class KubernetesAgentCard {
                         .tags(List.of("kubernetes", "canary", "analysis", "sre", "remediation"))
                         .build()
                 ))
-                .preferredTransport("jsonrpc")
+                .preferredTransport("JSONRPC")
                 .additionalInterfaces(List.of(
-                    new AgentInterface("jsonrpc", baseUrl + "/a2a")
+                    new AgentInterface("JSONRPC", baseUrl + "/a2a")
                 ))
                 .build();
     }

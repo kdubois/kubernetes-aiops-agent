@@ -1,7 +1,6 @@
 # Software Analysis and Remediation AI Agent
 
-[![Build and Push](https://github.com/kdubois/kubernetes-agent/actions/workflows/build.yml/badge.svg)](https://github.com/kdubois/kubernetes-agent/actions/workflows/build.yml)
-[![codecov](https://codecov.io/gh/kdubois/kubernetes-agent/branch/main/graph/badge.svg)](https://codecov.io/gh/kdubois/kubernetes-agent)
+[![Build and Push](https://github.com/kdubois/kubernetes-aiops-agent/actions/workflows/build.yml/badge.svg)](https://github.com/kdubois/kubernetes-aiops-agent/actions/workflows/build.yml)
 
 An autonomous AI agent for Kubernetes software delivery debugging and remediation, powered by Quarkus LangChain4j with support for Google Gemini AI and OpenAI.
 
@@ -89,36 +88,54 @@ The remediation agent can read source files from the repository to make more acc
 
 ```mermaid
 flowchart LR
-    A([Plugin]) --> B
+    A([Plugin]):::plugin --> B
 
     subgraph B[Diagnostic Agents]
         direction TB
-        B1[DiagnosticsDataAgent]
-        B2[MetricsDataAgent]
-        B3[K8sTools<br/>canary/stable logs, events, metrics]
-        B1 --> B3
-        B2 --> B3
+        B1[DiagnosticsDataAgent]:::diagnostic
+        B2[MetricsDataAgent]:::diagnostic
+        
+        subgraph K8S[K8s Data Sources]
+            direction LR
+            K1[Canary Pod<br/>logs, events, metrics]:::canary
+            K2[Stable Pod<br/>logs, events, metrics]:::stable
+        end
+        
+        B1 --> K1
+        B1 --> K2
+        B2 --> K1
+        B2 --> K2
     end
 
-    B --> C[DataCombinerAgent]
-    C --> D[AnalysisAgent<br/>AI evaluation]
-    D --> E[ScoringAgent<br/>quality check]
+    B --> C[DataCombinerAgent<br/>merge canary + stable data]:::combiner
+    C --> D[AnalysisAgent<br/>AI evaluation]:::analysis
+    D --> E[ScoringAgent<br/>quality check]:::scoring
 
     E -->|retry| D
-    E -->|return decision| F([Return])
+    E -->|return decision| F([Return]):::plugin
 
     E -->|async remediation| G
 
     subgraph G[RemediationAgent]
         direction TB
-        G1{Code fixable?}
-        G2[SourceCodePrefetcher]
-        G3[Create PR]
-        G4[Create Issue]
+        G1{Code fixable?}:::decision
+        G2[SourceCodePrefetcher]:::remediation
+        G3[Create PR]:::remediation
+        G4[Create Issue]:::remediation
         G1 -->|Yes| G2
         G2 --> G3
         G1 -->|No| G4
     end
+
+    classDef plugin fill:#1976d2,stroke:#0d47a1,stroke-width:3px,color:#fff
+    classDef diagnostic fill:#0288d1,stroke:#01579b,stroke-width:3px,color:#fff
+    classDef canary fill:#ef5350,stroke:#c62828,stroke-width:3px,color:#fff
+    classDef stable fill:#66bb6a,stroke:#2e7d32,stroke-width:3px,color:#fff
+    classDef combiner fill:#5c6bc0,stroke:#283593,stroke-width:3px,color:#fff
+    classDef analysis fill:#42a5f5,stroke:#1565c0,stroke-width:3px,color:#fff
+    classDef scoring fill:#26a69a,stroke:#00695c,stroke-width:3px,color:#fff
+    classDef decision fill:#7e57c2,stroke:#4527a0,stroke-width:3px,color:#fff
+    classDef remediation fill:#5e35b1,stroke:#311b92,stroke-width:3px,color:#fff
 ```
 
 ## CI/CD
