@@ -87,6 +87,7 @@ The remediation agent can read source files from the repository to make more acc
 ## Architecture
 
 ```mermaid
+%%{init: {'theme': 'base', 'look': 'handDrawn'}}%%
 flowchart LR
     A([Plugin]):::plugin --> B
 
@@ -97,8 +98,8 @@ flowchart LR
         
         subgraph K8S[K8s Data Sources]
             direction LR
-            K1[Canary Pod<br/>logs, events, metrics]:::canary
-            K2[Stable Pod<br/>logs, events, metrics]:::stable
+            K1[Canary Pods]:::canary
+            K2[Stable Pods]:::stable
         end
         
         B1 --> K1
@@ -127,15 +128,16 @@ flowchart LR
         G1 -->|No| G4
     end
 
-    classDef plugin fill:#1976d2,stroke:#0d47a1,stroke-width:3px,color:#fff
-    classDef diagnostic fill:#0288d1,stroke:#01579b,stroke-width:3px,color:#fff
-    classDef canary fill:#ef5350,stroke:#c62828,stroke-width:3px,color:#fff
-    classDef stable fill:#66bb6a,stroke:#2e7d32,stroke-width:3px,color:#fff
-    classDef combiner fill:#5c6bc0,stroke:#283593,stroke-width:3px,color:#fff
-    classDef analysis fill:#42a5f5,stroke:#1565c0,stroke-width:3px,color:#fff
-    classDef scoring fill:#26a69a,stroke:#00695c,stroke-width:3px,color:#fff
-    classDef decision fill:#7e57c2,stroke:#4527a0,stroke-width:3px,color:#fff
-    classDef remediation fill:#5e35b1,stroke:#311b92,stroke-width:3px,color:#fff
+    classDef plugin fill:#90caf9,stroke:#1565c0,stroke-width:3px,color:#000
+    classDef data fill:#c5e1a5,stroke:#558b2f,stroke-width:3px,color:#000
+    classDef diagnostic fill:#81d4fa,stroke:#0277bd,stroke-width:3px,color:#000
+    classDef canary fill:#ffab91,stroke:#d84315,stroke-width:3px,color:#000
+    classDef stable fill:#a5d6a7,stroke:#388e3c,stroke-width:3px,color:#000
+    classDef combiner fill:#f8bbd0,stroke:#512da8,stroke-width:3px,color:#000
+    classDef analysis fill:#80deea,stroke:#00838f,stroke-width:3px,color:#000
+    classDef scoring fill:#80cbc4,stroke:#00695c,stroke-width:3px,color:#000
+    classDef decision fill:#f8bbd0,stroke:#6a1b9a,stroke-width:3px,color:#000
+    classDef remediation fill:#e1bee7,stroke:#3949ab,stroke-width:3px,color:#000
 ```
 
 ## CI/CD
