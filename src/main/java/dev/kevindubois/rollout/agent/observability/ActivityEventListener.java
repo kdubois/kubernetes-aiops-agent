@@ -28,14 +28,20 @@ public class ActivityEventListener implements AgentListener {
     public void beforeAgentInvocation(AgentRequest request) {
         String name = request.agentName();
         String message = switch (name) {
-            case "DiagnosticsDataAgent" -> "Gathering stable and canary pod logs";
-            case "MetricsDataAgent" -> "Collecting stable and canary metrics";
-            case "DataCombinerAgent" -> "Combining logs and metrics data";
-            case "AnalysisAgent" -> "Analyzing collected logs and metrics";
-            case "ScoringAgent" -> "Evaluating analysis quality and confidence";
-            default -> name + " starting";
+            case "KubernetesWorkflow" -> "Analysis request received";
+            case "ParallelDataWorkflow" -> "Fetching rollout data";
+            case "DiagnosticsDataAgent" -> "Gathering pod logs";
+            case "MetricsDataAgent" -> "Collecting pod metrics";
+            case "DataCombinerAgent" -> "Preparing diagnostic report";
+            case "AnalysisLoop" -> "Starting AI analysis loop";
+            case "AnalysisAgent" -> "Analyzing rollout health";
+            case "ScoringAgent" -> "Scoring confidence";
+            default -> null;
         };
-        activityEvents.publish("AGENT_START", message, name);
+
+        if (message != null) {
+            activityEvents.publish("AGENT_START", message);
+        }
     }
 
     @Override
@@ -56,29 +62,25 @@ public class ActivityEventListener implements AgentListener {
                 insight = insight.substring(0, 200) + "...";
             }
             activityEvents.publish("ANALYSIS_INSIGHT", insight,
-                    "Root cause: " + (result.rootCause() != null ? result.rootCause() : "None identified"));
-            activityEvents.publish("AGENT_COMPLETE",
-                    recommendation + " recommended (confidence: " + result.confidence() + "%)", name);
+                    "Root cause: " + (result.rootCause() != null ? result.rootCause() : "No issues"));
+            activityEvents.publish("DECISION",
+                    recommendation + " recommended", "confidence: " + result.confidence() + "%");
 
         } else if (output instanceof ScoringResult result) {
             activityEvents.publish("CONFIDENCE_SCORE",
                     "Score: " + result.score() + "/100", result.reason());
             if (result.needsRetry()) {
                 activityEvents.publish("RETRY",
-                        "Retrying analysis — confidence too low", result.reason());
+                        "Retrying analysis", result.reason());
             }
-            activityEvents.publish("AGENT_COMPLETE",
-                    "Scoring complete — " + (result.needsRetry() ? "retry needed" : "quality acceptable"), name);
 
         } else if (output instanceof String logOutput) {
-            String summary = logOutput;
-            if (summary.length() > 150) {
-                summary = summary.substring(0, 150) + "...";
+            if ("ParallelDataWorkflow".equals(name)) {
+                activityEvents.publish("ANALYSIS_SUMMARY", "Logs and metrics gathered");
             }
-            activityEvents.publish("AGENT_COMPLETE", "Logs gathered", summary);
 
-        } else {
-            activityEvents.publish("AGENT_COMPLETE", name + " completed");
+        } else if ("KubernetesWorkflow".equals(name)) {
+            activityEvents.publish("ANALYSIS_SUMMARY", "Analysis complete");
         }
     }
 
