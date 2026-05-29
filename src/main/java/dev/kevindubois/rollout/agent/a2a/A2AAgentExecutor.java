@@ -17,11 +17,10 @@ import jakarta.inject.Inject;
 
 import java.text.MessageFormat;
 import java.util.List;
-import java.util.Map;
 
 import dev.kevindubois.rollout.agent.workflow.KubernetesWorkflow;
-import dev.kevindubois.rollout.agent.model.ActivityEventStore;
 import dev.kevindubois.rollout.agent.model.AnalysisResult;
+import dev.kevindubois.rollout.agent.service.ActivityEvents;
 import dev.kevindubois.rollout.agent.utils.RetryHelper;
 import dev.kevindubois.rollout.agent.utils.ToolCallLimiter;
 
@@ -40,7 +39,7 @@ public class A2AAgentExecutor {
     KubernetesWorkflow workflow;
 
     @Inject
-    ActivityEventStore activityEvents;
+    ActivityEvents activityEvents;
 
     @Produces
     public AgentExecutor agentExecutor() {
@@ -48,6 +47,7 @@ public class A2AAgentExecutor {
             @Override
             public void execute(RequestContext context, EventQueue eventQueue) throws JSONRPCError {
                 Log.info("A2A: Processing request");
+                activityEvents.requestStarted("A2A request");
                 
                 TaskUpdater updater = new TaskUpdater(context, eventQueue);
                 if (context.getTask() == null) {
@@ -70,13 +70,7 @@ public class A2AAgentExecutor {
                         () -> workflow.execute(memoryId, messageContent, repoUrl, baseBranch),
                         "A2A workflow execution"
                     );
-                    
-                    String summary = extractSummary(result.analysis());
-                    if (summary != null) {
-                        activityEvents.publish("ANALYSIS_SUMMARY", "Analysis complete", summary);
-                    }
 
-                    // Return formatted response
                     String response = formatAnalysisResult(result);
                     updater.addArtifact(List.of(new TextPart(response, null)), null, null, null);
                     updater.complete();
@@ -141,18 +135,6 @@ public class A2AAgentExecutor {
                     .reduce("", (a, b) -> a + "\n" + b)
                     .trim();
             }
-            
-            private String extractSummary(String analysis) {
-                if (analysis == null || analysis.isBlank()) return null;
-                String firstSentence = analysis.split("[.!?]\\s", 2)[0].trim();
-                if (firstSentence.length() > 150) {
-                    firstSentence = firstSentence.substring(0, 147) + "...";
-                }
-                if (!firstSentence.endsWith(".") && !firstSentence.endsWith("!") && !firstSentence.endsWith("?")) {
-                    firstSentence += ".";
-                }
-                return firstSentence;
-            }
 
             private String formatAnalysisResult(AnalysisResult result) {
                 StringBuilder sb = new StringBuilder();
@@ -170,10 +152,6 @@ public class A2AAgentExecutor {
                 
                 if (result.remediation() != null && !result.remediation().isEmpty()) {
                     sb.append("### Remediation\n").append(result.remediation()).append("\n\n");
-                }
-                
-                if (result.prLink() != null && !result.prLink().isEmpty()) {
-                    sb.append("### Pull Request\n").append(result.prLink()).append("\n");
                 }
                 
                 return sb.toString();
