@@ -1,17 +1,14 @@
 package dev.kevindubois.rollout.agent.agents;
 
 import dev.kevindubois.rollout.agent.model.AnalysisResult;
+import dev.kevindubois.rollout.agent.model.RemediationResult;
 import dev.kevindubois.rollout.agent.remediation.GitHubIssueTool;
 import dev.kevindubois.rollout.agent.remediation.GitHubPatchPRTool;
 import dev.langchain4j.agentic.Agent;
-import dev.langchain4j.agentic.declarative.ChatModelSupplier;
-import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.service.SystemMessage;
 import dev.langchain4j.service.UserMessage;
 import io.quarkiverse.langchain4j.ModelName;
 import io.quarkiverse.langchain4j.ToolBox;
-import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.inject.Inject;
 
 public interface RemediationAgent {
     
@@ -33,7 +30,7 @@ public interface RemediationAgent {
         Required: repoUrl, title="Canary Deployment Failed: [rootCause]", description (with error details and logs), rootCause, namespace, podName, diagnosticSummary, labels="deployment-failure,canary", assignees="kdubois".
 
         AFTER tool call, return EXACTLY this JSON:
-        {"promote": false, "confidence": <from analysisResult>, "analysis": "<what you did>", "rootCause": "<from analysisResult>", "remediation": "<action taken>", "prLink": "<URL from tool result or null>", "repoUrl": "<repo URL>", "baseBranch": "<branch>"}
+        {"prLink": "<URL from tool result or null>", "analysis": "<what you did>", "remediation": "<action taken>"}
         """)
     @UserMessage("""
         /no_think
@@ -47,25 +44,11 @@ public interface RemediationAgent {
         """)
     @Agent(outputKey = "remediationResult", description = "Implements remediation by creating GitHub PRs or Issues")
     @ToolBox({GitHubPatchPRTool.class, GitHubIssueTool.class})
-    AnalysisResult implementRemediation(
+    @ModelName("remediation")
+    RemediationResult implementRemediation(
         String diagnosticData,
         AnalysisResult analysisResult,
         String repoUrl,
         String baseBranch
     );
-
-    @ChatModelSupplier
-    static ChatModel chatModel() {
-        return RemediationModel.model;
-    }
-
-    @ApplicationScoped
-    class RemediationModel {
-        private static ChatModel model;
-
-        @Inject
-        void init(@ModelName("remediation") ChatModel remediationModel) {
-            model = remediationModel;
-        }
-    }
 }

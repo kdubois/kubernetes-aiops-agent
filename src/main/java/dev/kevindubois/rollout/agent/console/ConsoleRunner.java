@@ -91,9 +91,6 @@ public class ConsoleRunner {
                 System.out.println("\n=== Decision ===");
                 System.out.println("Promote: " + result.promote());
                 System.out.println("Confidence: " + result.confidence() + "%");
-                if (result.prLink() != null) {
-                    System.out.println("PR Link: " + result.prLink());
-                }
             }
         } catch (Exception e) {
             Log.error("Error in console mode", e);

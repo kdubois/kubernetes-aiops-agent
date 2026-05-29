@@ -2,7 +2,9 @@ package dev.kevindubois.rollout.agent.observability;
 
 import dev.kevindubois.rollout.agent.model.ActivityEventStore;
 import dev.kevindubois.rollout.agent.model.AnalysisResult;
+import dev.kevindubois.rollout.agent.model.RemediationResult;
 import dev.kevindubois.rollout.agent.model.ScoringResult;
+import dev.kevindubois.rollout.agent.utils.TextUtils;
 import dev.langchain4j.agentic.observability.AgentInvocationError;
 import dev.langchain4j.agentic.observability.AgentListener;
 import dev.langchain4j.agentic.observability.AgentRequest;
@@ -28,7 +30,6 @@ public class ActivityEventListener implements AgentListener {
     public void beforeAgentInvocation(AgentRequest request) {
         String name = request.agentName();
         String message = switch (name) {
-            case "KubernetesWorkflow" -> "Analysis request received";
             case "ParallelDataWorkflow" -> "Fetching rollout data";
             case "DiagnosticsDataAgent" -> "Gathering pod logs";
             case "MetricsDataAgent" -> "Collecting pod metrics";
@@ -36,6 +37,7 @@ public class ActivityEventListener implements AgentListener {
             case "AnalysisLoop" -> "Starting AI analysis loop";
             case "AnalysisAgent" -> "Analyzing rollout health";
             case "ScoringAgent" -> "Scoring confidence";
+            case "RemediationAgent" -> "Creating remediation PR/Issue";
             default -> null;
         };
 
@@ -50,37 +52,45 @@ public class ActivityEventListener implements AgentListener {
         Object output = response.output();
 
         if (output instanceof AnalysisResult result) {
-            String recommendation = result.promote() ? "PROMOTE" : "ROLLBACK";
+            if ("AnalysisAgent".equals(name)) {
+                String summary = TextUtils.extractSummary(result.analysis());
+                if (summary != null) {
+                    activityEvents.publish("ANALYSIS_SUMMARY", "Analysis summary", summary);
+                }
 
-            String summary = extractSummary(result.analysis());
-            if (summary != null) {
-                activityEvents.publish("ANALYSIS_SUMMARY", "Analysis summary", summary);
+                activityEvents.publish("ANALYSIS_INSIGHT", TextUtils.truncate(result.analysis(), 200),
+                        "Root cause: " + (result.rootCause() != null ? result.rootCause() : "No issues"));
+                activityEvents.publish("DECISION",
+                        result.promote() ? "PROMOTE recommended" : "ROLLBACK recommended",
+                        "confidence: " + result.confidence() + "%");
+                return;
             }
-
-            String insight = result.analysis();
-            if (insight != null && insight.length() > 200) {
-                insight = insight.substring(0, 200) + "...";
-            }
-            activityEvents.publish("ANALYSIS_INSIGHT", insight,
-                    "Root cause: " + (result.rootCause() != null ? result.rootCause() : "No issues"));
-            activityEvents.publish("DECISION",
-                    recommendation + " recommended", "confidence: " + result.confidence() + "%");
 
         } else if (output instanceof ScoringResult result) {
-            activityEvents.publish("CONFIDENCE_SCORE",
-                    "Score: " + result.score() + "/100", result.reason());
-            if (result.needsRetry()) {
-                activityEvents.publish("RETRY",
-                        "Retrying analysis", result.reason());
+            if ("ScoringAgent".equals(name)) {
+                activityEvents.publish("CONFIDENCE_SCORE",
+                        "Score: " + result.score() + "/100", result.reason());
+                if (result.needsRetry()) {
+                    activityEvents.publish("RETRY",
+                            "Retrying analysis", result.reason());
+                }
             }
 
-        } else if (output instanceof String logOutput) {
+        } else if (output instanceof RemediationResult result) {
+            if ("RemediationAgent".equals(name)) {
+                if (result.prLink() != null && !result.prLink().isEmpty()) {
+                    activityEvents.publish("REMEDIATION", "GitHub artifact created", result.prLink());
+                } else {
+                    activityEvents.publish("REMEDIATION", "Remediation completed", "No GitHub artifact created");
+                }
+            }
+
+        } else if (output instanceof String) {
             if ("ParallelDataWorkflow".equals(name)) {
                 activityEvents.publish("ANALYSIS_SUMMARY", "Logs and metrics gathered");
             }
-
-        } else if ("KubernetesWorkflow".equals(name)) {
-            activityEvents.publish("ANALYSIS_SUMMARY", "Analysis complete");
+        } else if ("RemediationAgent".equals(name) && output == null) {
+            activityEvents.publish("REMEDIATION", "Failed", "Agent returned null");
         }
     }
 
@@ -89,19 +99,5 @@ public class ActivityEventListener implements AgentListener {
         String message = error.error() != null ? error.error().getMessage() : "Unknown error";
         Log.errorf("Agent %s failed: %s", error.agentName(), message);
         activityEvents.publish("ERROR", error.agentName() + " failed", message);
-    }
-
-    private String extractSummary(String analysis) {
-        if (analysis == null || analysis.isBlank()) {
-            return null;
-        }
-        String firstSentence = analysis.split("[.!?]\\s", 2)[0].trim();
-        if (firstSentence.length() > 150) {
-            firstSentence = firstSentence.substring(0, 147) + "...";
-        }
-        if (!firstSentence.endsWith(".") && !firstSentence.endsWith("!") && !firstSentence.endsWith("?")) {
-            firstSentence += ".";
-        }
-        return firstSentence;
     }
 }

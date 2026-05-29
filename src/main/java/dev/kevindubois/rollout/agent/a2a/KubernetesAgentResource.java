@@ -9,15 +9,13 @@ import jakarta.ws.rs.core.Response.Status;
 
 import java.text.MessageFormat;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
 
 import dev.kevindubois.rollout.agent.workflow.KubernetesWorkflow;
-import dev.kevindubois.rollout.agent.agents.RemediationAgent;
-import dev.kevindubois.rollout.agent.model.ActivityEventStore;
 import dev.kevindubois.rollout.agent.model.AnalysisResult;
 import dev.kevindubois.rollout.agent.model.KubernetesAgentRequest;
 import dev.kevindubois.rollout.agent.model.KubernetesAgentResponse;
-import dev.kevindubois.rollout.agent.service.SourceCodePrefetcher;
+import dev.kevindubois.rollout.agent.service.ActivityEvents;
+import dev.kevindubois.rollout.agent.service.RemediationOrchestrator;
 import dev.kevindubois.rollout.agent.utils.RetryHelper;
 import dev.kevindubois.rollout.agent.utils.ToolCallLimiter;
 
@@ -30,15 +28,12 @@ public class KubernetesAgentResource {
 
     @Inject
     KubernetesWorkflow kubernetesWorkflow;
-    
-    @Inject
-    RemediationAgent remediationAgent;
 
     @Inject
-    SourceCodePrefetcher sourceCodePrefetcher;
+    RemediationOrchestrator remediationOrchestrator;
 
     @Inject
-    ActivityEventStore activityEvents;
+    ActivityEvents activityEvents;
      
     /**
      * Main analyze endpoint
@@ -49,17 +44,15 @@ public class KubernetesAgentResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response analyze(KubernetesAgentRequest request) {
         Log.info(MessageFormat.format("Received analysis request from user: {0}", request.userId()));
-        activityEvents.publish("ANALYSIS_START", "Analysis request received", "User: " + request.userId());
+        activityEvents.requestStarted("User: " + request.userId());
 
         try {
-            // Extract context values for later use
             Map<String, Object> context = request.context();
             String repoUrl = context != null ? (String) context.get("repoUrl") : null;
             String baseBranch = context != null ? (String) context.get("baseBranch") : "main";
             
             Log.info(MessageFormat.format("Context - repoUrl: {0}, baseBranch: {1}", repoUrl, baseBranch));
             
-            // Build prompt with context
             String prompt = buildPrompt(request);
             Log.debug(MessageFormat.format("Built prompt: {0}", prompt));
             
@@ -76,112 +69,19 @@ public class KubernetesAgentResource {
                 () -> kubernetesWorkflow.execute(memoryId, prompt, repoUrl, baseBranch),
                 "Multi-agent workflow analysis"
             );
-            
-            String summary = extractSummary(analysisResult.analysis());
-            if (summary != null) {
-                activityEvents.publish("ANALYSIS_SUMMARY", "Analysis complete", summary);
-            }
 
-            activityEvents.publish("DECISION",
-                analysisResult.promote() ? "PROMOTE canary" : "ROLLBACK canary",
-                "Confidence: " + analysisResult.confidence() + "% | " + analysisResult.analysis());
-
-            // Add context to result if not already present (fallback mechanism)
-            if (analysisResult.repoUrl() == null && repoUrl != null) {
-                analysisResult = new AnalysisResult(
-                    analysisResult.promote(),
-                    analysisResult.confidence(),
-                    analysisResult.analysis(),
-                    analysisResult.rootCause(),
-                    analysisResult.remediation(),
-                    analysisResult.prLink(),
-                    repoUrl,
-                    baseBranch
-                );
-            }
-            
-            // Validate PR link is not hallucinated
-            if (analysisResult.prLink() != null && isHallucinatedUrl(analysisResult.prLink())) {
-                Log.warn(MessageFormat.format("Detected hallucinated PR link: {0}, setting to null", analysisResult.prLink()));
-                analysisResult = new AnalysisResult(
-                    analysisResult.promote(),
-                    analysisResult.confidence(),
-                    analysisResult.analysis(),
-                    analysisResult.rootCause(),
-                    analysisResult.remediation(),
-                    null,  // Clear hallucinated link
-                    analysisResult.repoUrl(),
-                    analysisResult.baseBranch()
-                );
-            }
-            
-            // Convert AnalysisResult to KubernetesAgentResponse
             KubernetesAgentResponse response = new KubernetesAgentResponse(
                 analysisResult.analysis(),
                 analysisResult.rootCause(),
                 analysisResult.remediation(),
-                analysisResult.prLink(),
+                null,
                 analysisResult.promote(),
                 analysisResult.confidence()
             );
             
             Log.info("Multi-agent workflow completed successfully");
-            
-            // Trigger async remediation if needed (fire-and-forget)
-            final AnalysisResult finalResult = analysisResult;
-            final String finalPrompt = buildPrompt(request);
-            if (!finalResult.promote() && repoUrl != null && !repoUrl.isEmpty()) {
-                Log.info("Triggering async remediation for rollback decision");
-                activityEvents.publish("REMEDIATION", "Remediation triggered", "Analyzing root cause for automated fix");
 
-                // Only pre-fetch source code for code bugs, not operational issues
-                final String enrichedPrompt;
-                if (!isOperationalIssue(finalResult.rootCause())) {
-                    String analysisText = finalPrompt + "\n" + finalResult.toString();
-                    String sourceContext = sourceCodePrefetcher.prefetchSourceCode(analysisText, repoUrl, baseBranch);
-                    enrichedPrompt = finalPrompt + sourceContext;
-                } else {
-                    Log.info("Operational issue detected (e.g. memory leak), skipping source code pre-fetch — will create issue instead of PR");
-                    enrichedPrompt = finalPrompt;
-                }
-
-                CompletableFuture.runAsync(() -> {
-                    try {
-                        // Brief delay to avoid rate limiting from rapid sequential LLM calls
-                        Thread.sleep(3000);
-                        Log.info("Starting async remediation");
-                        AnalysisResult remediationResult = null;
-                        try {
-                            remediationResult = remediationAgent.implementRemediation(
-                                enrichedPrompt, finalResult, repoUrl, baseBranch
-                            );
-                        } catch (dev.langchain4j.service.output.OutputParsingException e) {
-                            Log.error("RemediationAgent failed to parse LLM output - the model may not have returned valid JSON", e);
-                            activityEvents.publish("REMEDIATION", "Failed", "Output parsing error: " + e.getMessage());
-                            return;
-                        }
-                        
-                        if (remediationResult != null && remediationResult.prLink() != null && !remediationResult.prLink().isEmpty()) {
-                            Log.info(MessageFormat.format(
-                                "Async remediation completed - GitHub artifact created: {0}",
-                                remediationResult.prLink()
-                            ));
-                            activityEvents.publish("REMEDIATION", "GitHub artifact created", remediationResult.prLink());
-                        } else if (remediationResult == null) {
-                            Log.warn("Remediation agent returned null - LLM may have failed to produce valid JSON output");
-                            activityEvents.publish("REMEDIATION", "Failed", "Agent returned null");
-                        } else {
-                            Log.info("Async remediation completed - no GitHub artifact created");
-                            activityEvents.publish("REMEDIATION", "Remediation completed", "No GitHub artifact created");
-                        }
-                    } catch (Exception e) {
-                        Log.error("Async remediation failed (non-critical)", e);
-                        activityEvents.publish("REMEDIATION", "Failed", "Exception: " + e.getMessage());
-                    }
-                });
-            } else {
-                Log.debug("Skipping remediation - promote=true or no repoUrl configured");
-            }
+            remediationOrchestrator.triggerIfNeeded(analysisResult, prompt, repoUrl, baseBranch);
             
             return Response.ok(response).build();
             
@@ -189,7 +89,7 @@ public class KubernetesAgentResource {
             Log.error(MessageFormat.format("Error processing request from user: {0}", request.userId()), e);
             Log.error(MessageFormat.format("Request details - Prompt: {0}", request.prompt()));
             Log.error(MessageFormat.format("Request details - Context: {0}", request.context()));
-            activityEvents.publish("ERROR", "Analysis failed", e.getMessage());
+            activityEvents.requestFailed(e.getMessage());
             
             // Log additional details for debugging
             if (e instanceof NullPointerException) {
@@ -241,57 +141,5 @@ public class KubernetesAgentResource {
         
         return prompt.toString();
     }
-    
-    /**
-     * Determine if the root cause is an operational issue (not fixable with a code patch).
-     * Memory leaks, OOM, resource exhaustion, config issues → create issue, not PR.
-     */
-    private boolean isOperationalIssue(String rootCause) {
-        if (rootCause == null || rootCause.isEmpty()) return false;
-        String lower = rootCause.toLowerCase();
-        return lower.contains("memory leak") || lower.contains("oom") || lower.contains("out of memory")
-                || lower.contains("outofmemory") || lower.contains("resource exhaustion")
-                || lower.contains("cpu throttl") || lower.contains("disk space")
-                || lower.contains("oomkilled") || lower.contains("heap")
-                || lower.contains("gc activity") || lower.contains("garbage collect")
-                || lower.contains("performance degradation");
-    }
 
-    private String extractSummary(String analysis) {
-        if (analysis == null || analysis.isBlank()) {
-            return null;
-        }
-        String firstSentence = analysis.split("[.!?]\\s", 2)[0].trim();
-        if (firstSentence.length() > 150) {
-            firstSentence = firstSentence.substring(0, 147) + "...";
-        }
-        if (!firstSentence.endsWith(".") && !firstSentence.endsWith("!") && !firstSentence.endsWith("?")) {
-            firstSentence += ".";
-        }
-        return firstSentence;
-    }
-
-    /**
-     * Detect hallucinated URLs that the LLM may have invented.
-     * Common patterns include example.com, example/repo, or generic placeholder URLs.
-     *
-     * @param url The URL to validate
-     * @return true if the URL appears to be hallucinated, false otherwise
-     */
-    private boolean isHallucinatedUrl(String url) {
-        if (url == null || url.isEmpty()) {
-            return false;
-        }
-        
-        // Detect common hallucination patterns
-        boolean isHallucinated = url.contains("example.com") ||
-                                 url.contains("example/repo") ||
-                                 url.matches(".*github\\.com/[^/]+/repo/.*");
-        
-        if (isHallucinated) {
-            Log.debug(MessageFormat.format("URL matched hallucination pattern: {0}", url));
-        }
-        
-        return isHallucinated;
-    }
 }

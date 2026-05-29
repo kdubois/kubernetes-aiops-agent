@@ -56,10 +56,7 @@ public interface AnalysisAgent {
           "confidence": 0-100,
           "analysis": "brief comparison",
           "rootCause": "issue or 'No issues'",
-          "remediation": "action or 'Promote'",
-          "prLink": null,
-          "repoUrl": null,
-          "baseBranch": null
+          "remediation": "action or 'Promote'"
         }
 
         Confidence: 90-100 (clear), 70-89 (good), 50-69 (mixed), <50 (unclear)
