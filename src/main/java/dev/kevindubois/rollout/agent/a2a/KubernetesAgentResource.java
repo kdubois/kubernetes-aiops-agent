@@ -70,6 +70,8 @@ public class KubernetesAgentResource {
                 "Multi-agent workflow analysis"
             );
 
+            activityEvents.analysisCompleted(analysisResult);
+
             KubernetesAgentResponse response = new KubernetesAgentResponse(
                 analysisResult.analysis(),
                 analysisResult.rootCause(),

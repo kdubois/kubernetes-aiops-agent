@@ -1,10 +1,8 @@
 package dev.kevindubois.rollout.agent.observability;
 
 import dev.kevindubois.rollout.agent.model.ActivityEventStore;
-import dev.kevindubois.rollout.agent.model.AnalysisResult;
 import dev.kevindubois.rollout.agent.model.RemediationResult;
 import dev.kevindubois.rollout.agent.model.ScoringResult;
-import dev.kevindubois.rollout.agent.utils.TextUtils;
 import dev.langchain4j.agentic.observability.AgentInvocationError;
 import dev.langchain4j.agentic.observability.AgentListener;
 import dev.langchain4j.agentic.observability.AgentRequest;
@@ -51,22 +49,7 @@ public class ActivityEventListener implements AgentListener {
         String name = response.agentName();
         Object output = response.output();
 
-        if (output instanceof AnalysisResult result) {
-            if ("AnalysisAgent".equals(name)) {
-                String summary = TextUtils.extractSummary(result.analysis());
-                if (summary != null) {
-                    activityEvents.publish("ANALYSIS_SUMMARY", "Analysis summary", summary);
-                }
-
-                activityEvents.publish("ANALYSIS_INSIGHT", TextUtils.truncate(result.analysis(), 200),
-                        "Root cause: " + (result.rootCause() != null ? result.rootCause() : "No issues"));
-                activityEvents.publish("DECISION",
-                        result.promote() ? "PROMOTE recommended" : "ROLLBACK recommended",
-                        "confidence: " + result.confidence() + "%");
-                return;
-            }
-
-        } else if (output instanceof ScoringResult result) {
+        if (output instanceof ScoringResult result) {
             if ("ScoringAgent".equals(name)) {
                 activityEvents.publish("CONFIDENCE_SCORE",
                         "Score: " + result.score() + "/100", result.reason());
