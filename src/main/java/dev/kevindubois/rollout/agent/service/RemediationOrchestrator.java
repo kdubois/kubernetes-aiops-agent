@@ -2,6 +2,7 @@ package dev.kevindubois.rollout.agent.service;
 
 import dev.kevindubois.rollout.agent.agents.RemediationAgent;
 import dev.kevindubois.rollout.agent.model.AnalysisResult;
+import dev.langchain4j.service.output.OutputParsingException;
 import io.quarkus.logging.Log;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -19,6 +20,9 @@ public class RemediationOrchestrator {
 
     @Inject
     ActivityEvents activityEvents;
+
+    @Inject
+    RemediationOutcomeHolder outcomeHolder;
 
     public void triggerIfNeeded(AnalysisResult result, String prompt, String repoUrl, String baseBranch) {
         if (result.promote() || repoUrl == null || repoUrl.isEmpty()) {
@@ -39,17 +43,43 @@ public class RemediationOrchestrator {
         }
 
         CompletableFuture.runAsync(() -> {
+            outcomeHolder.reset();
             try {
                 Log.info("Starting async remediation");
                 remediationAgent.implementRemediation(enrichedPrompt, result, repoUrl, baseBranch);
-            } catch (dev.langchain4j.service.output.OutputParsingException e) {
-                Log.error("RemediationAgent failed to parse LLM output", e);
-                activityEvents.remediationFailed("Output parsing error: " + e.getMessage());
             } catch (Exception e) {
-                Log.error("Async remediation failed (non-critical)", e);
-                activityEvents.remediationFailed("Exception: " + e.getMessage());
+                if (isOutputParsingFailure(e) && tryRecoverFromToolOutcome()) {
+                    return;
+                }
+                if (e instanceof OutputParsingException) {
+                    Log.error("RemediationAgent failed to parse LLM output", e);
+                    activityEvents.remediationFailed("Output parsing error: " + e.getMessage());
+                } else {
+                    Log.error("Async remediation failed (non-critical)", e);
+                    activityEvents.remediationFailed("Exception: " + e.getMessage());
+                }
             }
         });
+    }
+
+    private boolean tryRecoverFromToolOutcome() {
+        return outcomeHolder.getOutcome()
+                .map(fallback -> {
+                    Log.warn("Remediation tool succeeded but LLM output parsing failed; using tool outcome");
+                    activityEvents.remediationCompleted(fallback.prLink());
+                    return true;
+                })
+                .orElse(false);
+    }
+
+    private static boolean isOutputParsingFailure(Throwable t) {
+        while (t != null) {
+            if (t instanceof OutputParsingException) {
+                return true;
+            }
+            t = t.getCause();
+        }
+        return false;
     }
 
     private boolean isOperationalIssue(String rootCause) {

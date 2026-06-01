@@ -28,7 +28,7 @@ public interface RemediationAgent {
         createGitHubIssue:
         Required: repoUrl, title="Canary Deployment Failed: [rootCause]", description, rootCause, namespace, podName, diagnosticSummary, labels="deployment-failure,canary", assignees="kdubois".
 
-        AFTER tool call, return EXACTLY this JSON:
+        AFTER tool call, return EXACTLY this JSON in your response body (not in thinking/reasoning):
         {"prLink": "<URL from tool result or null>", "analysis": "<what you did>", "remediation": "<action taken>"}
         """)
     @UserMessage("""

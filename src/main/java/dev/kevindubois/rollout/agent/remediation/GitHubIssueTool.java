@@ -1,6 +1,7 @@
 package dev.kevindubois.rollout.agent.remediation;
 
 import dev.langchain4j.agent.tool.Tool;
+import dev.kevindubois.rollout.agent.service.RemediationOutcomeHolder;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.rest.client.inject.RestClient;
@@ -22,6 +23,9 @@ public class GitHubIssueTool {
     @Inject
     @RestClient
     GitHubRestClient githubClient;
+
+    @Inject
+    RemediationOutcomeHolder outcomeHolder;
     
     public GitHubIssueTool() {
         this.githubToken = System.getenv("GITHUB_TOKEN");
@@ -104,7 +108,11 @@ public class GitHubIssueTool {
                 githubClient.createIssue(owner, repo, authHeader, issueRequest);
             
             Log.info(MessageFormat.format("Successfully created issue: {0}", issue.html_url()));
-            
+
+            if (outcomeHolder != null) {
+                outcomeHolder.recordIssue(issue.html_url(), title);
+            }
+
             return Map.of(
                 "success", true,
                 "issueUrl", issue.html_url(),

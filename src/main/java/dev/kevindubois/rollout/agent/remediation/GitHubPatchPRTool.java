@@ -3,6 +3,7 @@ package dev.kevindubois.rollout.agent.remediation;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.langchain4j.agent.tool.Tool;
+import dev.kevindubois.rollout.agent.service.RemediationOutcomeHolder;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.rest.client.inject.RestClient;
@@ -34,6 +35,9 @@ public class GitHubPatchPRTool {
     @Inject
     @RestClient
     GitHubRestClient githubClient;
+
+    @Inject
+    RemediationOutcomeHolder outcomeHolder;
 
     public GitHubPatchPRTool() {
         this(new GitOperations(), System.getenv("GITHUB_TOKEN"));
@@ -161,7 +165,11 @@ public class GitHubPatchPRTool {
             );
             
             Log.info(MessageFormat.format("Successfully created PR: {0}", pr.html_url()));
-            
+
+            if (outcomeHolder != null) {
+                outcomeHolder.recordPullRequest(pr.html_url(), fixDescription);
+            }
+
             return Map.of(
                 "success", true,
                 "prUrl", pr.html_url(),

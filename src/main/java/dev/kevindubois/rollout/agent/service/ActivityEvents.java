@@ -30,4 +30,8 @@ public class ActivityEvents {
     public void remediationFailed(String reason) {
         store.publish("REMEDIATION", "Failed", reason);
     }
+
+    public void remediationCompleted(String artifactUrl) {
+        store.publish("REMEDIATION", "GitHub artifact created", artifactUrl);
+    }
 }
