@@ -41,6 +41,10 @@ public class ActivityEvents {
         store.publish("REMEDIATION", "Remediation triggered", "Analyzing root cause for automated fix");
     }
 
+    public void remediationRetrying(int failedAttempt, String reason) {
+        store.publish("RETRY", "Retrying remediation (attempt " + failedAttempt + " failed)", reason);
+    }
+
     public void remediationFailed(String reason) {
         store.publish("REMEDIATION", "Failed", reason);
     }

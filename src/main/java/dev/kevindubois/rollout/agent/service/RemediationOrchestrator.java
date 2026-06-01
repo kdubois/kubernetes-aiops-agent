@@ -12,6 +12,8 @@ import java.util.concurrent.CompletableFuture;
 @ApplicationScoped
 public class RemediationOrchestrator {
 
+    private static final int MAX_ATTEMPTS = 2;
+
     @Inject
     RemediationLoop remediationLoop;
 
@@ -42,24 +44,32 @@ public class RemediationOrchestrator {
                     prompt + "\n" + result, repoUrl, baseBranch);
         }
 
-        CompletableFuture.runAsync(() -> {
+        CompletableFuture.runAsync(() -> executeWithRetry(enrichedPrompt, result, repoUrl, baseBranch));
+    }
+
+    private void executeWithRetry(String prompt, AnalysisResult result, String repoUrl, String baseBranch) {
+        for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
             outcomeHolder.reset();
             try {
-                Log.info("Starting async remediation via loop");
-                remediationLoop.remediateWithRetry(enrichedPrompt, result, repoUrl, baseBranch);
+                Log.infof("Remediation attempt %d/%d", attempt, MAX_ATTEMPTS);
+                remediationLoop.remediateWithRetry(prompt, result, repoUrl, baseBranch);
+                return;
             } catch (Exception e) {
                 if (isOutputParsingFailure(e) && tryRecoverFromToolOutcome()) {
                     return;
                 }
-                if (e instanceof OutputParsingException) {
-                    Log.error("RemediationAgent failed to parse LLM output", e);
-                    activityEvents.remediationFailed("Output parsing error: " + e.getMessage());
-                } else {
-                    Log.error("Async remediation failed (non-critical)", e);
-                    activityEvents.remediationFailed("Exception: " + e.getMessage());
+
+                if (attempt < MAX_ATTEMPTS) {
+                    Log.warnf("Remediation attempt %d failed, retrying: %s", attempt, e.getMessage());
+                    activityEvents.remediationRetrying(attempt, e.getMessage());
+                    continue;
                 }
+
+                Log.error("Remediation failed after all attempts", e);
+                activityEvents.remediationFailed(
+                        isOutputParsingFailure(e) ? "LLM produced unusable output" : e.getMessage());
             }
-        });
+        }
     }
 
     private boolean tryRecoverFromToolOutcome() {
