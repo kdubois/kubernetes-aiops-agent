@@ -167,6 +167,13 @@ public class SourceCodePrefetcher {
             addClassName(classNames, m3.group(1));
         }
 
+        // Extract class names from Java stack traces: at pkg.ClassName.method(...)
+        Pattern stackClass = Pattern.compile("at\\s+[\\w.$]+\\.([A-Z][a-zA-Z0-9]+)\\.[\\w$]+\\(");
+        Matcher m4 = stackClass.matcher(text);
+        while (m4.find()) {
+            addClassName(classNames, m4.group(1));
+        }
+
         return classNames;
     }
 

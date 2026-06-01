@@ -1,5 +1,7 @@
 package dev.kevindubois.rollout.agent.remediation;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.langchain4j.agent.tool.Tool;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -21,18 +23,22 @@ import java.util.stream.Collectors;
  */
 @ApplicationScoped
 public class GitHubPatchPRTool {
-    
+
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final TypeReference<List<Map<String, Object>>> PATCH_LIST_TYPE =
+            new TypeReference<>() {};
+
     private final GitOperations gitOps;
     private final String githubToken;
-    
+
     @Inject
     @RestClient
     GitHubRestClient githubClient;
-    
+
     public GitHubPatchPRTool() {
         this(new GitOperations(), System.getenv("GITHUB_TOKEN"));
     }
-    
+
     // Package-private constructor for testing
     GitHubPatchPRTool(GitOperations gitOps, String githubToken) {
         this.gitOps = gitOps;
@@ -89,7 +95,7 @@ public class GitHubPatchPRTool {
      * This is more efficient than providing full file content and avoids LLM token limits.
      * 
      * @param repoUrl URL of the GitHub repository
-     * @param patches List of file patches with line-based changes
+     * @param patchesJson JSON array of file patches with line-based changes
      * @param fixDescription Description of the fix
      * @param rootCause Root cause of the issue
      * @param namespace Kubernetes namespace
@@ -100,7 +106,7 @@ public class GitHubPatchPRTool {
     @Tool("Create a GitHub pull request using line-based patches. Specify exact line numbers and changes to make. More efficient than providing full file content.")
     public Map<String, Object> createGitHubPRWithPatches(
             String repoUrl,
-            List<Map<String, Object>> patches,
+            String patchesJson,
             String fixDescription,
             String rootCause,
             String namespace,
@@ -108,17 +114,21 @@ public class GitHubPatchPRTool {
             String testingRecommendations
     ) {
         Log.info("=== Executing Tool: createGitHubPRWithPatches ===");
-        
+
         // Validate required parameters
-        if (repoUrl == null || patches == null || patches.isEmpty() || fixDescription == null) {
-            return Map.of("success", false, "error", "Missing required parameters: repoUrl, patches, fixDescription");
+        if (repoUrl == null || patchesJson == null || patchesJson.isBlank() || fixDescription == null) {
+            return Map.of("success", false, "error", "Missing required parameters: repoUrl, patchesJson, fixDescription");
         }
-        
+
         Log.info(MessageFormat.format("Creating PR with patches for repository: {0}", repoUrl));
-        
-        // Convert raw maps to FilePatch objects
+
+        // Convert JSON string to FilePatch objects (LLMs often pass nested arrays as strings)
         List<FilePatch> filePatchList;
         try {
+            List<Map<String, Object>> patches = parsePatchesJson(patchesJson);
+            if (patches.isEmpty()) {
+                return Map.of("success", false, "error", "patchesJson must contain at least one file patch");
+            }
             filePatchList = convertToFilePatches(patches);
         } catch (Exception e) {
             Log.error("Failed to parse patches", e);
@@ -173,6 +183,31 @@ public class GitHubPatchPRTool {
         }
     }
     
+    /**
+     * Parse patches JSON from LLM tool calls. Handles stringified arrays and minor formatting issues.
+     */
+    static List<Map<String, Object>> parsePatchesJson(String patchesJson) throws Exception {
+        String json = patchesJson.trim();
+
+        // Unwrap double-encoded JSON string: "[{...}]" -> [{...}]
+        if (json.startsWith("\"")) {
+            json = MAPPER.readValue(json, String.class).trim();
+        }
+
+        // Extract array boundaries (handles trailing text or markdown)
+        int start = json.indexOf('[');
+        int end = json.lastIndexOf(']');
+        if (start >= 0 && end > start) {
+            json = json.substring(start, end + 1);
+        }
+
+        try {
+            return MAPPER.readValue(json, PATCH_LIST_TYPE);
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Failed to parse patches JSON: " + e.getMessage(), e);
+        }
+    }
+
     /**
      * Convert raw Map objects from LangChain4j to FilePatch objects
      */
