@@ -50,6 +50,10 @@ public class ActivityEvents {
     }
 
     public void remediationCompleted(String artifactUrl) {
-        store.publish("REMEDIATION", "GitHub artifact created", artifactUrl);
+        if (artifactUrl != null && !artifactUrl.isEmpty()) {
+            store.publish("REMEDIATION", "GitHub artifact created", artifactUrl);
+        } else {
+            store.publish("REMEDIATION", "Remediation completed", "No GitHub artifact created");
+        }
     }
 }

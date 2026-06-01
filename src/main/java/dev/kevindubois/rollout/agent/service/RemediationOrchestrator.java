@@ -1,6 +1,7 @@
 package dev.kevindubois.rollout.agent.service;
 
 import dev.kevindubois.rollout.agent.model.AnalysisResult;
+import dev.kevindubois.rollout.agent.model.RemediationResult;
 import dev.kevindubois.rollout.agent.workflow.RemediationLoop;
 import dev.langchain4j.service.output.OutputParsingException;
 import io.quarkus.logging.Log;
@@ -52,7 +53,12 @@ public class RemediationOrchestrator {
             outcomeHolder.reset();
             try {
                 Log.infof("Remediation attempt %d/%d", attempt, MAX_ATTEMPTS);
-                remediationLoop.remediateWithRetry(prompt, result, repoUrl, baseBranch);
+                RemediationResult outcome = remediationLoop.remediateWithRetry(prompt, result, repoUrl, baseBranch);
+                if (outcome != null && outcome.prLink() != null && !outcome.prLink().isEmpty()) {
+                    activityEvents.remediationCompleted(outcome.prLink());
+                } else {
+                    activityEvents.remediationCompleted(null);
+                }
                 return;
             } catch (Exception e) {
                 if (isOutputParsingFailure(e) && tryRecoverFromToolOutcome()) {
