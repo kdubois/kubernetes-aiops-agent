@@ -2,6 +2,7 @@ package dev.kevindubois.rollout.agent.observability;
 
 import dev.kevindubois.rollout.agent.model.ActivityEventStore;
 import dev.kevindubois.rollout.agent.model.RemediationResult;
+import dev.kevindubois.rollout.agent.model.RemediationScoringResult;
 import dev.kevindubois.rollout.agent.model.ScoringResult;
 import dev.langchain4j.agentic.observability.AgentInvocationError;
 import dev.langchain4j.agentic.observability.AgentListener;
@@ -36,6 +37,8 @@ public class ActivityEventListener implements AgentListener {
             case "AnalysisAgent" -> "Analyzing rollout health";
             case "ScoringAgent" -> "Scoring confidence";
             case "RemediationAgent" -> "Creating remediation PR/Issue";
+            case "RemediationLoop" -> "Starting remediation loop";
+            case "RemediationScoringAgent" -> "Scoring remediation quality";
             default -> null;
         };
 
@@ -56,6 +59,16 @@ public class ActivityEventListener implements AgentListener {
                 if (result.needsRetry()) {
                     activityEvents.publish("RETRY",
                             "Retrying analysis", result.reason());
+                }
+            }
+
+        } else if (output instanceof RemediationScoringResult result) {
+            if ("RemediationScoringAgent".equals(name)) {
+                activityEvents.publish("CONFIDENCE_SCORE",
+                        "Remediation score: " + result.score() + "/100", result.reason());
+                if (result.needsRetry()) {
+                    activityEvents.publish("RETRY",
+                            "Retrying remediation", result.reason());
                 }
             }
 

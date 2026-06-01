@@ -1,7 +1,7 @@
 package dev.kevindubois.rollout.agent.service;
 
-import dev.kevindubois.rollout.agent.agents.RemediationAgent;
 import dev.kevindubois.rollout.agent.model.AnalysisResult;
+import dev.kevindubois.rollout.agent.workflow.RemediationLoop;
 import dev.langchain4j.service.output.OutputParsingException;
 import io.quarkus.logging.Log;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -13,7 +13,7 @@ import java.util.concurrent.CompletableFuture;
 public class RemediationOrchestrator {
 
     @Inject
-    RemediationAgent remediationAgent;
+    RemediationLoop remediationLoop;
 
     @Inject
     SourceCodePrefetcher sourceCodePrefetcher;
@@ -45,8 +45,8 @@ public class RemediationOrchestrator {
         CompletableFuture.runAsync(() -> {
             outcomeHolder.reset();
             try {
-                Log.info("Starting async remediation");
-                remediationAgent.implementRemediation(enrichedPrompt, result, repoUrl, baseBranch);
+                Log.info("Starting async remediation via loop");
+                remediationLoop.remediateWithRetry(enrichedPrompt, result, repoUrl, baseBranch);
             } catch (Exception e) {
                 if (isOutputParsingFailure(e) && tryRecoverFromToolOutcome()) {
                     return;
