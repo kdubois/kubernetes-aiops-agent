@@ -20,9 +20,9 @@ public interface AnalysisLoop {
     )
     AnalysisResult analyzeWithRetry(String diagnosticData);
     
-    @ExitCondition
+    @ExitCondition(testExitAtLoopEnd = true, description = "Exit when scoring indicates no retry needed")
     static boolean shouldExit(ScoringResult scoringResult) {
-        return scoringResult != null && !scoringResult.needsRetry();
+        return !scoringResult.needsRetry();
     }
 }
 
