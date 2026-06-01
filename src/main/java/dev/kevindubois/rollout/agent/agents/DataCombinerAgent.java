@@ -1,7 +1,6 @@
 package dev.kevindubois.rollout.agent.agents;
 
 import dev.langchain4j.agentic.Agent;
-import dev.langchain4j.agentic.scope.AgenticScope;
 import io.quarkus.logging.Log;
 
 /**
@@ -11,12 +10,8 @@ import io.quarkus.logging.Log;
 public class DataCombinerAgent {
 
     @Agent(description = "Combines diagnostic and metrics reports", outputKey = "diagnosticData")
-    public static String combineReports(AgenticScope scope) {
-        String diagnostics = (String) scope.readState("diagnosticReport", "");
-        String metrics = (String) scope.readState("metricsReport", "");
-
-        String combined = diagnostics + "\n\n" + metrics;
-        scope.writeState("diagnosticData", combined);
+    public static String combineReports(String diagnosticReport, String metricsReport) {
+        String combined = diagnosticReport + "\n\n" + metricsReport;
 
         Log.info("DataCombinerAgent: combined report (" + combined.length() + " chars)");
         return combined;

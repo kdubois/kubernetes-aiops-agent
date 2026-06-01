@@ -2,7 +2,6 @@ package dev.kevindubois.rollout.agent.agents;
 
 import dev.kevindubois.rollout.agent.k8s.K8sTools;
 import dev.langchain4j.agentic.Agent;
-import dev.langchain4j.agentic.scope.AgenticScope;
 import io.quarkus.arc.Arc;
 import io.quarkus.logging.Log;
 
@@ -19,8 +18,7 @@ public class DiagnosticsDataAgent {
     private static final Pattern NAMESPACE_PATTERN = Pattern.compile("namespace[=:\\s]+(\\S+)");
 
     @Agent(description = "Fetches pod info and logs for stable and canary pods", outputKey = "diagnosticReport")
-    @SuppressWarnings("unchecked")
-    public static String gatherDiagnostics(String message, AgenticScope scope) {
+    public static String gatherDiagnostics(String message) {
         Log.info("DiagnosticsDataAgent: fetching pod diagnostics (non-AI agent)");
 
         K8sTools k8sTools = Arc.container().instance(K8sTools.class).get();
@@ -29,7 +27,6 @@ public class DiagnosticsDataAgent {
         Map<String, Object> diagnostics = k8sTools.getCanaryDiagnostics(namespace, null, 200);
 
         String report = formatReport(diagnostics);
-        scope.writeState("diagnosticReport", report);
         Log.info("DiagnosticsDataAgent: report generated (" + report.length() + " chars)");
         return report;
     }

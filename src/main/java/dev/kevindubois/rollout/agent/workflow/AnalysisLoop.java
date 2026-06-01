@@ -4,9 +4,8 @@ import dev.kevindubois.rollout.agent.agents.AnalysisAgent;
 import dev.kevindubois.rollout.agent.agents.ScoringAgent;
 import dev.kevindubois.rollout.agent.model.AnalysisResult;
 import dev.kevindubois.rollout.agent.model.ScoringResult;
-import dev.langchain4j.agentic.scope.AgenticScope;
-import dev.langchain4j.agentic.declarative.LoopAgent;
 import dev.langchain4j.agentic.declarative.ExitCondition;
+import dev.langchain4j.agentic.declarative.LoopAgent;
 
 /**
  * Loop that retries the analysis until confidence threshold is met.
@@ -22,9 +21,8 @@ public interface AnalysisLoop {
     AnalysisResult analyzeWithRetry(String diagnosticData);
     
     @ExitCondition
-    static boolean shouldExit(AgenticScope scope) {
-        ScoringResult scoring = (ScoringResult) scope.readState("scoringResult");
-        return scoring != null && !scoring.needsRetry();
+    static boolean shouldExit(ScoringResult scoringResult) {
+        return scoringResult != null && !scoringResult.needsRetry();
     }
 }
 
