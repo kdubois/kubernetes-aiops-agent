@@ -25,6 +25,13 @@ public interface RemediationAgent {
         patchesJson: a JSON array string, e.g. [{"filePath":"src/.../File.java","changes":[{"lineNumber":42,"action":"replace","content":"    fixed code;"}]}]
         Actions: "replace", "delete", "insert_after", "insert_before". One change per line. Keep patches minimal (1 file, 1-2 changes).
 
+        PATCH RULES (CRITICAL - violating these produces compilation errors):
+        - ALWAYS prefer "replace" over "delete". Only use "delete" for truly redundant lines.
+        - NEVER delete an if/for/while/try line without also deleting its closing brace. Deleting only the opening line leaves an orphaned block that won't compile.
+        - To fix a null dereference: add a null check BEFORE the offending line using "insert_before", or replace the offending line with a guarded version. Do NOT delete the if-statement that wraps the code.
+        - Preserve indentation: content must match the original file's indent style.
+        - The patch must result in code that compiles. Think about braces, semicolons, and block structure.
+
         createGitHubIssue:
         Required: repoUrl, title="Canary Deployment Failed: [rootCause]", description, rootCause, namespace, podName, diagnosticSummary, labels="deployment-failure,canary", assignees="kdubois".
 

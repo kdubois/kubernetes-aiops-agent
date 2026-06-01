@@ -369,53 +369,62 @@ public class GitHubPatchPRTool {
     }
     
     /**
-     * Validate patch for common mistakes that could lead to bad PRs
+     * Validate patch for common mistakes that could lead to bad PRs.
+     * Throws on structural errors that would break compilation.
      */
-    private void validatePatch(FilePatch patch, List<String> originalLines) {
+    private void validatePatch(FilePatch patch, List<String> originalLines) throws Exception {
         for (LineChange change : patch.changes) {
             int lineIndex = change.lineNumber - 1;
-            
-            // Check if deleting/replacing important structural lines
-            if (("delete".equalsIgnoreCase(change.action) || "replace".equalsIgnoreCase(change.action))
-                && lineIndex >= 0 && lineIndex < originalLines.size()) {
-                
-                String line = originalLines.get(lineIndex).trim();
-                
-                // Warn about deleting/replacing structural elements
-                if (line.startsWith("return ") || line.equals("return;")) {
-                    Log.warn(MessageFormat.format(
-                        "⚠️  VALIDATION WARNING: Patch attempts to {0} a return statement at line {1} in {2}. " +
-                        "This may indicate the patch is too broad. Verify this is intentional.",
-                        change.action, change.lineNumber, patch.filePath));
-                }
-                
-                if (line.equals("}") || line.equals("} catch")) {
-                    Log.warn(MessageFormat.format(
-                        "⚠️  VALIDATION WARNING: Patch attempts to {0} a closing brace at line {1} in {2}. " +
-                        "This may break code structure. Verify this is intentional.",
-                        change.action, change.lineNumber, patch.filePath));
-                }
-                
-                if (line.startsWith("} catch") || line.startsWith("catch (")) {
-                    Log.warn(MessageFormat.format(
-                        "⚠️  VALIDATION WARNING: Patch attempts to {0} a catch block at line {1} in {2}. " +
-                        "This may remove error handling. Verify this is intentional.",
-                        change.action, change.lineNumber, patch.filePath));
+
+            if (!"delete".equalsIgnoreCase(change.action) || lineIndex < 0 || lineIndex >= originalLines.size()) {
+                continue;
+            }
+
+            String line = originalLines.get(lineIndex).trim();
+
+            if (isControlFlowOpening(line)) {
+                boolean deletesMatchingBrace = patch.changes.stream()
+                        .anyMatch(c -> "delete".equalsIgnoreCase(c.action)
+                                && c.lineNumber > change.lineNumber
+                                && c.lineNumber - 1 < originalLines.size()
+                                && originalLines.get(c.lineNumber - 1).trim().startsWith("}"));
+
+                if (!deletesMatchingBrace) {
+                    throw new Exception(MessageFormat.format(
+                            "Patch rejected: deleting control flow line {0} (''{1}'') in {2} without its closing brace would break compilation. " +
+                            "Use ''replace'' to fix the line, or delete both the opening and closing brace lines.",
+                            change.lineNumber, line, patch.filePath));
                 }
             }
+
+            if (line.equals("}") || line.startsWith("} catch") || line.startsWith("} else")
+                    || line.startsWith("} finally")) {
+                Log.warn(MessageFormat.format(
+                        "VALIDATION WARNING: Patch deletes a closing/chained brace at line {0} in {1}. " +
+                        "Verify this is intentional.",
+                        change.lineNumber, patch.filePath));
+            }
         }
-        
-        // Check for excessive deletions
+
         long deleteCount = patch.changes.stream()
-            .filter(c -> "delete".equalsIgnoreCase(c.action))
-            .count();
-        
+                .filter(c -> "delete".equalsIgnoreCase(c.action))
+                .count();
+
         if (deleteCount > 5) {
             Log.warn(MessageFormat.format(
-                "⚠️  VALIDATION WARNING: Patch contains {0} delete operations in {1}. " +
-                "This seems excessive for a typical bug fix. Consider using 'replace' instead of 'delete' for most fixes.",
-                deleteCount, patch.filePath));
+                    "VALIDATION WARNING: Patch contains {0} delete operations in {1}. " +
+                    "This seems excessive for a typical bug fix.",
+                    deleteCount, patch.filePath));
         }
+    }
+
+    private static boolean isControlFlowOpening(String trimmedLine) {
+        return trimmedLine.startsWith("if ") || trimmedLine.startsWith("if(")
+                || trimmedLine.startsWith("for ") || trimmedLine.startsWith("for(")
+                || trimmedLine.startsWith("while ") || trimmedLine.startsWith("while(")
+                || trimmedLine.startsWith("try ") || trimmedLine.startsWith("try{")
+                || trimmedLine.equals("try {")
+                || trimmedLine.startsWith("} else ");
     }
     
     /**
