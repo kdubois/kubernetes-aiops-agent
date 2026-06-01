@@ -64,6 +64,11 @@ public interface AnalysisAgent {
         CRITICAL: Be LENIENT. Only rollback for SIGNIFICANT issues (critical exceptions, >5pp error rate increase, crash loops).
         Minor metric variations are NORMAL and EXPECTED in canary deployments. When in doubt, PROMOTE.
         """)
+    @UserMessage("""
+        Analyze the following Kubernetes diagnostic data:
+
+        {{diagnosticData}}
+        """)
     @Agent(outputKey = "analysisResult", description = "Analyzes Kubernetes diagnostic data and application metrics")
-    AnalysisResult analyze(@UserMessage String diagnosticData);
+    AnalysisResult analyze(String diagnosticData);
 }
