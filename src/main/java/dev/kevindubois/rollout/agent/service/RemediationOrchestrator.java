@@ -40,16 +40,11 @@ public class RemediationOrchestrator {
 
         CompletableFuture.runAsync(() -> {
             try {
-                Thread.sleep(3000);
                 Log.info("Starting async remediation");
                 remediationAgent.implementRemediation(enrichedPrompt, result, repoUrl, baseBranch);
             } catch (dev.langchain4j.service.output.OutputParsingException e) {
                 Log.error("RemediationAgent failed to parse LLM output", e);
                 activityEvents.remediationFailed("Output parsing error: " + e.getMessage());
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                Log.warn("Async remediation interrupted");
-                activityEvents.remediationFailed("Interrupted");
             } catch (Exception e) {
                 Log.error("Async remediation failed (non-critical)", e);
                 activityEvents.remediationFailed("Exception: " + e.getMessage());
