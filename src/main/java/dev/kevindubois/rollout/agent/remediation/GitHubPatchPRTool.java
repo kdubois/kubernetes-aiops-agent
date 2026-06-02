@@ -121,6 +121,12 @@ public class GitHubPatchPRTool {
             return Map.of("success", false, "error", "Missing required parameters: repoUrl, patchesJson, fixDescription");
         }
 
+        if (outcomeHolder != null && outcomeHolder.getOutcome().isPresent()) {
+            var existing = outcomeHolder.getOutcome().get();
+            Log.info("PR already created this session, returning existing: " + existing.prLink());
+            return Map.of("success", true, "prUrl", existing.prLink(), "note", "PR already created");
+        }
+
         Log.info(MessageFormat.format("Creating PR with patches for repository: {0}", repoUrl));
 
         // Convert JSON string to FilePatch objects (LLMs often pass nested arrays as strings)

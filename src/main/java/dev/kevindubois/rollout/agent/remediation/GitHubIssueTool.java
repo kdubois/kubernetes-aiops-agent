@@ -67,6 +67,12 @@ public class GitHubIssueTool {
         if (repoUrl == null || title == null || description == null) {
             return Map.of("success", false, "error", "Missing required parameters: repoUrl, title, description");
         }
+
+        if (outcomeHolder != null && outcomeHolder.getOutcome().isPresent()) {
+            var existing = outcomeHolder.getOutcome().get();
+            Log.info("Issue already created this session, returning existing: " + existing.prLink());
+            return Map.of("success", true, "issueUrl", existing.prLink(), "note", "Issue already created");
+        }
         
         Log.info(MessageFormat.format("Creating issue for repository: {0}", repoUrl));
         
