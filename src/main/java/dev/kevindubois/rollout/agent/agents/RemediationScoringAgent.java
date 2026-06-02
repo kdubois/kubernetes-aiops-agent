@@ -3,28 +3,44 @@ package dev.kevindubois.rollout.agent.agents;
 import dev.kevindubois.rollout.agent.model.RemediationResult;
 import dev.kevindubois.rollout.agent.model.ScoringResult;
 import dev.langchain4j.agentic.Agent;
-import dev.langchain4j.service.SystemMessage;
+import io.quarkus.logging.Log;
 
-public interface RemediationScoringAgent {
+/**
+ * Non-AI agent that deterministically validates a {@link RemediationResult}.
+ * Checks whether the PR link is a valid GitHub URL and that required fields are present.
+ * No LLM call needed — these are simple string checks.
+ */
+public class RemediationScoringAgent {
 
-    @SystemMessage("""
-        /no_think
-        You are a quality scorer for remediation actions. Respond ONLY with JSON.
-
-        Evaluate whether the remediation produced a useful outcome:
-
-        PASS (score 70-100, needsRetry=false):
-        - prLink contains a valid GitHub URL (starts with https://github.com/)
-        - analysis and remediation fields are present and non-empty
-
-        FAIL (score 0-40, needsRetry=true):
-        - prLink is null, empty, or not a valid URL
-        - analysis or remediation fields are missing/empty
-        - Output appears garbled or repetitive
-
-        JSON OUTPUT:
-        {"score": 0-100, "needsRetry": true/false, "reason": "brief explanation"}
-        """)
     @Agent(outputKey = "scoringResult", description = "Evaluates remediation quality")
-    ScoringResult evaluate(RemediationResult remediationResult);
+    public static ScoringResult evaluate(RemediationResult remediationResult) {
+        Log.info("RemediationScoringAgent: evaluating result (non-AI agent)");
+
+        if (remediationResult == null) {
+            return ScoringResult.retry(0, "RemediationResult is null");
+        }
+
+        String prLink = remediationResult.prLink();
+        String analysis = remediationResult.analysis();
+        String remediation = remediationResult.remediation();
+
+        if (prLink == null || prLink.isBlank()) {
+            return ScoringResult.retry(10, "prLink is missing");
+        }
+
+        if (!prLink.startsWith("https://github.com/")) {
+            return ScoringResult.retry(20, "prLink is not a valid GitHub URL: " + prLink);
+        }
+
+        if (analysis == null || analysis.isBlank()) {
+            return ScoringResult.retry(30, "analysis field is empty");
+        }
+
+        if (remediation == null || remediation.isBlank()) {
+            return ScoringResult.retry(30, "remediation field is empty");
+        }
+
+        Log.infof("RemediationScoringAgent: PASS (prLink=%s)", prLink);
+        return ScoringResult.accept(90);
+    }
 }
