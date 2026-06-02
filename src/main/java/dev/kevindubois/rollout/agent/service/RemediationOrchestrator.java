@@ -54,11 +54,15 @@ public class RemediationOrchestrator {
             try {
                 Log.infof("Remediation attempt %d/%d", attempt, MAX_ATTEMPTS);
                 RemediationResult outcome = remediationLoop.remediateWithRetry(prompt, result, repoUrl, baseBranch);
-                if (outcome != null && outcome.prLink() != null && !outcome.prLink().isEmpty()) {
-                    activityEvents.remediationCompleted(outcome.prLink());
-                } else {
-                    activityEvents.remediationCompleted(null);
+                String artifactUrl = (outcome != null) ? outcome.prLink() : null;
+
+                if (artifactUrl == null || artifactUrl.isEmpty()) {
+                    artifactUrl = outcomeHolder.getOutcome()
+                            .map(RemediationResult::prLink)
+                            .orElse(null);
                 }
+
+                activityEvents.remediationCompleted(artifactUrl);
                 return;
             } catch (Exception e) {
                 if (isOutputParsingFailure(e) && tryRecoverFromToolOutcome()) {
