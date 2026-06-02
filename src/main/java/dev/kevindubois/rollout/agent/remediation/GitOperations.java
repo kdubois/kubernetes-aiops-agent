@@ -5,6 +5,7 @@ import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider;
 
 import io.quarkus.logging.Log;
+import jakarta.enterprise.context.ApplicationScoped;
 
 import java.io.File;
 import java.text.MessageFormat;
@@ -17,6 +18,7 @@ import java.util.Map;
  * Deterministic git operations using JGit library.
  * This class does NOT use AI - all operations are standard library calls.
  */
+@ApplicationScoped
 public class GitOperations {
 	
 	/**
@@ -40,6 +42,48 @@ public class GitOperations {
 		return localPath;
 	}
 	
+	/**
+	 * Fetch latest changes from origin and hard-reset the working copy to the
+	 * default branch, discarding any local modifications or branches.
+	 */
+	public void fetchAndReset(Path repoPath, String token) throws GitAPIException, IOException {
+		Log.info(MessageFormat.format("Fetching and resetting cached clone at {0}", repoPath));
+
+		try (Git git = Git.open(repoPath.toFile())) {
+			String defaultBranch = git.getRepository().getBranch();
+
+			// Checkout the default branch first (in case a feature branch is checked out)
+			git.checkout()
+				.setName(defaultBranch)
+				.setForced(true)
+				.call();
+
+			git.fetch()
+				.setCredentialsProvider(new UsernamePasswordCredentialsProvider(token, ""))
+				.setRemote("origin")
+				.call();
+
+			git.reset()
+				.setMode(org.eclipse.jgit.api.ResetCommand.ResetType.HARD)
+				.setRef("origin/" + defaultBranch)
+				.call();
+
+			// Remove any leftover local feature branches
+			git.branchList().call().stream()
+				.map(ref -> ref.getName().replace("refs/heads/", ""))
+				.filter(name -> !name.equals(defaultBranch))
+				.forEach(name -> {
+					try {
+						git.branchDelete().setBranchNames(name).setForce(true).call();
+					} catch (GitAPIException e) {
+						Log.warn(MessageFormat.format("Could not delete branch {0}: {1}", name, e.getMessage()));
+					}
+				});
+		}
+
+		Log.info("Cached clone is now clean and up-to-date");
+	}
+
 	/**
 	 * Create and checkout a new branch
 	 * @param repoPath Path to repository

@@ -29,8 +29,11 @@ public class GitHubPatchPRTool {
     private static final TypeReference<List<Map<String, Object>>> PATCH_LIST_TYPE =
             new TypeReference<>() {};
 
-    private final GitOperations gitOps;
-    private final String githubToken;
+    @Inject
+    GitOperations gitOps;
+
+    @Inject
+    RepoCloneCache repoCache;
 
     @Inject
     @RestClient
@@ -39,18 +42,12 @@ public class GitHubPatchPRTool {
     @Inject
     RemediationOutcomeHolder outcomeHolder;
 
-    public GitHubPatchPRTool() {
-        this(new GitOperations(), System.getenv("GITHUB_TOKEN"));
-    }
+    private String githubToken;
 
-    // Package-private constructor for testing
-    GitHubPatchPRTool(GitOperations gitOps, String githubToken) {
-        this.gitOps = gitOps;
-        this.githubToken = githubToken;
+    public GitHubPatchPRTool() {
+        this.githubToken = System.getenv("GITHUB_TOKEN");
         if (githubToken == null || githubToken.isEmpty()) {
             Log.warn("GITHUB_TOKEN environment variable not set");
-        } else {
-            Log.info("GitHub Patch PR tool initialized");
         }
     }
     
@@ -140,11 +137,10 @@ public class GitHubPatchPRTool {
         }
         
         String branchName = "fix/k8s-issue-" + UUID.randomUUID().toString().substring(0, 8);
-        Path repoPath = null;
         
         try {
-            // 1. Clone repository
-            repoPath = gitOps.cloneRepository(repoUrl, githubToken);
+            // 1. Get or reuse cached clone (fetches + resets on reuse)
+            Path repoPath = repoCache.getOrClone(repoUrl, githubToken);
             
             // 2. Create branch
             gitOps.createBranch(repoPath, branchName);
@@ -183,11 +179,6 @@ public class GitHubPatchPRTool {
                 "success", false,
                 "error", e.getMessage()
             );
-        } finally {
-            // Cleanup temporary directory
-            if (repoPath != null) {
-                gitOps.cleanup(repoPath);
-            }
         }
     }
     
@@ -375,45 +366,47 @@ public class GitHubPatchPRTool {
     private void validatePatch(FilePatch patch, List<String> originalLines) throws Exception {
         for (LineChange change : patch.changes) {
             int lineIndex = change.lineNumber - 1;
-
-            if (!"delete".equalsIgnoreCase(change.action) || lineIndex < 0 || lineIndex >= originalLines.size()) {
+            if (lineIndex < 0 || lineIndex >= originalLines.size()) {
                 continue;
             }
 
-            String line = originalLines.get(lineIndex).trim();
+            String originalLine = originalLines.get(lineIndex).trim();
 
-            if (isControlFlowOpening(line)) {
-                boolean deletesMatchingBrace = patch.changes.stream()
-                        .anyMatch(c -> "delete".equalsIgnoreCase(c.action)
-                                && c.lineNumber > change.lineNumber
-                                && c.lineNumber - 1 < originalLines.size()
-                                && originalLines.get(c.lineNumber - 1).trim().startsWith("}"));
-
-                if (!deletesMatchingBrace) {
-                    throw new Exception(MessageFormat.format(
-                            "Patch rejected: deleting control flow line {0} (''{1}'') in {2} without its closing brace would break compilation. " +
-                            "Use ''replace'' to fix the line, or delete both the opening and closing brace lines.",
-                            change.lineNumber, line, patch.filePath));
-                }
+            if (!isControlFlowOpening(originalLine)) {
+                continue;
             }
 
-            if (line.equals("}") || line.startsWith("} catch") || line.startsWith("} else")
-                    || line.startsWith("} finally")) {
-                Log.warn(MessageFormat.format(
-                        "VALIDATION WARNING: Patch deletes a closing/chained brace at line {0} in {1}. " +
-                        "Verify this is intentional.",
-                        change.lineNumber, patch.filePath));
+            boolean removes = "delete".equalsIgnoreCase(change.action);
+            boolean replaces = "replace".equalsIgnoreCase(change.action)
+                    && change.content != null
+                    && !isControlFlowOpening(change.content.trim());
+
+            if (!removes && !replaces) {
+                continue;
+            }
+
+            boolean handlesBlockBody = patch.changes.stream()
+                    .anyMatch(c -> c.lineNumber > change.lineNumber
+                            && ("delete".equalsIgnoreCase(c.action) || "replace".equalsIgnoreCase(c.action))
+                            && c.lineNumber - 1 < originalLines.size()
+                            && originalLines.get(c.lineNumber - 1).trim().startsWith("}"));
+
+            if (!handlesBlockBody) {
+                String verb = removes ? "deleting" : "replacing";
+                throw new Exception(MessageFormat.format(
+                        "Patch rejected: {0} control flow line {1} (''{2}'') in {3} without handling the block body and closing brace. " +
+                        "This leaves the block body running unconditionally and/or orphaned braces. " +
+                        "Fix the buggy line INSIDE the block instead, or remove ALL lines of the block.",
+                        verb, change.lineNumber, originalLine, patch.filePath));
             }
         }
 
         long deleteCount = patch.changes.stream()
                 .filter(c -> "delete".equalsIgnoreCase(c.action))
                 .count();
-
-        if (deleteCount > 5) {
+        if (deleteCount > 10) {
             Log.warn(MessageFormat.format(
-                    "VALIDATION WARNING: Patch contains {0} delete operations in {1}. " +
-                    "This seems excessive for a typical bug fix.",
+                    "VALIDATION WARNING: Patch contains {0} delete operations in {1}.",
                     deleteCount, patch.filePath));
         }
     }

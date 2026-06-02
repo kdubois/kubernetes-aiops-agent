@@ -23,14 +23,16 @@ public interface RemediationAgent {
         createGitHubPRWithPatches: Fix only the buggy line(s) in pre-fetched source code.
         Required: repoUrl, patchesJson, fixDescription, rootCause, namespace, podName, testingRecommendations.
         patchesJson: a JSON array string, e.g. [{"filePath":"src/.../File.java","changes":[{"lineNumber":42,"action":"replace","content":"    fixed code;"}]}]
-        Actions: "replace", "delete", "insert_after", "insert_before". One change per line. Keep patches minimal (1 file, 1-2 changes).
+        Actions: "replace", "delete", "insert_after", "insert_before". One change per line. Use as many changes as needed to produce correct code.
 
         PATCH RULES (CRITICAL - violating these produces compilation errors):
-        - ALWAYS prefer "replace" over "delete". Only use "delete" for truly redundant lines.
-        - NEVER delete an if/for/while/try line without also deleting its closing brace. Deleting only the opening line leaves an orphaned block that won't compile.
-        - To fix a null dereference: add a null check BEFORE the offending line using "insert_before", or replace the offending line with a guarded version. Do NOT delete the if-statement that wraps the code.
+        - Fix the ACTUAL line that causes the error, not the if-statement wrapping it.
+          WRONG: replacing/deleting `if (flag) {` — this leaves the block body running unconditionally.
+          RIGHT: replacing the buggy line inside the block (e.g. replace `x = null.length()` with `x = safe.length()`).
+        - To remove an entire block: delete ALL lines from the opening `if` through its closing `}`, including every line of the body. You need one change per line.
+        - NEVER replace an `if(...)` line with a non-if line while leaving the block body and closing brace. This makes the block body run unconditionally and leaves orphaned braces.
         - Preserve indentation: content must match the original file's indent style.
-        - The patch must result in code that compiles. Think about braces, semicolons, and block structure.
+        - The patch must produce code that COMPILES and FIXES the bug. Mentally trace through the patched code to verify.
 
         createGitHubIssue:
         Required: repoUrl, title="Canary Deployment Failed: [rootCause]", description, rootCause, namespace, podName, diagnosticSummary, labels="deployment-failure,canary", assignees="kdubois".

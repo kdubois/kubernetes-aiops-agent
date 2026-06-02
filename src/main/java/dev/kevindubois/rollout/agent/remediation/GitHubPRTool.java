@@ -18,26 +18,23 @@ import java.util.UUID;
  */
 @ApplicationScoped
 public class GitHubPRTool {
-    
-    private final GitOperations gitOps;
-    private final String githubToken;
-    
+
+    @Inject
+    GitOperations gitOps;
+
+    @Inject
+    RepoCloneCache repoCache;
+
     @Inject
     @RestClient
     GitHubRestClient githubClient;
-    
+
+    private String githubToken;
+
     public GitHubPRTool() {
-        this(new GitOperations(), System.getenv("GITHUB_TOKEN"));
-    }
-    
-    // Package-private constructor for testing
-    GitHubPRTool(GitOperations gitOps, String githubToken) {
-        this.gitOps = gitOps;
-        this.githubToken = githubToken;
+        this.githubToken = System.getenv("GITHUB_TOKEN");
         if (githubToken == null || githubToken.isEmpty()) {
             Log.warn("GITHUB_TOKEN environment variable not set");
-        } else {
-            Log.info("GitHub PR tool initialized");
         }
     }
     
@@ -72,21 +69,19 @@ public class GitHubPRTool {
         
         Log.info(MessageFormat.format("Creating PR for repository: {0}", repoUrl));
         
-        // Deterministic git workflow (HOW to fix):
         String branchName = "fix/k8s-issue-" + UUID.randomUUID().toString().substring(0, 8);
-        Path repoPath = null;
         
         try {
-            // 1. Clone (library)
-            repoPath = gitOps.cloneRepository(repoUrl, githubToken);
+            // 1. Get or reuse cached clone (fetches + resets on reuse)
+            Path repoPath = repoCache.getOrClone(repoUrl, githubToken);
             
-            // 2. Create branch (library)
+            // 2. Create branch
             gitOps.createBranch(repoPath, branchName);
             
-            // 3. Apply AI-suggested changes (library file I/O)
+            // 3. Apply AI-suggested changes
             gitOps.applyChanges(repoPath, fileChanges);
             
-            // 4. Commit and push (library)
+            // 4. Commit and push
             String commitMsg = formatCommitMessage(fixDescription);
             gitOps.commitAndPush(repoPath, commitMsg, githubToken);
             
@@ -111,11 +106,6 @@ public class GitHubPRTool {
                 "success", false,
                 "error", e.getMessage()
             );
-        } finally {
-            // Cleanup temporary directory
-            if (repoPath != null) {
-                gitOps.cleanup(repoPath);
-            }
         }
     }
     
