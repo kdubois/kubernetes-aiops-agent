@@ -2,7 +2,6 @@ package dev.kevindubois.rollout.agent.agents;
 
 import dev.kevindubois.rollout.agent.k8s.K8sTools;
 import dev.langchain4j.agentic.Agent;
-import dev.langchain4j.agentic.scope.AgenticScope;
 import io.quarkus.arc.Arc;
 import io.quarkus.logging.Log;
 
@@ -19,8 +18,7 @@ public class MetricsDataAgent {
     private static final Pattern NAMESPACE_PATTERN = Pattern.compile("namespace[=:\\s]+(\\S+)");
 
     @Agent(description = "Fetches application metrics for stable and canary pods", outputKey = "metricsReport")
-    @SuppressWarnings("unchecked")
-    public static String gatherMetrics(String message, AgenticScope scope) {
+    public static String gatherMetrics(String message) {
         Log.info("MetricsDataAgent: fetching application metrics (non-AI agent)");
 
         K8sTools k8sTools = Arc.container().instance(K8sTools.class).get();
@@ -29,7 +27,6 @@ public class MetricsDataAgent {
         Map<String, Object> metrics = k8sTools.getCanaryMetrics(namespace);
 
         String report = formatReport(metrics);
-        scope.writeState("metricsReport", report);
         Log.info("MetricsDataAgent: report generated (" + report.length() + " chars)");
         return report;
     }

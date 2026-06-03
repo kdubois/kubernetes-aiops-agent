@@ -71,6 +71,8 @@ public class A2AAgentExecutor {
                         "A2A workflow execution"
                     );
 
+                    activityEvents.analysisCompleted(result);
+
                     String response = formatAnalysisResult(result);
                     updater.addArtifact(List.of(new TextPart(response, null)), null, null, null);
                     updater.complete();

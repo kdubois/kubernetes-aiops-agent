@@ -8,7 +8,6 @@ import dev.langchain4j.agentic.declarative.SequenceAgent;
 import dev.langchain4j.agentic.observability.AgentListener;
 import dev.langchain4j.agentic.observability.MonitoredAgent;
 import dev.langchain4j.service.MemoryId;
-import dev.langchain4j.service.UserMessage;
 import io.quarkus.arc.Arc;
 
 /**
@@ -35,7 +34,7 @@ public interface KubernetesWorkflow extends MonitoredAgent {
     )
     AnalysisResult execute(
         @MemoryId String memoryId,
-        @UserMessage String message,
+        String message,
         String repoUrl,
         String baseBranch
     );

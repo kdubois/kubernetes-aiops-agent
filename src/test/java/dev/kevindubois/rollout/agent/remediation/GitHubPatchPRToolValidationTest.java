@@ -33,7 +33,7 @@ class GitHubPatchPRToolValidationTest {
             }
             """);
 
-        GitHubPatchPRTool tool = new GitHubPatchPRTool(new GitOperations(), "fake-token");
+        GitHubPatchPRTool tool = new GitHubPatchPRTool();
         
         // This should trigger a validation warning (deleting return statement)
         GitHubPatchPRTool.FilePatch patch = new GitHubPatchPRTool.FilePatch(
@@ -52,7 +52,7 @@ class GitHubPatchPRToolValidationTest {
 
     @Test
     void testValidationWarnsAboutExcessiveDeletions() {
-        GitHubPatchPRTool tool = new GitHubPatchPRTool(new GitOperations(), "fake-token");
+        GitHubPatchPRTool tool = new GitHubPatchPRTool();
         
         // Create a patch with many deletions (should trigger warning)
         GitHubPatchPRTool.FilePatch patch = new GitHubPatchPRTool.FilePatch(
@@ -74,7 +74,7 @@ class GitHubPatchPRToolValidationTest {
 
     @Test
     void testCorrectPatchWithReplaceAction() {
-        GitHubPatchPRTool tool = new GitHubPatchPRTool(new GitOperations(), "fake-token");
+        GitHubPatchPRTool tool = new GitHubPatchPRTool();
         
         // This is the CORRECT way to fix a bug - replace only the buggy line
         GitHubPatchPRTool.FilePatch patch = new GitHubPatchPRTool.FilePatch(
@@ -97,7 +97,7 @@ class GitHubPatchPRToolValidationTest {
 
     @Test
     void testInsertAfterForAddingNullCheck() {
-        GitHubPatchPRTool tool = new GitHubPatchPRTool(new GitOperations(), "fake-token");
+        GitHubPatchPRTool tool = new GitHubPatchPRTool();
         
         // Adding a null check before using a variable
         GitHubPatchPRTool.FilePatch patch = new GitHubPatchPRTool.FilePatch(

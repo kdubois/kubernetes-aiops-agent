@@ -21,6 +21,7 @@ class GitHubPRToolTest {
 
     private GitHubPRTool gitHubPRTool;
     private GitOperations gitOperations;
+    private RepoCloneCache repoCache;
     private GitHubRestClient githubClient;
 
     private static final String TEST_REPO_URL = "https://github.com/test-org/test-repo";
@@ -29,18 +30,22 @@ class GitHubPRToolTest {
 
     @BeforeEach
     void setUp() {
-        // Create mocks
         gitOperations = mock(GitOperations.class);
+        repoCache = mock(RepoCloneCache.class);
         githubClient = mock(GitHubRestClient.class);
-        
-        // Create GitHubPRTool with mocked dependencies
-        gitHubPRTool = new GitHubPRTool(gitOperations, TEST_TOKEN);
-        
-        // Inject the mocked GitHub client using reflection
+
+        gitHubPRTool = new GitHubPRTool();
+
         try {
-            java.lang.reflect.Field field = GitHubPRTool.class.getDeclaredField("githubClient");
-            field.setAccessible(true);
-            field.set(gitHubPRTool, githubClient);
+            for (var entry : Map.of(
+                    "gitOps", gitOperations,
+                    "repoCache", repoCache,
+                    "githubClient", githubClient,
+                    "githubToken", TEST_TOKEN).entrySet()) {
+                java.lang.reflect.Field field = GitHubPRTool.class.getDeclaredField(entry.getKey());
+                field.setAccessible(true);
+                field.set(gitHubPRTool, entry.getValue());
+            }
         } catch (Exception e) {
             throw new RuntimeException("Failed to inject mock", e);
         }
@@ -61,13 +66,11 @@ class GitHubPRToolTest {
         String podName = "app-pod-123";
         String testingRecommendations = "Run integration tests";
 
-        // Mock git operations
-        when(gitOperations.cloneRepository(eq(TEST_REPO_URL), anyString()))
+        when(repoCache.getOrClone(eq(TEST_REPO_URL), anyString()))
             .thenReturn(TEST_REPO_PATH);
         doNothing().when(gitOperations).createBranch(any(), anyString());
         doNothing().when(gitOperations).applyChanges(any(), any());
         doNothing().when(gitOperations).commitAndPush(any(), anyString(), anyString());
-        doNothing().when(gitOperations).cleanup(any());
 
         // Mock GitHub API responses
         GitHubRestClient.GitHubRepository repository = 
@@ -91,12 +94,10 @@ class GitHubPRToolTest {
         assertThat(result).containsEntry("prNumber", 42);
         assertThat(result).containsKey("branch");
 
-        // Verify git operations were called in correct order
-        verify(gitOperations).cloneRepository(eq(TEST_REPO_URL), anyString());
+        verify(repoCache).getOrClone(eq(TEST_REPO_URL), anyString());
         verify(gitOperations).createBranch(eq(TEST_REPO_PATH), anyString());
         verify(gitOperations).applyChanges(eq(TEST_REPO_PATH), eq(fileChanges));
         verify(gitOperations).commitAndPush(eq(TEST_REPO_PATH), contains("fix:"), anyString());
-        verify(gitOperations).cleanup(eq(TEST_REPO_PATH));
 
         // Verify GitHub API calls
         verify(githubClient).getRepository(eq("test-org"), eq("test-repo"), anyString());
@@ -138,7 +139,7 @@ class GitHubPRToolTest {
     @Test
     void testCreatePR_gitCloneFails() throws Exception {
         // Given: Git clone operation fails
-        when(gitOperations.cloneRepository(anyString(), anyString()))
+        when(repoCache.getOrClone(anyString(), anyString()))
             .thenThrow(new RuntimeException("Failed to clone repository: Authentication failed"));
 
         Map<String, String> fileChanges = Map.of("file.txt", "content");
@@ -151,9 +152,6 @@ class GitHubPRToolTest {
         // Then: Should return error
         assertThat(result).containsEntry("success", false);
         assertThat(result.get("error").toString()).contains("Failed to clone repository");
-
-        // Verify cleanup was not called (no path to cleanup)
-        verify(gitOperations, never()).cleanup(any());
     }
 
     @Test
@@ -166,12 +164,10 @@ class GitHubPRToolTest {
             "pom.xml", "<project>...</project>"
         );
 
-        // Mock successful operations
-        when(gitOperations.cloneRepository(anyString(), anyString())).thenReturn(TEST_REPO_PATH);
+        when(repoCache.getOrClone(anyString(), anyString())).thenReturn(TEST_REPO_PATH);
         doNothing().when(gitOperations).createBranch(any(), anyString());
         doNothing().when(gitOperations).applyChanges(any(), any());
         doNothing().when(gitOperations).commitAndPush(any(), anyString(), anyString());
-        doNothing().when(gitOperations).cleanup(any());
 
         GitHubRestClient.GitHubRepository repository = 
             new GitHubRestClient.GitHubRepository("test-repo", "test-org/test-repo", "main", "https://github.com/test-org/test-repo");
@@ -204,7 +200,7 @@ class GitHubPRToolTest {
     @Test
     void testCreatePR_branchAlreadyExists() throws Exception {
         // Given: Branch creation fails due to existing branch
-        when(gitOperations.cloneRepository(anyString(), anyString())).thenReturn(TEST_REPO_PATH);
+        when(repoCache.getOrClone(anyString(), anyString())).thenReturn(TEST_REPO_PATH);
         doThrow(new RuntimeException("Branch already exists"))
             .when(gitOperations).createBranch(any(), anyString());
 
@@ -215,18 +211,15 @@ class GitHubPRToolTest {
             TEST_REPO_URL, fileChanges, "fix", "cause", "ns", "pod", "test"
         );
 
-        // Then: Should handle error and cleanup
+        // Then: Should handle error
         assertThat(result).containsEntry("success", false);
         assertThat(result.get("error").toString()).contains("Branch already exists");
-
-        // Verify cleanup was called
-        verify(gitOperations).cleanup(eq(TEST_REPO_PATH));
     }
 
     @Test
     void testCreatePR_githubAPIRateLimit() throws Exception {
         // Given: GitHub API returns rate limit error
-        when(gitOperations.cloneRepository(anyString(), anyString())).thenReturn(TEST_REPO_PATH);
+        when(repoCache.getOrClone(anyString(), anyString())).thenReturn(TEST_REPO_PATH);
         doNothing().when(gitOperations).createBranch(any(), anyString());
         doNothing().when(gitOperations).applyChanges(any(), any());
         doNothing().when(gitOperations).commitAndPush(any(), anyString(), anyString());
@@ -248,15 +241,12 @@ class GitHubPRToolTest {
         // Then: Should handle rate limit error
         assertThat(result).containsEntry("success", false);
         assertThat(result.get("error").toString()).contains("rate limit");
-
-        // Verify cleanup was called
-        verify(gitOperations).cleanup(eq(TEST_REPO_PATH));
     }
 
     @Test
-    void testCreatePR_cleanupOnFailure() throws Exception {
+    void testCreatePR_failureAfterClone() throws Exception {
         // Given: Operation fails after clone
-        when(gitOperations.cloneRepository(anyString(), anyString())).thenReturn(TEST_REPO_PATH);
+        when(repoCache.getOrClone(anyString(), anyString())).thenReturn(TEST_REPO_PATH);
         doThrow(new RuntimeException("Commit failed"))
             .when(gitOperations).commitAndPush(any(), anyString(), anyString());
 
@@ -267,9 +257,8 @@ class GitHubPRToolTest {
             TEST_REPO_URL, fileChanges, "fix", "cause", "ns", "pod", "test"
         );
 
-        // Then: Should cleanup even on failure
+        // Then: Should return error (cache manages cleanup)
         assertThat(result).containsEntry("success", false);
-        verify(gitOperations).cleanup(eq(TEST_REPO_PATH));
     }
 
     // ========== Helper Method Tests ==========
@@ -281,7 +270,7 @@ class GitHubPRToolTest {
         Map<String, String> fileChanges = Map.of("file.txt", "content");
 
         // Mock successful operations
-        when(gitOperations.cloneRepository(anyString(), anyString())).thenReturn(TEST_REPO_PATH);
+        when(repoCache.getOrClone(anyString(), anyString())).thenReturn(TEST_REPO_PATH);
         doNothing().when(gitOperations).createBranch(any(), anyString());
         doNothing().when(gitOperations).applyChanges(any(), any());
         doNothing().when(gitOperations).commitAndPush(any(), anyString(), anyString());
@@ -311,7 +300,7 @@ class GitHubPRToolTest {
         Map<String, String> fileChanges = Map.of("file.txt", "content");
 
         // Mock successful operations
-        when(gitOperations.cloneRepository(anyString(), anyString())).thenReturn(TEST_REPO_PATH);
+        when(repoCache.getOrClone(anyString(), anyString())).thenReturn(TEST_REPO_PATH);
         doNothing().when(gitOperations).createBranch(any(), anyString());
         doNothing().when(gitOperations).applyChanges(any(), any());
         doNothing().when(gitOperations).commitAndPush(any(), anyString(), anyString());
@@ -364,7 +353,7 @@ class GitHubPRToolTest {
         String testingRecommendations = "Run unit tests and integration tests";
 
         // Mock successful operations
-        when(gitOperations.cloneRepository(anyString(), anyString())).thenReturn(TEST_REPO_PATH);
+        when(repoCache.getOrClone(anyString(), anyString())).thenReturn(TEST_REPO_PATH);
         doNothing().when(gitOperations).createBranch(any(), anyString());
         doNothing().when(gitOperations).applyChanges(any(), any());
         doNothing().when(gitOperations).commitAndPush(any(), anyString(), anyString());
@@ -411,7 +400,7 @@ class GitHubPRToolTest {
         Map<String, String> fileChanges = Map.of("file.txt", "content");
 
         // Mock successful operations
-        when(gitOperations.cloneRepository(anyString(), anyString())).thenReturn(TEST_REPO_PATH);
+        when(repoCache.getOrClone(anyString(), anyString())).thenReturn(TEST_REPO_PATH);
         doNothing().when(gitOperations).createBranch(any(), anyString());
         doNothing().when(gitOperations).applyChanges(any(), any());
         doNothing().when(gitOperations).commitAndPush(any(), anyString(), anyString());

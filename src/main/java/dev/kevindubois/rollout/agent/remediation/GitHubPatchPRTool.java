@@ -1,6 +1,9 @@
 package dev.kevindubois.rollout.agent.remediation;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.langchain4j.agent.tool.Tool;
+import dev.kevindubois.rollout.agent.service.RemediationOutcomeHolder;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.rest.client.inject.RestClient;
@@ -21,26 +24,30 @@ import java.util.stream.Collectors;
  */
 @ApplicationScoped
 public class GitHubPatchPRTool {
-    
-    private final GitOperations gitOps;
-    private final String githubToken;
-    
+
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final TypeReference<List<Map<String, Object>>> PATCH_LIST_TYPE =
+            new TypeReference<>() {};
+
+    @Inject
+    GitOperations gitOps;
+
+    @Inject
+    RepoCloneCache repoCache;
+
     @Inject
     @RestClient
     GitHubRestClient githubClient;
-    
+
+    @Inject
+    RemediationOutcomeHolder outcomeHolder;
+
+    private String githubToken;
+
     public GitHubPatchPRTool() {
-        this(new GitOperations(), System.getenv("GITHUB_TOKEN"));
-    }
-    
-    // Package-private constructor for testing
-    GitHubPatchPRTool(GitOperations gitOps, String githubToken) {
-        this.gitOps = gitOps;
-        this.githubToken = githubToken;
+        this.githubToken = System.getenv("GITHUB_TOKEN");
         if (githubToken == null || githubToken.isEmpty()) {
             Log.warn("GITHUB_TOKEN environment variable not set");
-        } else {
-            Log.info("GitHub Patch PR tool initialized");
         }
     }
     
@@ -89,7 +96,7 @@ public class GitHubPatchPRTool {
      * This is more efficient than providing full file content and avoids LLM token limits.
      * 
      * @param repoUrl URL of the GitHub repository
-     * @param patches List of file patches with line-based changes
+     * @param patchesJson JSON array of file patches with line-based changes
      * @param fixDescription Description of the fix
      * @param rootCause Root cause of the issue
      * @param namespace Kubernetes namespace
@@ -100,7 +107,7 @@ public class GitHubPatchPRTool {
     @Tool("Create a GitHub pull request using line-based patches. Specify exact line numbers and changes to make. More efficient than providing full file content.")
     public Map<String, Object> createGitHubPRWithPatches(
             String repoUrl,
-            List<Map<String, Object>> patches,
+            String patchesJson,
             String fixDescription,
             String rootCause,
             String namespace,
@@ -108,17 +115,21 @@ public class GitHubPatchPRTool {
             String testingRecommendations
     ) {
         Log.info("=== Executing Tool: createGitHubPRWithPatches ===");
-        
+
         // Validate required parameters
-        if (repoUrl == null || patches == null || patches.isEmpty() || fixDescription == null) {
-            return Map.of("success", false, "error", "Missing required parameters: repoUrl, patches, fixDescription");
+        if (repoUrl == null || patchesJson == null || patchesJson.isBlank() || fixDescription == null) {
+            return Map.of("success", false, "error", "Missing required parameters: repoUrl, patchesJson, fixDescription");
         }
-        
+
         Log.info(MessageFormat.format("Creating PR with patches for repository: {0}", repoUrl));
-        
-        // Convert raw maps to FilePatch objects
+
+        // Convert JSON string to FilePatch objects (LLMs often pass nested arrays as strings)
         List<FilePatch> filePatchList;
         try {
+            List<Map<String, Object>> patches = parsePatchesJson(patchesJson);
+            if (patches.isEmpty()) {
+                return Map.of("success", false, "error", "patchesJson must contain at least one file patch");
+            }
             filePatchList = convertToFilePatches(patches);
         } catch (Exception e) {
             Log.error("Failed to parse patches", e);
@@ -126,11 +137,10 @@ public class GitHubPatchPRTool {
         }
         
         String branchName = "fix/k8s-issue-" + UUID.randomUUID().toString().substring(0, 8);
-        Path repoPath = null;
         
         try {
-            // 1. Clone repository
-            repoPath = gitOps.cloneRepository(repoUrl, githubToken);
+            // 1. Get or reuse cached clone (fetches + resets on reuse)
+            Path repoPath = repoCache.getOrClone(repoUrl, githubToken);
             
             // 2. Create branch
             gitOps.createBranch(repoPath, branchName);
@@ -151,7 +161,11 @@ public class GitHubPatchPRTool {
             );
             
             Log.info(MessageFormat.format("Successfully created PR: {0}", pr.html_url()));
-            
+
+            if (outcomeHolder != null) {
+                outcomeHolder.recordPullRequest(pr.html_url(), fixDescription);
+            }
+
             return Map.of(
                 "success", true,
                 "prUrl", pr.html_url(),
@@ -165,14 +179,34 @@ public class GitHubPatchPRTool {
                 "success", false,
                 "error", e.getMessage()
             );
-        } finally {
-            // Cleanup temporary directory
-            if (repoPath != null) {
-                gitOps.cleanup(repoPath);
-            }
         }
     }
     
+    /**
+     * Parse patches JSON from LLM tool calls. Handles stringified arrays and minor formatting issues.
+     */
+    static List<Map<String, Object>> parsePatchesJson(String patchesJson) throws Exception {
+        String json = patchesJson.trim();
+
+        // Unwrap double-encoded JSON string: "[{...}]" -> [{...}]
+        if (json.startsWith("\"")) {
+            json = MAPPER.readValue(json, String.class).trim();
+        }
+
+        // Extract array boundaries (handles trailing text or markdown)
+        int start = json.indexOf('[');
+        int end = json.lastIndexOf(']');
+        if (start >= 0 && end > start) {
+            json = json.substring(start, end + 1);
+        }
+
+        try {
+            return MAPPER.readValue(json, PATCH_LIST_TYPE);
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Failed to parse patches JSON: " + e.getMessage(), e);
+        }
+    }
+
     /**
      * Convert raw Map objects from LangChain4j to FilePatch objects
      */
@@ -326,53 +360,64 @@ public class GitHubPatchPRTool {
     }
     
     /**
-     * Validate patch for common mistakes that could lead to bad PRs
+     * Validate patch for common mistakes that could lead to bad PRs.
+     * Throws on structural errors that would break compilation.
      */
-    private void validatePatch(FilePatch patch, List<String> originalLines) {
+    private void validatePatch(FilePatch patch, List<String> originalLines) throws Exception {
         for (LineChange change : patch.changes) {
             int lineIndex = change.lineNumber - 1;
-            
-            // Check if deleting/replacing important structural lines
-            if (("delete".equalsIgnoreCase(change.action) || "replace".equalsIgnoreCase(change.action))
-                && lineIndex >= 0 && lineIndex < originalLines.size()) {
-                
-                String line = originalLines.get(lineIndex).trim();
-                
-                // Warn about deleting/replacing structural elements
-                if (line.startsWith("return ") || line.equals("return;")) {
-                    Log.warn(MessageFormat.format(
-                        "⚠️  VALIDATION WARNING: Patch attempts to {0} a return statement at line {1} in {2}. " +
-                        "This may indicate the patch is too broad. Verify this is intentional.",
-                        change.action, change.lineNumber, patch.filePath));
-                }
-                
-                if (line.equals("}") || line.equals("} catch")) {
-                    Log.warn(MessageFormat.format(
-                        "⚠️  VALIDATION WARNING: Patch attempts to {0} a closing brace at line {1} in {2}. " +
-                        "This may break code structure. Verify this is intentional.",
-                        change.action, change.lineNumber, patch.filePath));
-                }
-                
-                if (line.startsWith("} catch") || line.startsWith("catch (")) {
-                    Log.warn(MessageFormat.format(
-                        "⚠️  VALIDATION WARNING: Patch attempts to {0} a catch block at line {1} in {2}. " +
-                        "This may remove error handling. Verify this is intentional.",
-                        change.action, change.lineNumber, patch.filePath));
-                }
+            if (lineIndex < 0 || lineIndex >= originalLines.size()) {
+                continue;
+            }
+
+            String originalLine = originalLines.get(lineIndex).trim();
+
+            if (!isControlFlowOpening(originalLine)) {
+                continue;
+            }
+
+            boolean removes = "delete".equalsIgnoreCase(change.action);
+            boolean replaces = "replace".equalsIgnoreCase(change.action)
+                    && change.content != null
+                    && !isControlFlowOpening(change.content.trim());
+
+            if (!removes && !replaces) {
+                continue;
+            }
+
+            boolean handlesBlockBody = patch.changes.stream()
+                    .anyMatch(c -> c.lineNumber > change.lineNumber
+                            && ("delete".equalsIgnoreCase(c.action) || "replace".equalsIgnoreCase(c.action))
+                            && c.lineNumber - 1 < originalLines.size()
+                            && originalLines.get(c.lineNumber - 1).trim().startsWith("}"));
+
+            if (!handlesBlockBody) {
+                String verb = removes ? "deleting" : "replacing";
+                throw new Exception(MessageFormat.format(
+                        "Patch rejected: {0} control flow line {1} (''{2}'') in {3} without handling the block body and closing brace. " +
+                        "This leaves the block body running unconditionally and/or orphaned braces. " +
+                        "Fix the buggy line INSIDE the block instead, or remove ALL lines of the block.",
+                        verb, change.lineNumber, originalLine, patch.filePath));
             }
         }
-        
-        // Check for excessive deletions
+
         long deleteCount = patch.changes.stream()
-            .filter(c -> "delete".equalsIgnoreCase(c.action))
-            .count();
-        
-        if (deleteCount > 5) {
+                .filter(c -> "delete".equalsIgnoreCase(c.action))
+                .count();
+        if (deleteCount > 10) {
             Log.warn(MessageFormat.format(
-                "⚠️  VALIDATION WARNING: Patch contains {0} delete operations in {1}. " +
-                "This seems excessive for a typical bug fix. Consider using 'replace' instead of 'delete' for most fixes.",
-                deleteCount, patch.filePath));
+                    "VALIDATION WARNING: Patch contains {0} delete operations in {1}.",
+                    deleteCount, patch.filePath));
         }
+    }
+
+    private static boolean isControlFlowOpening(String trimmedLine) {
+        return trimmedLine.startsWith("if ") || trimmedLine.startsWith("if(")
+                || trimmedLine.startsWith("for ") || trimmedLine.startsWith("for(")
+                || trimmedLine.startsWith("while ") || trimmedLine.startsWith("while(")
+                || trimmedLine.startsWith("try ") || trimmedLine.startsWith("try{")
+                || trimmedLine.equals("try {")
+                || trimmedLine.startsWith("} else ");
     }
     
     /**
