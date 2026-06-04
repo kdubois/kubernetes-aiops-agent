@@ -62,6 +62,15 @@ public class MetricsDataAgent {
         sb.append(", errorRate=").append(formatPercent(metricsData.get("errorRate"), null));
         sb.append(", p95=").append(formatMs(metricsData.get("latencyP95Ms")));
         sb.append(", p99=").append(formatMs(metricsData.get("latencyP99Ms")));
+        
+        // Add memory metrics if available
+        if (metricsData.containsKey("heapUsedMb") || metricsData.containsKey("heapMaxMb")) {
+            sb.append(", heapUsed=").append(formatMb(metricsData.get("heapUsedMb")));
+            sb.append("/").append(formatMb(metricsData.get("heapMaxMb")));
+        }
+        if (metricsData.containsKey("gcCount")) {
+            sb.append(", gcCount=").append(formatNumber(metricsData.get("gcCount")));
+        }
         sb.append("\n");
     }
 
@@ -82,6 +91,12 @@ public class MetricsDataAgent {
         if (value == null) return "N/A";
         if (value instanceof Double d) return String.format("%.1fms", d);
         return value + "ms";
+    }
+
+    private static String formatMb(Object value) {
+        if (value == null) return "N/A";
+        if (value instanceof Double d) return String.format("%.1fMB", d);
+        return value + "MB";
     }
 
     static String extractNamespace(String message) {

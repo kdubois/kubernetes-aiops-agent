@@ -2,6 +2,8 @@
 
 AI assistant instructions for the Kubernetes Agent project. This is an experimental project - prioritize simplicity over backwards compatibility.
 
+**IMPORTANT FOR AI ASSISTANTS:** Do NOT create summary/fix documents (like MEMORY_LEAK_DETECTION_FIX.md). If there's a change, just update the documentation appropriately but without documenting the change itself.
+
 ## Overview
 
 Quarkus-based AI agent using LangChain4j's declarative framework to analyze Kubernetes rollouts, diagnose issues, and create automated remediation PRs.

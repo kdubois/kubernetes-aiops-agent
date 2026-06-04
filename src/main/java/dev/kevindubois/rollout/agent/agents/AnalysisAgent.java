@@ -39,9 +39,11 @@ public interface AnalysisAgent {
 
         DO NOT PROMOTE if ANY of these are true:
         - NullPointerException, OutOfMemoryError, or other CRITICAL exceptions in canary logs
+        - Memory leak indicators: excessive GC activity, heap pressure warnings, or "java.lang.OutOfMemoryError" mentions
         - Canary error rate > stable + 5 percentage points (e.g., stable=1%, canary=7%)
         - Success rate < 80%
         - Crash loops or pods not Ready
+        - Sustained high latency (p95 > 1.5x stable OR p99 > 2x stable) combined with error rate increase
 
         PROMOTE if ALL of these are true:
         - No critical errors/exceptions in canary logs
@@ -61,8 +63,10 @@ public interface AnalysisAgent {
 
         Confidence: 90-100 (clear), 70-89 (good), 50-69 (mixed), <50 (unclear)
         
-        CRITICAL: Be LENIENT. Only rollback for SIGNIFICANT issues (critical exceptions, >5pp error rate increase, crash loops).
-        Minor metric variations are NORMAL and EXPECTED in canary deployments. When in doubt, PROMOTE.
+        CRITICAL: Be LENIENT for normal variations, but STRICT for memory/resource issues.
+        - Rollback for: critical exceptions, memory leak indicators, >5pp error rate increase, crash loops
+        - Rollback if: latency spike (>1.5x) AND error rate increase (even if <5pp) - indicates resource exhaustion
+        - Minor metric variations without errors are NORMAL. When metrics are good, PROMOTE.
         """)
     @UserMessage("""
         Analyze the following Kubernetes diagnostic data:
