@@ -121,13 +121,16 @@ public class RemediationOrchestrator {
 
                 if (attempt < MAX_ATTEMPTS) {
                     Log.warnf("Remediation attempt %d failed, retrying: %s", attempt, e.getMessage());
-                    activityEvents.remediationRetrying(attempt, e.getMessage());
                     continue;
                 }
 
                 Log.error("Remediation failed after all attempts", e);
-                activityEvents.remediationFailed(
-                        isOutputParsingFailure(e) ? "LLM produced unusable output" : e.getMessage());
+                if (isOutputParsingFailure(e)) {
+                    Log.info("Falling back to GitHub issue creation after LLM failure");
+                    createIssueDeterministically(result, repoUrl);
+                } else {
+                    activityEvents.remediationFailed(e.getMessage());
+                }
             }
         }
     }
