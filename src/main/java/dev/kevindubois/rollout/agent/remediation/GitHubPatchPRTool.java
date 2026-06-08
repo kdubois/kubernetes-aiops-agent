@@ -96,7 +96,7 @@ public class GitHubPatchPRTool {
      * This is more efficient than providing full file content and avoids LLM token limits.
      * 
      * @param repoUrl URL of the GitHub repository
-     * @param patchesJson JSON array of file patches with line-based changes
+     * @param patches JSON array of file patches with line-based changes (may be string-wrapped)
      * @param fixDescription Description of the fix
      * @param rootCause Root cause of the issue
      * @param namespace Kubernetes namespace
@@ -107,7 +107,7 @@ public class GitHubPatchPRTool {
     @Tool("Create a GitHub pull request using line-based patches. Specify exact line numbers and changes to make. More efficient than providing full file content.")
     public Map<String, Object> createGitHubPRWithPatches(
             String repoUrl,
-            String patchesJson,
+            String patches,
             String fixDescription,
             String rootCause,
             String namespace,
@@ -117,20 +117,23 @@ public class GitHubPatchPRTool {
         Log.info("=== Executing Tool: createGitHubPRWithPatches ===");
 
         // Validate required parameters
-        if (repoUrl == null || patchesJson == null || patchesJson.isBlank() || fixDescription == null) {
-            return Map.of("success", false, "error", "Missing required parameters: repoUrl, patchesJson, fixDescription");
+        if (repoUrl == null || patches == null || patches.isBlank()) {
+            return Map.of("success", false, "error", "Missing required parameters: repoUrl, patches, fixDescription");
+        }
+        if (fixDescription == null || fixDescription.isBlank()) {
+            fixDescription = "Automated fix for canary deployment failure";
         }
 
+        repoUrl = repoUrl.trim();
         Log.info(MessageFormat.format("Creating PR with patches for repository: {0}", repoUrl));
 
-        // Convert JSON string to FilePatch objects (LLMs often pass nested arrays as strings)
         List<FilePatch> filePatchList;
         try {
-            List<Map<String, Object>> patches = parsePatchesJson(patchesJson);
-            if (patches.isEmpty()) {
-                return Map.of("success", false, "error", "patchesJson must contain at least one file patch");
+            List<Map<String, Object>> patchList = parsePatchesJson(patches);
+            if (patchList.isEmpty()) {
+                return Map.of("success", false, "error", "patches must contain at least one file patch");
             }
-            filePatchList = convertToFilePatches(patches);
+            filePatchList = convertToFilePatches(patchList);
         } catch (Exception e) {
             Log.error("Failed to parse patches", e);
             return Map.of("success", false, "error", "Invalid patch format: " + e.getMessage());
@@ -182,34 +185,32 @@ public class GitHubPatchPRTool {
         }
     }
     
+
     /**
-     * Parse patches JSON from LLM tool calls. Handles stringified arrays and minor formatting issues.
+     * Convert raw Map objects from LangChain4j to FilePatch objects
      */
-    static List<Map<String, Object>> parsePatchesJson(String patchesJson) throws Exception {
-        String json = patchesJson.trim();
+    /**
+     * Parse patches from a string value. Handles both raw JSON arrays and
+     * string-wrapped arrays (common with Qwen models that quote array values).
+     */
+    static List<Map<String, Object>> parsePatchesJson(String patches) throws Exception {
+        String json = patches.trim();
 
         // Unwrap double-encoded JSON string: "[{...}]" -> [{...}]
         if (json.startsWith("\"")) {
             json = MAPPER.readValue(json, String.class).trim();
         }
 
-        // Extract array boundaries (handles trailing text or markdown)
+        // Extract array boundaries (handles trailing text or extra braces)
         int start = json.indexOf('[');
         int end = json.lastIndexOf(']');
         if (start >= 0 && end > start) {
             json = json.substring(start, end + 1);
         }
 
-        try {
-            return MAPPER.readValue(json, PATCH_LIST_TYPE);
-        } catch (Exception e) {
-            throw new IllegalArgumentException("Failed to parse patches JSON: " + e.getMessage(), e);
-        }
+        return MAPPER.readValue(json, PATCH_LIST_TYPE);
     }
 
-    /**
-     * Convert raw Map objects from LangChain4j to FilePatch objects
-     */
     @SuppressWarnings("unchecked")
     private List<FilePatch> convertToFilePatches(List<Map<String, Object>> rawPatches) {
         return rawPatches.stream()
