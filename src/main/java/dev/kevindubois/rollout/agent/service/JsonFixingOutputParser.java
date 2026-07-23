@@ -66,11 +66,6 @@ public class JsonFixingOutputParser {
     }
     
     /**
-     * Fix common JSON formatting issues:
-     * 1. Replace single quotes with double quotes for property names and string values
-     * 2. Handle mixed quote scenarios
-     * 3. Preserve escaped quotes
-    /**
      * Fix malformed JSON operators like := or = instead of :
      * Examples:
      * - "action":="insert_after" -> "action":"insert_after"

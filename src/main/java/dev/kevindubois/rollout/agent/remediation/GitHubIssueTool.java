@@ -4,6 +4,7 @@ import dev.langchain4j.agent.tool.Tool;
 import dev.kevindubois.rollout.agent.service.RemediationOutcomeHolder;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.eclipse.microprofile.rest.client.inject.RestClient;
 
 import io.quarkus.logging.Log;
@@ -18,23 +19,15 @@ import java.util.Map;
 @ApplicationScoped
 public class GitHubIssueTool {
     
-    private final String githubToken;
-    
+    @ConfigProperty(name = "github.token")
+    String githubToken;
+
     @Inject
     @RestClient
     GitHubRestClient githubClient;
 
     @Inject
     RemediationOutcomeHolder outcomeHolder;
-    
-    public GitHubIssueTool() {
-        this.githubToken = System.getenv("GITHUB_TOKEN");
-        if (githubToken == null || githubToken.isEmpty()) {
-            Log.warn("GITHUB_TOKEN environment variable not set");
-        } else {
-            Log.info("GitHub Issue tool initialized");
-        }
-    }
     
     /**
      * Create a GitHub issue to report a problem

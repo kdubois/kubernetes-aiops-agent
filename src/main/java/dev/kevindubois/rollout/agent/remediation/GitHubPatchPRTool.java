@@ -6,6 +6,7 @@ import dev.langchain4j.agent.tool.Tool;
 import dev.kevindubois.rollout.agent.service.RemediationOutcomeHolder;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.eclipse.microprofile.rest.client.inject.RestClient;
 import io.quarkus.logging.Log;
 
@@ -42,14 +43,8 @@ public class GitHubPatchPRTool {
     @Inject
     RemediationOutcomeHolder outcomeHolder;
 
-    private String githubToken;
-
-    public GitHubPatchPRTool() {
-        this.githubToken = System.getenv("GITHUB_TOKEN");
-        if (githubToken == null || githubToken.isEmpty()) {
-            Log.warn("GITHUB_TOKEN environment variable not set");
-        }
-    }
+    @ConfigProperty(name = "github.token")
+    String githubToken;
     
     /**
      * Represents a single line-based change to a file
