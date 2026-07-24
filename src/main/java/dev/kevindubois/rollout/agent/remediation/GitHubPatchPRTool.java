@@ -182,11 +182,8 @@ public class GitHubPatchPRTool {
     
 
     /**
-     * Convert raw Map objects from LangChain4j to FilePatch objects
-     */
-    /**
-     * Parse patches from a string value. Handles both raw JSON arrays and
-     * string-wrapped arrays (common with Qwen models that quote array values).
+     * Parse patches from a string value. Handles raw JSON arrays, string-wrapped arrays,
+     * and common LLM escaping mistakes (over-escaped quotes, broken content fields).
      */
     static List<Map<String, Object>> parsePatchesJson(String patches) throws Exception {
         String json = patches.trim();
@@ -203,7 +200,23 @@ public class GitHubPatchPRTool {
             json = json.substring(start, end + 1);
         }
 
-        return MAPPER.readValue(json, PATCH_LIST_TYPE);
+        // Try parsing as-is first
+        try {
+            return MAPPER.readValue(json, PATCH_LIST_TYPE);
+        } catch (Exception firstAttempt) {
+            // Attempt recovery: collapse over-escaped sequences that LLMs commonly produce
+            String sanitized = json
+                    .replace("\\\\\\\"", "\\\"")   // \\\" → \"
+                    .replace("\\\\\"", "\\\"")     // \\" → \"
+                    .replace("\\\\'", "'");         // \\' → '
+
+            try {
+                return MAPPER.readValue(sanitized, PATCH_LIST_TYPE);
+            } catch (Exception secondAttempt) {
+                // Rethrow the original, more informative exception
+                throw firstAttempt;
+            }
+        }
     }
 
     @SuppressWarnings("unchecked")

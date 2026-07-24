@@ -37,33 +37,42 @@ public class SourceCodePrefetcher {
 
     /**
      * Pre-fetch source code files by extracting file paths from collected/analysis data.
+     * Uses a cascade of strategies, retrying with fallbacks when a strategy fails to read files.
      */
     public String prefetchSourceCode(String collectedData, String repoUrl, String baseBranch) {
+        List<String> classNames = extractClassNames(collectedData);
+
+        // Strategy 1: derive paths from FQCNs in stack traces
         List<String> filePaths = extractFilePathsFromStackTraces(collectedData);
+        String result = tryReadFiles(filePaths, repoUrl, baseBranch);
+        if (!result.isEmpty()) return result;
 
-        if (filePaths.isEmpty()) {
-            List<String> classNames = extractClassNames(collectedData);
-            if (!classNames.isEmpty()) {
-                Log.info(MessageFormat.format("No file paths from stack traces, searching repo for classes: {0}", classNames));
-                filePaths = searchRepoForClasses(repoUrl, baseBranch, classNames);
-            }
+        // Strategy 2: search the repo tree for class names
+        if (!classNames.isEmpty()) {
+            Log.info(MessageFormat.format("Falling back to repo tree search for classes: {0}", classNames));
+            filePaths = searchRepoForClasses(repoUrl, baseBranch, classNames);
+            result = tryReadFiles(filePaths, repoUrl, baseBranch);
+            if (!result.isEmpty()) return result;
         }
 
-        if (filePaths.isEmpty()) {
-            Log.info("No specific classes identified, fetching all main source files from repo");
-            filePaths = getAllMainSourceFiles(repoUrl, baseBranch);
-        }
+        // Strategy 3: fetch all main source files
+        Log.info("Falling back to fetching all main source files from repo");
+        filePaths = getAllMainSourceFiles(repoUrl, baseBranch);
+        result = tryReadFiles(filePaths, repoUrl, baseBranch);
+        if (!result.isEmpty()) return result;
 
-        if (filePaths.isEmpty()) {
-            Log.info("No source files found in repo, skipping pre-fetch");
-            return "";
-        }
+        Log.info("No source files could be read from repo, skipping pre-fetch");
+        return "";
+    }
+
+    @SuppressWarnings("unchecked")
+    private String tryReadFiles(List<String> filePaths, String repoUrl, String baseBranch) {
+        if (filePaths == null || filePaths.isEmpty()) return "";
 
         Log.info(MessageFormat.format("Pre-fetching {0} source files: {1}", filePaths.size(), filePaths));
         try {
             Map<String, Object> result = sourceCodeTool.readSourceFiles(repoUrl, filePaths, baseBranch);
             if (Boolean.TRUE.equals(result.get("success"))) {
-                @SuppressWarnings("unchecked")
                 Map<String, String> filesWithLineNumbers = (Map<String, String>) result.get("filesWithLineNumbers");
                 if (filesWithLineNumbers != null && !filesWithLineNumbers.isEmpty()) {
                     StringBuilder sb = new StringBuilder("\n\n=== SOURCE CODE (pre-fetched) ===\n");
@@ -76,7 +85,7 @@ public class SourceCodePrefetcher {
                 }
             }
         } catch (Exception e) {
-            Log.warn("Failed to pre-fetch source code (non-critical)", e);
+            Log.warn(MessageFormat.format("Failed to read files {0} (will try fallback)", filePaths), e);
         }
         return "";
     }
