@@ -3,6 +3,7 @@ package dev.kevindubois.rollout.agent.service;
 import io.quarkus.logging.Log;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.eclipse.microprofile.rest.client.inject.RestClient;
 
 import java.text.MessageFormat;
@@ -30,6 +31,9 @@ public class SourceCodePrefetcher {
     @Inject
     @RestClient
     GitHubRestClient githubClient;
+
+    @ConfigProperty(name = "github.token")
+    String githubToken;
 
     /**
      * Pre-fetch source code files by extracting file paths from collected/analysis data.
@@ -81,10 +85,9 @@ public class SourceCodePrefetcher {
         List<String> foundPaths = new ArrayList<>();
         try {
             String[] ownerRepo = repoUrl.replace("https://github.com/", "").replace(".git", "").split("/", 2);
-            String token = System.getenv("GITHUB_TOKEN");
-            if (token == null || token.isEmpty()) return foundPaths;
+            if (githubToken == null || githubToken.isEmpty()) return foundPaths;
 
-            String authHeader = "Bearer " + token;
+            String authHeader = "Bearer " + githubToken;
             var tree = githubClient.getTree(ownerRepo[0], ownerRepo[1], branch, "1", authHeader);
             if (tree != null && tree.tree() != null) {
                 for (var entry : tree.tree()) {
@@ -111,10 +114,9 @@ public class SourceCodePrefetcher {
         List<String> otherFiles = new ArrayList<>();
         try {
             String[] ownerRepo = repoUrl.replace("https://github.com/", "").replace(".git", "").split("/", 2);
-            String token = System.getenv("GITHUB_TOKEN");
-            if (token == null || token.isEmpty()) return priorityFiles;
+            if (githubToken == null || githubToken.isEmpty()) return priorityFiles;
 
-            String authHeader = "Bearer " + token;
+            String authHeader = "Bearer " + githubToken;
             var tree = githubClient.getTree(ownerRepo[0], ownerRepo[1], branch, "1", authHeader);
             if (tree != null && tree.tree() != null) {
                 for (var entry : tree.tree()) {

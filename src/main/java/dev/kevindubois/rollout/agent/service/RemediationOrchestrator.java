@@ -8,6 +8,7 @@ import dev.langchain4j.service.output.OutputParsingException;
 import io.quarkus.logging.Log;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.eclipse.microprofile.rest.client.inject.RestClient;
 
 import java.util.concurrent.CompletableFuture;
@@ -32,6 +33,9 @@ public class RemediationOrchestrator {
     @Inject
     @RestClient
     GitHubRestClient githubClient;
+
+    @ConfigProperty(name = "github.token")
+    String githubToken;
 
     public void triggerIfNeeded(AnalysisResult result, String prompt, String repoUrl, String baseBranch) {
         if (result.promote() || repoUrl == null || repoUrl.isEmpty()) {
@@ -60,8 +64,7 @@ public class RemediationOrchestrator {
     private void createIssueDeterministically(AnalysisResult result, String repoUrl) {
         try {
             String[] ownerRepo = extractOwnerAndRepo(repoUrl);
-            String token = System.getenv("GITHUB_TOKEN");
-            String authHeader = "Bearer " + (token != null ? token : "");
+            String authHeader = "Bearer " + githubToken;
 
             String title = "Canary Deployment Failed: " + truncate(result.rootCause(), 100);
             String body = String.format("""

@@ -18,8 +18,8 @@
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <quarkus.platform.artifact-id>quarkus-bom</quarkus.platform.artifact-id>
         <quarkus.platform.group-id>io.quarkus.platform</quarkus.platform.group-id>
-        <quarkus.platform.version>3.36.1</quarkus.platform.version>
-        <quarkus-langchain4j.version>1.10.0</quarkus-langchain4j.version>   
+        <quarkus.platform.version>3.37.4</quarkus.platform.version>
+        <quarkus-langchain4j.version>1.12.0</quarkus-langchain4j.version>   
         <a2a.version>0.3.2.Final</a2a.version>
         <skipITs>true</skipITs>
         <surefire-plugin.version>3.5.5</surefire-plugin.version>
@@ -73,6 +73,11 @@
         <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-kubernetes-config</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkiverse.vault</groupId>
+            <artifactId>quarkus-vault</artifactId>
+            <version>4.8.0</version>
         </dependency>
         <dependency>
             <groupId>io.quarkus</groupId>

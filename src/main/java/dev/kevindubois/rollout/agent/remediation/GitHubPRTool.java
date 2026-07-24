@@ -3,6 +3,7 @@ package dev.kevindubois.rollout.agent.remediation;
 import dev.langchain4j.agent.tool.Tool;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.eclipse.microprofile.rest.client.inject.RestClient;
 
 import io.quarkus.logging.Log;
@@ -29,14 +30,8 @@ public class GitHubPRTool {
     @RestClient
     GitHubRestClient githubClient;
 
-    private String githubToken;
-
-    public GitHubPRTool() {
-        this.githubToken = System.getenv("GITHUB_TOKEN");
-        if (githubToken == null || githubToken.isEmpty()) {
-            Log.warn("GITHUB_TOKEN environment variable not set");
-        }
-    }
+    @ConfigProperty(name = "github.token")
+    String githubToken;
     
     /**
      * Create a GitHub pull request with code fixes

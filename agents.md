@@ -1,42 +1,80 @@
 # Kubernetes Agent Development Guide
 
-AI assistant instructions for the Kubernetes Agent project. This is an experimental project - prioritize simplicity over backwards compatibility.
+Quarkus-based autonomous AI agent that analyzes Kubernetes rollouts, decides promote/rollback, and creates GitHub PRs or issues for detected problems. This is an experimental project — prioritize simplicity over backwards compatibility.
 
-**IMPORTANT FOR AI ASSISTANTS:** Do NOT create summary/fix documents (like MEMORY_LEAK_DETECTION_FIX.md). If there's a change, just update the documentation appropriately but without documenting the change itself.
+Do not create summary or migration documents. If a change is made, update the relevant code and documentation in place.
 
 ## Overview
 
-Quarkus-based AI agent using LangChain4j's declarative framework to analyze Kubernetes rollouts, diagnose issues, and create automated remediation PRs.
-
-**Stack:** Quarkus 3.x, LangChain4j, Kubernetes client, JGit, GitHub REST API, A2A protocol
+**Stack:** Quarkus 3.x, LangChain4j declarative agents, Fabric8 Kubernetes client, JGit, GitHub REST API, A2A protocol
 
 **Principles:**
-1. Use declarative annotations (`@Agent`, `@LoopAgent`, `@SequenceAgent`)
+1. Use declarative annotations (`@Agent`, `@LoopAgent`, `@SequenceAgent`, `@ParallelAgent`)
 2. Single responsibility per agent
-3. Leverage Quarkus CDI and LangChain4j
+3. Records for type-safe data contracts between agents
 4. Keep it simple
-5. Use records for type-safe data contracts
+
+## Project Layout
+
+```
+src/main/java/dev/kevindubois/rollout/agent/
+  a2a/
+    KubernetesAgentResource.java    # REST endpoints: POST /a2a/analyze, GET /a2a/health
+  workflow/
+    KubernetesWorkflow.java         # Top-level orchestrator (@SequenceAgent)
+    ParallelDataWorkflow.java       # DiagnosticsDataAgent ∥ MetricsDataAgent (@ParallelAgent)
+    AnalysisLoop.java               # AnalysisAgent → ScoringAgent, up to 3 iterations (@LoopAgent)
+    RemediationLoop.java            # Async remediation orchestration
+  agents/
+    DiagnosticsDataAgent.java       # Non-AI: pod logs, events, resource state
+    MetricsDataAgent.java           # Non-AI: /q/metrics scraping
+    DataCombinerAgent.java          # Non-AI: merges diagnostics + metrics into single report
+    AnalysisAgent.java              # AI: decide promote/rollback, write analysis + rootCause
+    ScoringAgent.java               # AI: quality-check AnalysisResult; request retry if needed
+    RemediationAgent.java           # AI: open GitHub PR (code bug) or GitHub issue (ops issue)
+  k8s/
+    K8sTools.java                   # Tools: debugPod, getPodLogs, getEvents, getMetrics, getResources
+  remediation/
+    SourceCodeTool.java             # Tool: read source files from GitHub API
+    GitHubPatchPRTool.java          # Tool: create PR with line-based patches
+    GitHubPRTool.java               # Tool: create PR with full file content
+    GitHubIssueTool.java            # Tool: create GitHub issue
+    GitOperations.java              # JGit: clone, branch, commit, push
+  model/                            # Records: AnalysisResult, RemediationResult, KubernetesAgentRequest/Response
+  utils/
+    ToolCallLimiter.java            # Hard cap: max 20 tool calls per workflow
+deployment/
+  deployment.yaml                   # K8s Deployment (512Mi–2Gi memory)
+  rbac.yaml                         # ClusterRole: read pods/logs/events/rollouts; exec pods
+  service.yaml                      # ClusterIP :8080
+  secret.yaml.template              # API key template — copy and fill before deploying
+```
 
 ## Prerequisites
 
-Java 21+, Maven 3.8+, kubectl, Google/OpenAI API key, GitHub token, Kubernetes cluster with Argo Rollouts + rollouts-plugin-metric-ai
+Java 21+, Maven 3.8+, kubectl/oc, Google or OpenAI API key, GitHub token with `repo` scope, Kubernetes cluster with Argo Rollouts + `rollouts-plugin-metric-ai`.
 
 ## Development
 
 ### Local Setup
 
+In local dev, credentials are read from environment variables via `application.properties` fallback (`github.token=${GITHUB_TOKEN:}`):
+
 ```bash
-export GOOGLE_API_KEY="key"  # or OPENAI_API_KEY
-export GITHUB_TOKEN="token"
+export GOOGLE_API_KEY="..."   # or OPENAI_API_KEY
+export GITHUB_TOKEN="..."
 
 mvn quarkus:dev -Dquarkus.profile=dev,gemini
-mvn quarkus:dev -Dquarkus.profile=dev,gemini -Drun.mode=console  # Interactive
+mvn quarkus:dev -Dquarkus.profile=dev,gemini -Drun.mode=console   # Interactive console mode
 ```
+
+In production, credentials come from the `kubernetes-agent` Kubernetes Secret (K8s Secret path) or from a Vault KV path (Vault path — activated by adding `vault` to `QUARKUS_PROFILE`). See the `progressive-delivery` README for Vault bootstrap steps.
 
 **Profiles:** `dev`, `prod`, `gemini`, `openai`
 
 ### Agent Pattern
 
+```java
 @Agent
 @RegisterAiService
 public interface MyAgent {
@@ -45,16 +83,16 @@ public interface MyAgent {
 }
 ```
 
-Use `@LoopAgent` for retries, `@SequenceAgent` for orchestration. Return records when possible.
+Use `@LoopAgent` for retry loops, `@SequenceAgent` for ordered steps, `@ParallelAgent` for concurrent non-AI work.
 
 ### Tool Pattern
 
+```java
 @ToolBox
 public class MyK8sTool {
-    @Tool("Tool description")
+    @Tool("Describe what this tool does and when to call it")
     public String myTool(@P("namespace") String ns, @P("name") String name) {
         try {
-            // Implementation
             return result;
         } catch (Exception e) {
             logger.error("Tool failed", e);
@@ -64,143 +102,101 @@ public class MyK8sTool {
 }
 ```
 
-### Testing
+## Building and Deploying
 
-mvn test
-mvn test -Dtest=AnalysisAgentTest
-./test-agent.sh local  # or k8s
-./run-console.sh       # Interactive
+### Fast path (no version bump)
+
+```bash
+quarkus build --no-tests && quarkus image push --also-build
+kubectl rollout restart deployment/kubernetes-agent -n openshift-gitops
+kubectl rollout status deployment/kubernetes-agent -n openshift-gitops
 ```
 
-### Building
+### Version bump
 
-mvn clean package -Dquarkus.profile=prod,gemini
-docker build -t quay.io/kevindubois/kubernetes-agent:latest .
-mvn quarkus:image-push -Dquarkus.container-image.build=true
+Update the image tag in `deployment/kustomization.yaml`, commit, and push. Argo CD will sync.
+
+### Full multi-platform build
+
+```bash
+docker buildx build --platform linux/amd64,linux/arm64 \
+  -t quay.io/kevindubois/kubernetes-agent:v<version> --push .
 ```
 
-## Deployment
+### Kind (local cluster)
 
-### Kind (Local)
-
+```bash
 kind create cluster --name k8s-agent-test
 docker build -t quay.io/kevindubois/kubernetes-agent:latest .
 kind load docker-image quay.io/kevindubois/kubernetes-agent:latest --name k8s-agent-test
-cp deployment/secret.yaml.template deployment/secret.yaml  # Edit with keys
+# K8s Secret path (default):
+cp deployment/secret.yaml.template deployment/secret.yaml   # fill in keys
 kubectl apply -f deployment/secret.yaml
 kubectl apply -k deployment/
 kubectl logs -f deployment/kubernetes-agent -n argo-rollouts
 ```
 
-### Production
+## Testing
+
 ```bash
-docker buildx build --platform linux/amd64,linux/arm64 -t quay.io/kevindubois/kubernetes-agent:v1.0.0 --push .
-kubectl set image deployment/kubernetes-agent kubernetes-agent=quay.io/kevindubois/kubernetes-agent:v1.0.0 -n argo-rollouts
-kubectl rollout status deployment/kubernetes-agent -n argo-rollouts
+mvn test
+mvn test -Dtest=AnalysisAgentTest
+./test-agent.sh local    # or k8s
+./run-console.sh         # Interactive console mode
 ```
 
-## Code Standards
+## Workflow
 
-### Patterns
+The analysis request from the plugin triggers this sequence:
 
-```java
-// Records for DTOs
-public record AnalysisResult(boolean promote, int confidence, String analysis, String rootCause, String remediation, String prLink) {}
-
-// Declarative agents with clear system messages
-@Agent
-public interface AnalysisAgent {
-    @SystemMessage("You analyze combined Kubernetes diagnostics and metrics data. Return JSON: {promote, confidence, analysis, rootCause, remediation}")
-    @UserMessage("Analyze: {{combinedData}}")
-    AnalysisResult analyze(String combinedData);
-}
-
-// Parallel data gathering
-@ParallelAgent(subAgents = {DiagnosticsDataAgent.class, MetricsDataAgent.class})
-public interface ParallelDataWorkflow {
-    String execute(Object memoryId, String message);
-}
-
-// Dependency injection
-@ApplicationScoped
-public class MyService {
-    @Inject KubernetesWorkflow workflow;
-    public AnalysisResult analyze(String msg) { return workflow.execute(UUID.randomUUID().toString(), msg); }
-}
-```
-
-### System Messages
-Be specific, define structure, set constraints, use examples. Focus on role, tools, and output format.
-
-### Logging
-```java
-logger.debug("Starting analysis for {}/{}", namespace, podName);
-logger.info("Analysis: promote={}, confidence={}", result.promote(), result.confidence());
-logger.error("Failed", exception);
-```
+1. `ParallelDataWorkflow` — `DiagnosticsDataAgent` and `MetricsDataAgent` run concurrently using only Kubernetes tools (no LLM).
+2. `DataCombinerAgent` — merges the two reports into a single `diagnosticData` string.
+3. `AnalysisLoop` — `AnalysisAgent` → `ScoringAgent`; repeats until score is acceptable or 3 iterations are exhausted.
+4. Response returned synchronously to the plugin (`promote`, `confidence`, `analysis`, `rootCause`).
+5. If `promote=false` and `repoUrl` is set, `RemediationAgent` runs asynchronously (after 3s delay):
+   - Operational signals (OOM, memory leak, heap warnings) → GitHub issue via `GitHubIssueTool`
+   - Code bugs (NPE, wrong value, logic error) → GitHub PR via `GitHubPatchPRTool`
 
 ## Debugging
 
-### Logs
 ```bash
-kubectl logs -f deployment/kubernetes-agent -n argo-rollouts
-kubectl logs deployment/kubernetes-agent -n argo-rollouts | grep -i "error\|tool"
-```
+kubectl logs -f deployment/kubernetes-agent -n openshift-gitops
+kubectl logs deployment/kubernetes-agent -n openshift-gitops | grep -i "error\|tool"
 
-### Common Issues
-**Not starting:** Check pod status, secrets, RBAC
-**API keys:** Verify secret and env vars
-**Tools failing:** Check RBAC permissions
-**GitHub PRs:** Verify token has repo scope
-
-### Health Check
-```bash
-kubectl port-forward -n argo-rollouts svc/kubernetes-agent 8080:8080
+# Health check
+kubectl port-forward -n openshift-gitops svc/kubernetes-agent 8080:8080
 curl http://localhost:8080/a2a/health
 ```
 
-## Performance
+**Common issues:**
 
-**Resources:** 512Mi-2Gi memory, 250m-1000m CPU
-**Rate limiting:** Configured in application.properties
-**Tool calls:** Max 20 per workflow (ToolCallLimiter)
+| Symptom | Fix |
+|---|---|
+| Pod not starting | Check secret exists (K8s path) or Vault is reachable (Vault path) |
+| API key errors | Verify the secret keys and profile match (gemini vs openai) |
+| Tool calls failing | Check RBAC — agent needs read access to pods, logs, events |
+| GitHub PR not created | Verify `github.token` is set (env var or Vault KV `github_token`); token needs `repo` scope |
 
-## Argo Rollouts Integration
+## Code Standards
 
-apiVersion: argoproj.io/v1alpha1
-kind: AnalysisTemplate
-metadata:
-  name: canary-analysis-with-agent
-spec:
-  metrics:
-    - name: ai-analysis
-      provider:
-        plugin:
-          ai-metric:
-            analysisMode: agent
-            namespace: "{{args.namespace}}"
-            podName: "{{args.canary-pod}}"
-            agentUrl: "http://kubernetes-agent.argo-rollouts.svc.cluster.local:8080"
-```
-
-Test: Deploy rollout, trigger canary, monitor with `kubectl argo rollouts get rollout <name> --watch`
+- Records for DTOs — no mutable state in data contracts.
+- `@SystemMessage` should define role, output format, and constraints; `@UserMessage` passes runtime data.
+- Log at `debug` for per-operation detail, `info` for decisions, `error` for failures.
+- Format: `mvn fmt:format`
 
 ## Feature Checklist
 
 - [ ] Simple, clean, concise code
 - [ ] Follows declarative agent pattern
-- [ ] Clear system/user messages
-- [ ] Error handling + logging
+- [ ] System and user messages are specific and well-structured
+- [ ] Error handling and logging are appropriate
 - [ ] Tests added and passing
-- [ ] Documentation updated (ARCHITECTURE.md, README.md)
-- [ ] Code formatted (`mvn fmt:format`)
-- [ ] No warnings
+- [ ] `README.md` updated if behaviour changed
+- [ ] No compiler warnings
+- [ ] No "Made with Bob" comments
 
 ## Resources
 
-- [Quarkus](https://quarkus.io/guides/) | [LangChain4j](https://docs.langchain4j.dev/) | [Quarkus LangChain4j](https://docs.quarkiverse.io/quarkus-langchain4j/dev/)
-- [Argo Rollouts](https://argo-rollouts.readthedocs.io/) | [Kubernetes Client](https://quarkus.io/guides/kubernetes-client) | [JGit](https://www.eclipse.org/jgit/)
-
-## Contributing
-
-Check GitHub issues, review ARCHITECTURE.md and README.md. Follow code style, add tests, update docs, keep commits focused.
+- [Quarkus](https://quarkus.io/guides/) | [Quarkus LangChain4j](https://docs.quarkiverse.io/quarkus-langchain4j/dev/) | [LangChain4j](https://docs.langchain4j.dev/)
+- [Argo Rollouts](https://argo-rollouts.readthedocs.io/) | [Kubernetes Client](https://quarkus.io/guides/kubernetes-client)
+- [JGit](https://www.eclipse.org/jgit/) | [Fabric8 Kubernetes Client](https://github.com/fabric8io/kubernetes-client)
