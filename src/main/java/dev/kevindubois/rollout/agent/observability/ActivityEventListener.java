@@ -90,6 +90,12 @@ public class ActivityEventListener implements AgentListener {
     public void onAgentInvocationError(AgentInvocationError error) {
         String message = error.error() != null ? error.error().getMessage() : "Unknown error";
         Log.errorf("Agent %s failed: %s", error.agentName(), message);
-        activityEvents.publish("ERROR", error.agentName() + " failed", message);
+        // Don't publish error events for remediation agents — the orchestrator handles
+        // retries and will publish its own success/failure event at the end.
+        String name = error.agentName();
+        if (name != null && (name.contains("emediation") || name.contains("implementRemediation"))) {
+            return;
+        }
+        activityEvents.publish("ERROR", name + " failed", message);
     }
 }

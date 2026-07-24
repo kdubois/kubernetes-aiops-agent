@@ -18,7 +18,8 @@ public class JsonFixingOutputParser {
      */
     public String fixJson(String text) {
         if (text == null || text.trim().isEmpty()) {
-            return text;
+            // Return a minimal valid JSON object that will trigger recovery mechanism
+            return "{}";
         }
         
         Log.debug("Original text length: " + text.length());
