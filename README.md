@@ -168,21 +168,14 @@ Container images are tagged with:
 ### 1. Set environment variables
 
 ```bash
-# to use Gemini:
-export GOOGLE_API_KEY="your-google-api-key"
-# to use OpenAI:
-export OPENAI_API_KEY="your-openai-key"
+export ANALYSIS_API_KEY="your-api-key"   # Any OpenAI-compatible API key
 export GITHUB_TOKEN="your-github-token"
 ```
 
 ### 2. Run locally
 
 ```bash
-# Run with Gemini (default)
-mvn quarkus:dev -Dquarkus.profile=dev,gemini
-
-# Run with OpenAI
-mvn quarkus:dev -Dquarkus.profile=dev,openai
+mvn quarkus:dev
 
 # Server starts on port 8080
 # Health check: http://localhost:8080/q/health
@@ -192,7 +185,7 @@ mvn quarkus:dev -Dquarkus.profile=dev,openai
 
 ```bash
 # Interactive console mode for testing
-mvn quarkus:dev -Dquarkus.profile=dev,gemini -Drun.mode=console
+mvn quarkus:dev -Drun.mode=console
 
 # Or use the convenience script
 ./run-console.sh
@@ -376,16 +369,15 @@ spec:
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `GOOGLE_API_KEY` | Yes* | Google Gemini API key (required if using Gemini) |
-| `OPENAI_API_KEY` | Yes* | OpenAI API key (required if using OpenAI) |
+| `ANALYSIS_API_KEY` | Yes | API key for the analysis model (any OpenAI-compatible endpoint) |
+| `ANALYSIS_BASE_URL` | No | Base URL for analysis model API (default: "https://api.openai.com/v1") |
+| `ANALYSIS_MODEL` | No | Analysis model name (default: "gpt-4o") |
+| `REMEDIATION_API_KEY` | No | API key for remediation model (defaults to ANALYSIS_API_KEY) |
+| `REMEDIATION_BASE_URL` | No | Base URL for remediation model API (defaults to ANALYSIS_BASE_URL) |
+| `REMEDIATION_MODEL` | No | Remediation model name (defaults to ANALYSIS_MODEL) |
 | `GITHUB_TOKEN` | Yes | GitHub personal access token (needs `repo` scope) |
 | `GIT_USERNAME` | No | Git commit username (default: "kubernetes-agent") |
 | `GIT_EMAIL` | No | Git commit email (default: "agent@example.com") |
-| `GEMINI_MODEL` | No | Gemini model name (default: "gemini-2.5-flash") |
-| `OPENAI_MODEL` | No | OpenAI model name (default: "gpt-4o") |
-| `OPENAI_BASE_URL` | No | OpenAI API base URL (default: "https://api.openai.com/v1") |
-
-*Either `GOOGLE_API_KEY` or `OPENAI_API_KEY` is required, depending on which model you're using.
 
 ### Resource Limits
 
@@ -433,7 +425,7 @@ curl http://localhost:8080/q/health
 kubectl get secret kubernetes-agent -n openshift-gitops
 
 # Check environment variables in pod
-kubectl exec -n openshift-gitops deployment/kubernetes-agent -- env | grep -E "GOOGLE_API_KEY|OPENAI_API_KEY|GITHUB_TOKEN"
+kubectl exec -n openshift-gitops deployment/kubernetes-agent -- env | grep -E "ANALYSIS_API_KEY|REMEDIATION_API_KEY|GITHUB_TOKEN"
 ```
 
 ### PR creation failing
@@ -551,29 +543,29 @@ This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENS
 
 ## Model Support
 
-The agent supports multiple AI models through profile-based configuration:
-
-### Google Gemini (Default)
-```bash
-mvn quarkus:dev -Dquarkus.profile=dev,gemini
-export GOOGLE_API_KEY="your-key"
-export GEMINI_MODEL="gemini-2.5-flash"  # Optional
-```
+The agent supports any OpenAI-compatible endpoint. Configure via environment variables:
 
 ### OpenAI
 ```bash
-mvn quarkus:dev -Dquarkus.profile=dev,openai
-export OPENAI_API_KEY="your-key"
-export OPENAI_MODEL="gpt-4o"  # Optional
-export OPENAI_BASE_URL="https://api.openai.com/v1"  # Optional
+export ANALYSIS_API_KEY="sk-..."
+export ANALYSIS_MODEL="gpt-4o"  # Optional, this is the default
+mvn quarkus:dev
 ```
 
-### vLLM (OpenAI-compatible)
+### Google Gemini (via OpenAI-compatible endpoint)
 ```bash
-mvn quarkus:dev -Dquarkus.profile=dev,openai
-export OPENAI_API_KEY="dummy"
-export OPENAI_BASE_URL="http://vllm-service:8000/v1"
-export OPENAI_MODEL="gemma-2-9b-it"
+export ANALYSIS_API_KEY="AIza..."
+export ANALYSIS_BASE_URL="https://generativelanguage.googleapis.com/v1beta/openai/"
+export ANALYSIS_MODEL="gemini-2.5-flash"
+mvn quarkus:dev
+```
+
+### vLLM / LiteLLM (OpenAI-compatible)
+```bash
+export ANALYSIS_API_KEY="dummy"
+export ANALYSIS_BASE_URL="http://vllm-service:8000/v1"
+export ANALYSIS_MODEL="gemma-2-9b-it"
+mvn quarkus:dev
 ```
 ## Support
 

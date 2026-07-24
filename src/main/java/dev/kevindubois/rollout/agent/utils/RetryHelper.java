@@ -9,8 +9,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Utility for retrying operations with exponential backoff, 
- * specifically handling Gemini API 429 rate limit errors.
+ * Utility for retrying operations with exponential backoff,
+ * handling rate limit, quota, and transient API errors.
  */
 public class RetryHelper {
 	
@@ -20,15 +20,7 @@ public class RetryHelper {
 	private static final double BACKOFF_MULTIPLIER = 2.0;
 	private static final Pattern RETRY_PATTERN = Pattern.compile("Please retry in ([0-9.]+)s");
 	
-	public static <T> T executeWithRetryOnTransientErrors(Callable<T> operation, String operationName) throws Exception {
-		return executeWithRetry(operation, operationName, true);
-	}
-	
 	public static <T> T executeWithRetry(Callable<T> operation, String operationName) throws Exception {
-		return executeWithRetry(operation, operationName, false);
-	}
-	
-	private static <T> T executeWithRetry(Callable<T> operation, String operationName, boolean includeTransientErrors) throws Exception {
 		int attempt = 0;
 		Duration currentBackoff = INITIAL_BACKOFF;
 		Exception lastException = null;
@@ -42,13 +34,13 @@ public class RetryHelper {
 				
 			} catch (Exception e) {
 				lastException = e;
-				boolean shouldRetry = is429Error(e) || (includeTransientErrors && isTransientGeminiError(e));
+				boolean shouldRetry = is429Error(e) || isTransientApiError(e);
 				
 				if (!shouldRetry) {
 					throw e;
 				}
 				
-				handleRetryableError(e, operationName, attempt, includeTransientErrors);
+				handleRetryableError(e, operationName, attempt);
 				
 				if (attempt < MAX_RETRIES) {
 					currentBackoff = waitAndCalculateNextBackoff(e, operationName, currentBackoff);
@@ -56,7 +48,6 @@ public class RetryHelper {
 			}
 		}
 		
-		// Max retries exceeded
 		Log.error(MessageFormat.format("Max retries ({0}) exceeded for {1}", MAX_RETRIES, operationName));
 		throw new RuntimeException(MessageFormat.format("Max retries exceeded after {0} attempts for {1}", attempt, operationName), lastException);
 	}
@@ -73,20 +64,15 @@ public class RetryHelper {
 			lowerMessage.contains("exceeded your current quota");
 	}
 	
-	private static boolean isTransientGeminiError(Exception e) {
+	private static boolean isTransientApiError(Exception e) {
 		if (e instanceof NullPointerException) {
 			String message = e.getMessage();
 			if (message != null && message.contains("\"parts\" is null")) {
 				return true;
 			}
-			
-			StackTraceElement[] stackTrace = e.getStackTrace();
-			if (stackTrace != null && stackTrace.length > 0) {
-				for (StackTraceElement element : stackTrace) {
-					if (element.getClassName().contains("GenerateContentResponseHandler")) {
-						return true;
-					}
-				}
+			// Null-content responses from any provider (short NPE message, no cause)
+			if (e.getCause() == null && message != null && message.length() < 100) {
+				return true;
 			}
 		}
 		
@@ -101,7 +87,7 @@ public class RetryHelper {
 		return false;
 	}
 	
-	private static void handleRetryableError(Exception e, String operationName, int attempt, boolean includeTransientErrors) {
+	private static void handleRetryableError(Exception e, String operationName, int attempt) {
 		if (is429Error(e)) {
 			Duration waitTime = extractRetryDelay(e);
 			if (waitTime != null) {
@@ -112,7 +98,7 @@ public class RetryHelper {
 					operationName, attempt, MAX_RETRIES));
 			}
 			logQuotaDetails(e);
-		} else if (includeTransientErrors) {
+		} else {
 			Log.warn(MessageFormat.format("Transient API error for {0} (attempt {1}/{2}): {3}",
 				operationName, attempt, MAX_RETRIES, e.getClass().getSimpleName()));
 		}
@@ -144,7 +130,6 @@ public class RetryHelper {
 		if (matcher.find()) {
 			try {
 				double seconds = Double.parseDouble(matcher.group(1));
-				// Round up to nearest second
 				long roundedSeconds = (long) Math.ceil(seconds);
 				Log.debug(MessageFormat.format("Extracted retry delay from API: {0} seconds", roundedSeconds));
 				return Duration.ofSeconds(roundedSeconds);
@@ -156,17 +141,12 @@ public class RetryHelper {
 		return null;
 	}
 	
-	/**
-	 * Log quota details from the error message
-	 */
 	private static void logQuotaDetails(Exception e) {
 		String message = e.getMessage();
 		if (message == null) {
 			return;
 		}
 		
-		// Extract quota metric info
-		// Example: "Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 10"
 		if (message.contains("Quota exceeded for metric:")) {
 			Pattern quotaPattern = Pattern.compile("Quota exceeded for metric: ([^,]+), limit: (\\d+)");
 			Matcher matcher = quotaPattern.matcher(message);
@@ -177,10 +157,8 @@ public class RetryHelper {
 				Log.warn("Quota violation details:");
 				Log.warn(MessageFormat.format("  - Metric: {0}", quotaMetric));
 				Log.warn(MessageFormat.format("  - Limit: {0}", limit));
-				Log.warn("  - For more info: https://ai.google.dev/gemini-api/docs/rate-limits");
+				Log.warn("  - Check your API provider's rate limit documentation for details");
 			}
 		}
 	}
 }
-
-

@@ -38,14 +38,14 @@ class RetryHelperTest {
     }
 
     @Test
-    void testExecuteWithRetryOnTransientErrors_nonTransientError() {
+    void testExecuteWithRetry_nonTransientError() {
         // Given: An operation that fails with a non-transient error
         Callable<String> operation = () -> {
             throw new IllegalStateException("Invalid state");
         };
 
         // When/Then: Should fail immediately without retries
-        assertThatThrownBy(() -> RetryHelper.executeWithRetryOnTransientErrors(operation, "test-operation"))
+        assertThatThrownBy(() -> RetryHelper.executeWithRetry(operation, "test-operation"))
             .isInstanceOf(IllegalStateException.class)
             .hasMessage("Invalid state");
     }
