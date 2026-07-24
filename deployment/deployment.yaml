@@ -24,44 +24,43 @@ spec:
               name: http
               protocol: TCP
           env:
-            # Profile selection - allows switching between OpenAI and Gemini
-            - name: QUARKUS_PROFILE
+            # Analysis model configuration
+            - name: ANALYSIS_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: kubernetes-agent
-                  key: quarkus_profile
+                  key: analysis_api_key
                   optional: true
-            # OpenAI Configuration
-            - name: OPENAI_API_KEY
+            - name: ANALYSIS_BASE_URL
               valueFrom:
                 secretKeyRef:
                   name: kubernetes-agent
-                  key: openai_api_key
+                  key: analysis_base_url
                   optional: true
-            - name: OPENAI_BASE_URL
+            - name: ANALYSIS_MODEL
               valueFrom:
                 secretKeyRef:
                   name: kubernetes-agent
-                  key: openai_base_url
+                  key: analysis_model
                   optional: true
-            - name: OPENAI_MODEL
+            # Remediation model configuration
+            - name: REMEDIATION_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: kubernetes-agent
-                  key: openai_model
+                  key: remediation_api_key
                   optional: true
-            # Gemini Configuration
-            - name: GOOGLE_API_KEY
+            - name: REMEDIATION_BASE_URL
               valueFrom:
                 secretKeyRef:
                   name: kubernetes-agent
-                  key: google_api_key
+                  key: remediation_base_url
                   optional: true
-            - name: GEMINI_MODEL
+            - name: REMEDIATION_MODEL
               valueFrom:
                 secretKeyRef:
                   name: kubernetes-agent
-                  key: gemini_model
+                  key: remediation_model
                   optional: true
             # GitHub Configuration
             - name: GITHUB_TOKEN
@@ -69,13 +68,6 @@ spec:
                 secretKeyRef:
                   name: kubernetes-agent
                   key: github_token
-            # Google Cloud Configuration
-            - name: GOOGLE_CLOUD_PROJECT
-              valueFrom:
-                secretKeyRef:
-                  name: kubernetes-agent
-                  key: google_cloud_project
-                  optional: true
             # Git Configuration
             - name: GIT_USERNAME
               value: "kubernetes-agent"
@@ -105,5 +97,3 @@ spec:
             timeoutSeconds: 3
             failureThreshold: 3
       restartPolicy: Always
-
-

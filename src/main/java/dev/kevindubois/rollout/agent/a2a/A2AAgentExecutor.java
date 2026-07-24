@@ -66,7 +66,7 @@ public class A2AAgentExecutor {
                     
                     ToolCallLimiter.resetSession(memoryId);
                     
-                    AnalysisResult result = RetryHelper.executeWithRetryOnTransientErrors(
+                    AnalysisResult result = RetryHelper.executeWithRetry(
                         () -> workflow.execute(memoryId, messageContent, repoUrl, baseBranch),
                         "A2A workflow execution"
                     );

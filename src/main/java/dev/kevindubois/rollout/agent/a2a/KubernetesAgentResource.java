@@ -65,7 +65,7 @@ public class KubernetesAgentResource {
             Log.info(MessageFormat.format("Reset tool call limiter for session: {0}", memoryId));
             
             // Execute multi-agent workflow with retry logic for transient errors
-            AnalysisResult analysisResult = RetryHelper.executeWithRetryOnTransientErrors(
+            AnalysisResult analysisResult = RetryHelper.executeWithRetry(
                 () -> kubernetesWorkflow.execute(memoryId, prompt, repoUrl, baseBranch),
                 "Multi-agent workflow analysis"
             );

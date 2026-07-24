@@ -51,7 +51,7 @@ For manual end-to-end testing, use the console runner:
 
 ```bash
 # Set required environment variables
-export OPENAI_API_KEY="sk-..."
+export ANALYSIS_API_KEY="sk-..."
 export GITHUB_TOKEN="ghp_..."  # Optional, for PR creation
 
 # Run in console mode

@@ -52,7 +52,7 @@ deployment/
 
 ## Prerequisites
 
-Java 21+, Maven 3.8+, kubectl/oc, Google or OpenAI API key, GitHub token with `repo` scope, Kubernetes cluster with Argo Rollouts + `rollouts-plugin-metric-ai`.
+Java 21+, Maven 3.8+, kubectl/oc, an API key for any OpenAI-compatible endpoint, GitHub token with `repo` scope, Kubernetes cluster with Argo Rollouts + `rollouts-plugin-metric-ai`.
 
 ## Development
 
@@ -61,16 +61,16 @@ Java 21+, Maven 3.8+, kubectl/oc, Google or OpenAI API key, GitHub token with `r
 In local dev, credentials are read from environment variables via `application.properties` fallback (`github.token=${GITHUB_TOKEN:}`):
 
 ```bash
-export GOOGLE_API_KEY="..."   # or OPENAI_API_KEY
+export ANALYSIS_API_KEY="..."   # Any OpenAI-compatible API key
 export GITHUB_TOKEN="..."
 
-mvn quarkus:dev -Dquarkus.profile=dev,gemini
-mvn quarkus:dev -Dquarkus.profile=dev,gemini -Drun.mode=console   # Interactive console mode
+mvn quarkus:dev
+mvn quarkus:dev -Drun.mode=console   # Interactive console mode
 ```
 
 In production, credentials come from the `kubernetes-agent` Kubernetes Secret (K8s Secret path) or from a Vault KV path (Vault path — activated by adding `vault` to `QUARKUS_PROFILE`). See the `progressive-delivery` README for Vault bootstrap steps.
 
-**Profiles:** `dev`, `prod`, `gemini`, `openai`
+**Profiles:** `dev`, `prod`
 
 ### Agent Pattern
 
@@ -173,7 +173,7 @@ curl http://localhost:8080/a2a/health
 | Symptom | Fix |
 |---|---|
 | Pod not starting | Check secret exists (K8s path) or Vault is reachable (Vault path) |
-| API key errors | Verify the secret keys and profile match (gemini vs openai) |
+| API key errors | Verify the secret keys match the expected env vars (ANALYSIS_API_KEY, REMEDIATION_API_KEY) |
 | Tool calls failing | Check RBAC — agent needs read access to pods, logs, events |
 | GitHub PR not created | Verify `github.token` is set (env var or Vault KV `github_token`); token needs `repo` scope |
 

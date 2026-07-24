@@ -8,7 +8,7 @@ echo "====================================="
 echo ""
 
 # Unset any existing env vars to avoid conflicts
-unset OPENAI_API_KEY QUARKUS_LANGCHAIN4j_OPENAI_KEY OPENAI_MODEL OPENAI_BASE_URL GITHUB_TOKEN
+unset ANALYSIS_API_KEY ANALYSIS_MODEL ANALYSIS_BASE_URL GITHUB_TOKEN
 
 # Source .env file
 if [ ! -f .env ]; then
@@ -21,16 +21,16 @@ source .env
 set +a
 
 echo "📋 Configuration:"
-echo "   Model: $OPENAI_MODEL"
-echo "   Base URL: $OPENAI_BASE_URL"
-echo "   API Key: ${OPENAI_API_KEY:0:10}..."
+echo "   Model: $ANALYSIS_MODEL"
+echo "   Base URL: $ANALYSIS_BASE_URL"
+echo "   API Key: ${ANALYSIS_API_KEY:0:10}..."
 echo ""
 
 # Kill any existing agent on port 8080
 lsof -ti:8080 | xargs kill -9 2>/dev/null || true
 
 echo "🚀 Starting agent in background..."
-mvn quarkus:dev -Dquarkus.profile=openai > /tmp/agent-test.log 2>&1 &
+mvn quarkus:dev > /tmp/agent-test.log 2>&1 &
 AGENT_PID=$!
 
 echo "   PID: $AGENT_PID"
@@ -118,4 +118,3 @@ kill $AGENT_PID 2>/dev/null || true
 echo "✅ Test complete!"
 echo ""
 echo "Full logs: /tmp/agent-test.log"
-
