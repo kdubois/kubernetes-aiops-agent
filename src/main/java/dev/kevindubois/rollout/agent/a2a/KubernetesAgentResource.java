@@ -65,6 +65,8 @@ public class KubernetesAgentResource {
                     "LLM returned unparsable output", "OutputParsingException");
 
         } catch (TimeoutException e) {
+            // Currently aspirational — no explicit timeout in AnalysisService, but upstream
+            // HTTP clients or LLM providers may throw this via wrapped exceptions.
             Log.error("Analysis timed out for user: " + request.userId(), e);
             activityEvents.requestFailed("Timeout: " + e.getMessage());
             return errorResponse(Status.GATEWAY_TIMEOUT,

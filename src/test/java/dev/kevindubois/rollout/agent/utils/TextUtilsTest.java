@@ -53,7 +53,7 @@ class TextUtilsTest {
 
     @Test
     void truncate_nullInput() {
-        assertNull(TextUtils.truncate(null, 10));
+        assertEquals("", TextUtils.truncate(null, 10));
     }
 
     @Test

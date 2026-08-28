@@ -40,10 +40,9 @@ public class K8sTools {
             Map<String, Object> result = new HashMap<>();
             result.put("namespace", namespace);
 
-            List<Pod> stablePods = k8sClient.pods().inNamespace(namespace)
-                    .withLabels(Map.of("role", "stable")).list().getItems();
-            List<Pod> canaryPods = k8sClient.pods().inNamespace(namespace)
-                    .withLabels(Map.of("role", "canary")).list().getItems();
+            List<Pod>[] pods = fetchPodsPairInParallel(namespace);
+            List<Pod> stablePods = pods[0];
+            List<Pod> canaryPods = pods[1];
 
             if (!stablePods.isEmpty()) {
                 activityEvents.publish("TOOL_CALL", "Fetching stable pod metrics",
@@ -56,34 +55,40 @@ public class K8sTools {
                     + " (selected 1 of " + canaryPods.size() + " canary pods)");
             }
 
-            Map<String, Object> stableMetrics;
-            if (!stablePods.isEmpty()) {
-                Pod stablePod = stablePods.get(0);
-                stableMetrics = fetchApplicationMetricsInternal(namespace, stablePod.getMetadata().getName(), "/q/metrics", 8080);
-                stableMetrics.put("podName", stablePod.getMetadata().getName());
-            } else {
-                stableMetrics = new HashMap<>(Map.of("error", "No stable pods found"));
-            }
+            var stableMetricsHolder = new HashMap<String, Object>();
+            var canaryMetricsHolder = new HashMap<String, Object>();
 
-            Map<String, Object> canaryMetrics;
-            if (!canaryPods.isEmpty()) {
-                Pod canaryPod = canaryPods.get(0);
-                canaryMetrics = fetchApplicationMetricsInternal(namespace, canaryPod.getMetadata().getName(), "/q/metrics", 8080);
-                canaryMetrics.put("podName", canaryPod.getMetadata().getName());
-            } else {
-                canaryMetrics = new HashMap<>(Map.of("error", "No canary pods found"));
-            }
+            Thread stableThread = Thread.ofVirtual().start(() -> {
+                if (!stablePods.isEmpty()) {
+                    Pod pod = stablePods.get(0);
+                    stableMetricsHolder.putAll(fetchApplicationMetricsInternal(namespace, pod.getMetadata().getName(), "/q/metrics", 8080));
+                    stableMetricsHolder.put("podName", pod.getMetadata().getName());
+                } else {
+                    stableMetricsHolder.put("error", "No stable pods found");
+                }
+            });
+            Thread canaryThread = Thread.ofVirtual().start(() -> {
+                if (!canaryPods.isEmpty()) {
+                    Pod pod = canaryPods.get(0);
+                    canaryMetricsHolder.putAll(fetchApplicationMetricsInternal(namespace, pod.getMetadata().getName(), "/q/metrics", 8080));
+                    canaryMetricsHolder.put("podName", pod.getMetadata().getName());
+                } else {
+                    canaryMetricsHolder.put("error", "No canary pods found");
+                }
+            });
+            stableThread.join();
+            canaryThread.join();
 
-            result.put("stable", stableMetrics);
-            result.put("canary", canaryMetrics);
+            result.put("stable", stableMetricsHolder);
+            result.put("canary", canaryMetricsHolder);
 
-            if (!stableMetrics.containsKey("error")) {
+            if (!stableMetricsHolder.containsKey("error")) {
                 activityEvents.publish("TOOL_RESULT", "Stable pod metrics retrieved",
-                    "pod=" + stableMetrics.get("podName"));
+                    "pod=" + stableMetricsHolder.get("podName"));
             }
-            if (!canaryMetrics.containsKey("error")) {
+            if (!canaryMetricsHolder.containsKey("error")) {
                 activityEvents.publish("TOOL_RESULT", "Canary pod metrics retrieved",
-                    "pod=" + canaryMetrics.get("podName"));
+                    "pod=" + canaryMetricsHolder.get("podName"));
             }
 
             Log.info("Successfully retrieved canary metrics");
@@ -110,10 +115,9 @@ public class K8sTools {
             Map<String, Object> result = new HashMap<>();
             result.put("namespace", namespace);
 
-            List<Pod> stablePods = k8sClient.pods().inNamespace(namespace)
-                    .withLabels(Map.of("role", "stable")).list().getItems();
-            List<Pod> canaryPods = k8sClient.pods().inNamespace(namespace)
-                    .withLabels(Map.of("role", "canary")).list().getItems();
+            List<Pod>[] pods = fetchPodsPairInParallel(namespace);
+            List<Pod> stablePods = pods[0];
+            List<Pod> canaryPods = pods[1];
 
             if (!stablePods.isEmpty()) {
                 activityEvents.publish("TOOL_CALL", "Fetching stable pod logs",
@@ -126,19 +130,26 @@ public class K8sTools {
                     + " (selected 1 of " + canaryPods.size() + " canary pods)");
             }
 
-            Map<String, Object> stableData = buildPodDiagnostics(stablePods, namespace, containerName, lines);
-            Map<String, Object> canaryData = buildPodDiagnostics(canaryPods, namespace, containerName, lines);
+            var stableHolder = new HashMap<String, Object>();
+            var canaryHolder = new HashMap<String, Object>();
 
-            result.put("stable", stableData);
-            result.put("canary", canaryData);
+            Thread stableThread = Thread.ofVirtual().start(() ->
+                    stableHolder.putAll(buildPodDiagnostics(stablePods, namespace, containerName, lines)));
+            Thread canaryThread = Thread.ofVirtual().start(() ->
+                    canaryHolder.putAll(buildPodDiagnostics(canaryPods, namespace, containerName, lines)));
+            stableThread.join();
+            canaryThread.join();
 
-            if (stableData.containsKey("podName")) {
+            result.put("stable", stableHolder);
+            result.put("canary", canaryHolder);
+
+            if (stableHolder.containsKey("podName")) {
                 activityEvents.publish("TOOL_RESULT", "Stable pod logs retrieved",
-                    "pod=" + stableData.get("podName") + ", status=" + stableData.get("phase"));
+                    "pod=" + stableHolder.get("podName") + ", status=" + stableHolder.get("phase"));
             }
-            if (canaryData.containsKey("podName")) {
+            if (canaryHolder.containsKey("podName")) {
                 activityEvents.publish("TOOL_RESULT", "Canary pod logs retrieved",
-                    "pod=" + canaryData.get("podName") + ", status=" + canaryData.get("phase"));
+                    "pod=" + canaryHolder.get("podName") + ", status=" + canaryHolder.get("phase"));
             }
 
             Log.info("Successfully retrieved canary diagnostics");
@@ -148,6 +159,23 @@ public class K8sTools {
             Log.error("Error getting canary diagnostics", e);
             return Map.of("error", e.getMessage());
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Pod>[] fetchPodsPairInParallel(String namespace) throws InterruptedException {
+        var stable = new ArrayList<Pod>();
+        var canary = new ArrayList<Pod>();
+
+        Thread t1 = Thread.ofVirtual().start(() ->
+                stable.addAll(k8sClient.pods().inNamespace(namespace)
+                        .withLabels(Map.of("role", "stable")).list().getItems()));
+        Thread t2 = Thread.ofVirtual().start(() ->
+                canary.addAll(k8sClient.pods().inNamespace(namespace)
+                        .withLabels(Map.of("role", "canary")).list().getItems()));
+        t1.join();
+        t2.join();
+
+        return new List[]{stable, canary};
     }
 
     private Map<String, Object> buildPodDiagnostics(List<Pod> pods, String namespace, String containerName, int lines) {
