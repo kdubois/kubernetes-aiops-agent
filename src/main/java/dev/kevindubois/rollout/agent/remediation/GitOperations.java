@@ -12,7 +12,6 @@ import java.text.MessageFormat;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Map;
 
 /**
  * Deterministic git operations using JGit library.
@@ -100,28 +99,6 @@ public class GitOperations {
 		}
 		
 		Log.info(MessageFormat.format("Successfully created and checked out branch: {0}", branchName));
-	}
-	
-	/**
-	 * Apply file changes to the repository
-	 * @param repoPath Path to repository
-	 * @param fileChanges Map of file paths to new content
-	 */
-	public void applyChanges(Path repoPath, Map<String, String> fileChanges) throws IOException {
-		Log.info(MessageFormat.format("Applying {0} file changes", fileChanges.size()));
-		
-		for (Map.Entry<String, String> change : fileChanges.entrySet()) {
-			Path filePath = repoPath.resolve(change.getKey());
-			
-			// Create parent directories if they don't exist
-			Files.createDirectories(filePath.getParent());
-			
-			// Write file content
-			Files.writeString(filePath, change.getValue());
-			Log.debug(MessageFormat.format("Updated file: {0}", change.getKey()));
-		}
-		
-		Log.info("Successfully applied all changes");
 	}
 	
 	/**

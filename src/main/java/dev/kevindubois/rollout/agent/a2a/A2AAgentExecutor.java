@@ -22,7 +22,7 @@ import dev.kevindubois.rollout.agent.workflow.KubernetesWorkflow;
 import dev.kevindubois.rollout.agent.model.AnalysisResult;
 import dev.kevindubois.rollout.agent.service.ActivityEvents;
 import dev.kevindubois.rollout.agent.utils.RetryHelper;
-import dev.kevindubois.rollout.agent.utils.ToolCallLimiter;
+
 
 /**
  * A2A framework integration for the KubernetesAgent.
@@ -63,8 +63,6 @@ public class A2AAgentExecutor {
                     
                     Log.debug(MessageFormat.format("Memory ID: {0}, RepoUrl: {1}, Branch: {2}",
                         memoryId, repoUrl, baseBranch));
-                    
-                    ToolCallLimiter.resetSession(memoryId);
                     
                     AnalysisResult result = RetryHelper.executeWithRetry(
                         () -> workflow.execute(memoryId, messageContent, repoUrl, baseBranch),

@@ -1,6 +1,5 @@
 package dev.kevindubois.rollout.agent.remediation;
 
-import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import org.eclipse.microprofile.rest.client.inject.RegisterRestClient;
@@ -8,7 +7,6 @@ import org.eclipse.microprofile.rest.client.inject.RegisterRestClient;
 /**
  * Quarkus REST Client for GitHub API
  */
-@ApplicationScoped
 @RegisterRestClient(configKey = "github-api")
 @Path("/repos")
 @Produces(MediaType.APPLICATION_JSON)
