@@ -53,8 +53,9 @@ public class A2AAgentExecutor {
                     String memoryId = extractMemoryId(context);
                     String repoUrl = extractMetadataValue(context.getMessage(), "repoUrl");
                     String baseBranch = extractMetadataValue(context.getMessage(), "baseBranch", "main");
+                    String namespace = extractMetadataValue(context.getMessage(), "namespace", "default");
 
-                    AnalysisResult result = analysisService.analyze(memoryId, messageContent, repoUrl, baseBranch);
+                    AnalysisResult result = analysisService.analyze(memoryId, messageContent, namespace, repoUrl, baseBranch);
 
                     String response = formatAnalysisResult(result);
                     updater.addArtifact(List.of(new TextPart(response, null)), null, null, null);

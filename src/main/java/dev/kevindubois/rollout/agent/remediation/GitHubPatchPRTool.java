@@ -73,6 +73,48 @@ public class GitHubPatchPRTool {
     }
     
     /**
+     * Groups the LLM-provided content fields for a pull request.
+     * Built once from the tool parameters and passed through internally.
+     */
+    public record PrContent(
+        String title,
+        String description,
+        String rootCause,
+        String namespace,
+        String podName,
+        String testingRecommendations
+    ) {
+        private static final int MAX_TITLE_LENGTH = 72;
+        private static final String DEFAULT_TITLE = "Automated fix for canary deployment failure";
+
+        static PrContent from(String title, String fixDescription, String rootCause,
+                              String namespace, String podName, String testingRecommendations) {
+            String resolvedTitle = (title != null && !title.isBlank()) ? title.trim() : DEFAULT_TITLE;
+            if (resolvedTitle.length() > MAX_TITLE_LENGTH) {
+                resolvedTitle = resolvedTitle.substring(0, MAX_TITLE_LENGTH - 3) + "...";
+            }
+            return new PrContent(
+                    resolvedTitle,
+                    (fixDescription != null && !fixDescription.isBlank())
+                            ? fixDescription : DEFAULT_TITLE,
+                    rootCause != null ? rootCause : "Not available",
+                    namespace != null ? namespace : "unknown",
+                    podName != null ? podName : "unknown",
+                    testingRecommendations != null && !testingRecommendations.isEmpty()
+                            ? testingRecommendations : "Run existing test suite"
+            );
+        }
+
+        String prTitle() {
+            return "Fix: " + title;
+        }
+
+        String commitMessage() {
+            return "fix: " + title;
+        }
+    }
+
+    /**
      * Represents changes to a single file
      */
     public static class FilePatch {
@@ -93,7 +135,8 @@ public class GitHubPatchPRTool {
      * 
      * @param repoUrl URL of the GitHub repository
      * @param patches JSON array of file patches with line-based changes (may be string-wrapped)
-     * @param fixDescription Description of the fix
+     * @param title Short PR title (max ~72 chars), e.g. "Null-guard getStatus() to prevent NPE"
+     * @param fixDescription Detailed description of the fix for the PR body
      * @param rootCause Root cause of the issue
      * @param namespace Kubernetes namespace
      * @param podName Kubernetes pod name
@@ -104,6 +147,7 @@ public class GitHubPatchPRTool {
     public Map<String, Object> createGitHubPRWithPatches(
             String repoUrl,
             String patches,
+            String title,
             String fixDescription,
             String rootCause,
             String namespace,
@@ -112,16 +156,14 @@ public class GitHubPatchPRTool {
     ) {
         Log.info("=== Executing Tool: createGitHubPRWithPatches ===");
 
-        // Validate required parameters
         if (repoUrl == null || patches == null || patches.isBlank()) {
-            return Map.of("success", false, "error", "Missing required parameters: repoUrl, patches, fixDescription");
-        }
-        if (fixDescription == null || fixDescription.isBlank()) {
-            fixDescription = "Automated fix for canary deployment failure";
+            return Map.of("success", false, "error", "Missing required parameters: repoUrl, patches");
         }
 
         repoUrl = repoUrl.trim();
-        Log.info(MessageFormat.format("Creating PR with patches for repository: {0}", repoUrl));
+        PrContent content = PrContent.from(title, fixDescription, rootCause,
+                namespace, podName, testingRecommendations);
+        Log.info(MessageFormat.format("Creating PR \"{0}\" for repository: {1}", content.title(), repoUrl));
 
         List<FilePatch> filePatchList;
         try {
@@ -138,10 +180,8 @@ public class GitHubPatchPRTool {
         String branchName = "fix/k8s-issue-" + UUID.randomUUID().toString().substring(0, 8);
         
         try {
-            // 1. Get or reuse cached clone (fetches + resets on reuse)
             Path repoPath = repoCache.getOrClone(repoUrl, githubToken);
 
-            // 2. Validate all patches before any mutation
             for (FilePatch patch : filePatchList) {
                 Path filePath = repoPath.resolve(patch.filePath);
                 if (!Files.exists(filePath)) {
@@ -152,28 +192,21 @@ public class GitHubPatchPRTool {
                 validateExpectedLines(patch, lines);
             }
             
-            // 3. Create branch
             gitOps.createBranch(repoPath, branchName);
             
-            // 4. Apply patches to each file
             for (FilePatch patch : filePatchList) {
                 applyPatchToFile(repoPath, patch);
             }
             
-            // 4. Commit and push
-            String commitMsg = formatCommitMessage(fixDescription);
-            gitOps.commitAndPush(repoPath, commitMsg, githubToken);
+            gitOps.commitAndPush(repoPath, content.commitMessage(), githubToken);
             
-            // 5. Create PR via GitHub REST API
             GitHubRestClient.GitHubPullRequest pr = createPullRequestOnGitHub(
-                repoUrl, branchName, fixDescription, rootCause,
-                testingRecommendations, namespace, podName, filePatchList
-            );
+                    repoUrl, branchName, content, filePatchList);
             
             Log.info(MessageFormat.format("Successfully created PR: {0}", pr.html_url()));
 
             if (outcomeHolder != null) {
-                outcomeHolder.recordPullRequest(pr.html_url(), fixDescription);
+                outcomeHolder.recordPullRequest(pr.html_url(), content.description());
             }
 
             return Map.of(
@@ -480,54 +513,27 @@ public class GitHubPatchPRTool {
      * Create a pull request on GitHub via REST API
      */
     private GitHubRestClient.GitHubPullRequest createPullRequestOnGitHub(
-            String repoUrl,
-            String branchName,
-            String fixDescription,
-            String rootCause,
-            String testingRecommendations,
-            String namespace,
-            String podName,
-            List<FilePatch> patches
+            String repoUrl, String branchName, PrContent content, List<FilePatch> patches
     ) throws Exception {
         String[] ownerRepo = GitHubUtils.extractOwnerAndRepo(repoUrl);
         String owner = ownerRepo[0];
         String repo = ownerRepo[1];
         String authHeader = GitHubUtils.authHeader(githubToken);
-        
-        // Get repository to find default branch
+
         GitHubRestClient.GitHubRepository repository =
             githubClient.getRepository(owner, repo, authHeader);
-        
+
         String baseBranch = repository.default_branch();
-        String prTitle = MessageFormat.format("Fix: {0}", fixDescription);
-        String prBody = generatePRBody(rootCause, fixDescription, testingRecommendations, 
-                namespace, podName, patches);
-        
-        // Create pull request
+        String prBody = generatePRBody(content, patches);
+
         GitHubRestClient.CreatePullRequestRequest prRequest =
-            new GitHubRestClient.CreatePullRequestRequest(prTitle, branchName, baseBranch, prBody);
-        
+            new GitHubRestClient.CreatePullRequestRequest(
+                    content.prTitle(), branchName, baseBranch, prBody);
+
         return githubClient.createPullRequest(owner, repo, authHeader, prRequest);
     }
-    
-    /**
-     * Format commit message with conventional commit prefix
-     */
-    private String formatCommitMessage(String fixDescription) {
-        return MessageFormat.format("fix: {0}", fixDescription);
-    }
-    
-    /**
-     * Generate PR body with analysis results and patch summary
-     */
-    private String generatePRBody(
-            String rootCause,
-            String fixDescription,
-            String testingRecommendations,
-            String namespace,
-            String podName,
-            List<FilePatch> patches
-    ) {
+
+    private String generatePRBody(PrContent content, List<FilePatch> patches) {
         StringBuilder patchSummary = new StringBuilder();
         for (FilePatch patch : patches) {
             patchSummary.append("- `").append(patch.filePath).append("`: ")
@@ -537,49 +543,33 @@ public class GitHubPatchPRTool {
                         .append(": ").append(change.action).append("\n");
             }
         }
-        
-        if (testingRecommendations == null || testingRecommendations.isEmpty()) {
-            testingRecommendations = "Run existing test suite";
-        }
-        
-        if (rootCause == null || rootCause.isEmpty()) {
-            rootCause = "Not available";
-        }
-        
-        if (namespace == null) {
-            namespace = "unknown";
-        }
-        
-        if (podName == null) {
-            podName = "unknown";
-        }
-        
+
         return String.format("""
             ## Root Cause Analysis
             %s
-            
+
             ## Changes Made
             %s
-            
+
             %s
-            
+
             ## Testing Recommendations
             %s
-            
+
             ## Related Kubernetes Resources
             - **Namespace**: `%s`
             - **Pod**: `%s`
-            
+
             ---
             *This PR was automatically generated by Kubernetes AI Agent using line-based patches*
             *Review carefully before merging*
             """,
-            rootCause,
+            content.rootCause(),
             patchSummary.toString(),
-            fixDescription,
-            testingRecommendations,
-            namespace,
-            podName
+            content.description(),
+            content.testingRecommendations(),
+            content.namespace(),
+            content.podName()
         );
     }
 }

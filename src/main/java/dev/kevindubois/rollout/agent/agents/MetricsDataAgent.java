@@ -1,7 +1,6 @@
 package dev.kevindubois.rollout.agent.agents;
 
 import dev.kevindubois.rollout.agent.k8s.K8sTools;
-import dev.kevindubois.rollout.agent.utils.TextUtils;
 import dev.langchain4j.agentic.Agent;
 import io.quarkus.arc.Arc;
 import io.quarkus.logging.Log;
@@ -15,11 +14,10 @@ import java.util.Map;
 public class MetricsDataAgent {
 
     @Agent(description = "Fetches application metrics for stable and canary pods", outputKey = "metricsReport")
-    public static String gatherMetrics(String message) {
+    public static String gatherMetrics(String message, String namespace) {
         Log.info("MetricsDataAgent: fetching application metrics (non-AI agent)");
 
         K8sTools k8sTools = Arc.container().instance(K8sTools.class).get();
-        String namespace = TextUtils.extractNamespace(message);
 
         Map<String, Object> metrics = k8sTools.getCanaryMetrics(namespace);
 
@@ -60,7 +58,6 @@ public class MetricsDataAgent {
         sb.append(", p95=").append(formatMs(metricsData.get("latencyP95Ms")));
         sb.append(", p99=").append(formatMs(metricsData.get("latencyP99Ms")));
         
-        // Add memory metrics if available
         if (metricsData.containsKey("heapUsedMb") || metricsData.containsKey("heapMaxMb")) {
             sb.append(", heapUsed=").append(formatMb(metricsData.get("heapUsedMb")));
             sb.append("/").append(formatMb(metricsData.get("heapMaxMb")));

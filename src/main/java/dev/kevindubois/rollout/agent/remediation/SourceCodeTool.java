@@ -1,5 +1,6 @@
 package dev.kevindubois.rollout.agent.remediation;
 
+import dev.kevindubois.rollout.agent.model.SourceReadResult;
 import dev.kevindubois.rollout.agent.utils.GitHubUtils;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -7,10 +8,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.eclipse.microprofile.rest.client.inject.RestClient;
 import io.quarkus.logging.Log;
 
-import java.util.Base64;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 /**
  * Reads source code files from a Git repository using GitHub API.
@@ -26,15 +24,12 @@ public class SourceCodeTool {
     @RestClient
     GitHubRestClient githubClient;
 
-    /**
-     * Read source code files from a GitHub repository and return them with line numbers.
-     */
-    public Map<String, Object> readSourceFiles(String repoUrl, List<String> filePaths, String branch) {
+    public SourceReadResult readSourceFiles(String repoUrl, List<String> filePaths, String branch) {
         if (repoUrl == null || repoUrl.isEmpty()) {
-            return Map.of("success", false, "error", "repoUrl is required");
+            return SourceReadResult.error("repoUrl is required", repoUrl, branch);
         }
         if (filePaths == null || filePaths.isEmpty()) {
-            return Map.of("success", false, "error", "filePaths list is required and cannot be empty");
+            return SourceReadResult.error("filePaths list is required and cannot be empty", repoUrl, branch);
         }
         if (branch == null || branch.isEmpty()) {
             branch = "main";
@@ -48,10 +43,9 @@ public class SourceCodeTool {
             String repo = ownerRepo[1];
             String authHeader = GitHubUtils.authHeader(githubToken);
 
-            Map<String, Object> result = new HashMap<>();
             Map<String, String> fileContents = new HashMap<>();
             Map<String, String> fileContentsWithLineNumbers = new HashMap<>();
-            List<String> notFound = new java.util.ArrayList<>();
+            List<String> notFound = new ArrayList<>();
 
             for (String filePath : filePaths) {
                 try {
@@ -74,24 +68,15 @@ public class SourceCodeTool {
                 }
             }
 
-            result.put("success", true);
-            result.put("repoUrl", repoUrl);
-            result.put("branch", branch);
-            result.put("filesRead", fileContents.size());
-            result.put("files", fileContents);
-            result.put("filesWithLineNumbers", fileContentsWithLineNumbers);
-
-            if (!notFound.isEmpty()) {
-                result.put("notFound", notFound);
-                result.put("hint", "File paths must match repository structure. For Java: src/main/java/[package]/ClassName.java");
-            }
-
             Log.infof("Successfully read %d/%d files", fileContents.size(), filePaths.size());
-            return result;
+
+            return new SourceReadResult(
+                    true, repoUrl, branch, fileContents.size(),
+                    fileContents, fileContentsWithLineNumbers, notFound, null);
 
         } catch (Exception e) {
             Log.error("Failed to read source files", e);
-            return Map.of("success", false, "error", e.getMessage(), "repoUrl", repoUrl, "branch", branch);
+            return SourceReadResult.error(e.getMessage(), repoUrl, branch);
         }
     }
 }

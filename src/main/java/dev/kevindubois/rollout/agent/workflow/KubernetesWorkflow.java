@@ -34,6 +34,7 @@ public interface KubernetesWorkflow extends MonitoredAgent {
     )
     AnalysisResult execute(
         @MemoryId String memoryId,
-        String message
+        String message,
+        String namespace
     );
 }

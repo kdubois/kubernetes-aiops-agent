@@ -42,10 +42,11 @@ public class KubernetesAgentResource {
             Map<String, Object> context = request.context();
             String repoUrl = context != null ? (String) context.get("repoUrl") : null;
             String baseBranch = context != null ? (String) context.get("baseBranch") : "main";
+            String namespace = context != null ? (String) context.get("namespace") : "default";
             String prompt = buildPrompt(request);
             String memoryId = request.getEffectiveMemoryId();
 
-            AnalysisResult result = analysisService.analyze(memoryId, prompt, repoUrl, baseBranch);
+            AnalysisResult result = analysisService.analyze(memoryId, prompt, namespace, repoUrl, baseBranch);
 
             KubernetesAgentResponse response = new KubernetesAgentResponse(
                     result.analysis(),

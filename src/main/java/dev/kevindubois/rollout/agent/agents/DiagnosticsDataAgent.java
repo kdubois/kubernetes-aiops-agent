@@ -1,7 +1,6 @@
 package dev.kevindubois.rollout.agent.agents;
 
 import dev.kevindubois.rollout.agent.k8s.K8sTools;
-import dev.kevindubois.rollout.agent.utils.TextUtils;
 import dev.langchain4j.agentic.Agent;
 import io.quarkus.arc.Arc;
 import io.quarkus.logging.Log;
@@ -15,11 +14,10 @@ import java.util.Map;
 public class DiagnosticsDataAgent {
 
     @Agent(description = "Fetches pod info and logs for stable and canary pods", outputKey = "diagnosticReport")
-    public static String gatherDiagnostics(String message) {
+    public static String gatherDiagnostics(String message, String namespace) {
         Log.info("DiagnosticsDataAgent: fetching pod diagnostics (non-AI agent)");
 
         K8sTools k8sTools = Arc.container().instance(K8sTools.class).get();
-        String namespace = TextUtils.extractNamespace(message);
 
         Map<String, Object> diagnostics = k8sTools.getCanaryDiagnostics(namespace, null, 200);
 

@@ -22,7 +22,9 @@ public interface RemediationAgent {
         Remediation agent. Call createGitHubPRWithPatches ONCE, then return JSON. No reasoning text.
 
         createGitHubPRWithPatches: Fix only the buggy line(s) in pre-fetched source code.
-        Required: repoUrl, patches, fixDescription, rootCause, namespace, podName, testingRecommendations.
+        Required: repoUrl, patches, title, fixDescription, rootCause, namespace, podName, testingRecommendations.
+        - title: Short PR title, max 72 chars (e.g. "Null-guard getStatus() to prevent NPE on canary pods").
+        - fixDescription: Detailed explanation of the fix for the PR body.
         patches format: [{"filePath": "src/.../File.java", "changes": [{"lineNumber": 42, "action": "replace", "content": "    fixed code;"}]}]
         Actions: "replace" (fix line), "delete" (remove line), "insert_after"/"insert_before" (add line).
         One change per line. Fix the actual buggy line, not surrounding control flow.

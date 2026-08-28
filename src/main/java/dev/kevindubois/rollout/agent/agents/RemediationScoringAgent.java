@@ -2,6 +2,7 @@ package dev.kevindubois.rollout.agent.agents;
 
 import dev.kevindubois.rollout.agent.model.RemediationResult;
 import dev.kevindubois.rollout.agent.model.ScoringResult;
+import dev.kevindubois.rollout.agent.utils.TextUtils;
 import dev.langchain4j.agentic.Agent;
 import io.quarkus.logging.Log;
 
@@ -26,12 +27,8 @@ public class RemediationScoringAgent {
             return ScoringResult.retry(10, "prLink is missing");
         }
 
-        if (!prLink.startsWith("https://github.com/")) {
-            return ScoringResult.retry(20, "prLink is not a valid GitHub URL: " + prLink);
-        }
-
-        if (!prLink.contains("/pull/")) {
-            return ScoringResult.retry(20, "prLink does not contain /pull/ path: " + prLink);
+        if (!TextUtils.isValidGitHubArtifactUrl(prLink)) {
+            return ScoringResult.retry(20, "prLink is not a valid GitHub PR URL: " + prLink);
         }
 
         if (remediation == null || remediation.isBlank()) {

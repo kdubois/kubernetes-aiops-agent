@@ -58,8 +58,19 @@ public interface AnalysisAgent {
           "confidence": 0-100,
           "analysis": "brief comparison",
           "rootCause": "issue or 'No issues'",
-          "remediation": "action or 'Promote'"
+          "remediation": "action or 'Promote'",
+          "summary": "One-line summary, max 120 chars",
+          "issueCategory": "CODE_BUG | OPERATIONAL | NO_ISSUES",
+          "suspectClasses": ["ClassName1"] or []
         }
+
+        issueCategory:
+        - CODE_BUG: NullPointerException, logic error, unhandled exception, code-level defect
+        - OPERATIONAL: OOM, memory leak, CPU throttling, disk pressure, resource exhaustion, GC storms
+        - NO_ISSUES: canary is healthy, promote
+
+        suspectClasses: Java class names (simple, not FQCN) that appear in stack traces or error logs.
+        Only include application classes, not framework classes. Empty list if no suspects.
 
         Confidence: 90-100 (clear), 70-89 (good), 50-69 (mixed), <50 (unclear)
         

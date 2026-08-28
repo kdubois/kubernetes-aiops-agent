@@ -49,12 +49,12 @@ public class RemediationOrchestrator {
         Log.info("Triggering async remediation for rollback decision");
         activityEvents.remediationTriggered();
 
-        if (isOperationalIssue(result.rootCause())) {
+        if (result.isOperational()) {
             Log.info("Operational issue detected — creating GitHub issue directly (no LLM)");
             executor.execute(() -> createIssueDeterministically(result, repoUrl));
         } else {
             String enrichedPrompt = prompt + sourceCodePrefetcher.prefetchSourceCode(
-                    prompt + "\n" + result, repoUrl, baseBranch);
+                    prompt + "\n" + result, result.suspectClasses(), repoUrl, baseBranch);
             executor.execute(() -> executeRemediation(enrichedPrompt, result, repoUrl, baseBranch));
         }
     }
@@ -69,7 +69,9 @@ public class RemediationOrchestrator {
             String[] ownerRepo = GitHubUtils.extractOwnerAndRepo(repoUrl);
             String authHeader = GitHubUtils.authHeader(githubToken);
 
-            String title = "Canary Deployment Failed: " + TextUtils.truncate(result.rootCause(), 100);
+            String titleSuffix = (result.summary() != null && !result.summary().isBlank())
+                    ? result.summary() : TextUtils.truncate(result.rootCause(), 100);
+            String title = "Canary Deployment Failed: " + titleSuffix;
             String body = String.format("""
                     ## Root Cause Analysis
                     %s
@@ -155,16 +157,4 @@ public class RemediationOrchestrator {
         return false;
     }
 
-    private static boolean isOperationalIssue(String rootCause) {
-        if (rootCause == null || rootCause.isEmpty()) {
-            return false;
-        }
-        String lower = rootCause.toLowerCase();
-        return lower.contains("memory leak") || lower.contains("oom") || lower.contains("out of memory")
-                || lower.contains("outofmemory") || lower.contains("resource exhaustion")
-                || lower.contains("cpu throttl") || lower.contains("disk space")
-                || lower.contains("oomkilled") || lower.contains("heap")
-                || lower.contains("gc activity") || lower.contains("garbage collect")
-                || lower.contains("performance degradation");
-    }
 }

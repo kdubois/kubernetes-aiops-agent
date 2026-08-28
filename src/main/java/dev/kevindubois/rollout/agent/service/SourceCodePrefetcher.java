@@ -10,10 +10,10 @@ import org.eclipse.microprofile.rest.client.inject.RestClient;
 import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import dev.kevindubois.rollout.agent.model.SourceReadResult;
 import dev.kevindubois.rollout.agent.remediation.GitHubRestClient;
 import dev.kevindubois.rollout.agent.remediation.SourceCodeTool;
 
@@ -37,11 +37,14 @@ public class SourceCodePrefetcher {
     String githubToken;
 
     /**
-     * Pre-fetch source code files by extracting file paths from collected/analysis data.
-     * Uses a cascade of strategies, retrying with fallbacks when a strategy fails to read files.
+     * Pre-fetch source code files using structured suspect classes from the analysis result,
+     * falling back to regex extraction from collected data.
      */
-    public String prefetchSourceCode(String collectedData, String repoUrl, String baseBranch) {
-        List<String> classNames = extractClassNames(collectedData);
+    public String prefetchSourceCode(String collectedData, List<String> suspectClasses,
+                                     String repoUrl, String baseBranch) {
+        List<String> classNames = (suspectClasses != null && !suspectClasses.isEmpty())
+                ? new ArrayList<>(suspectClasses)
+                : extractClassNames(collectedData);
 
         // Strategy 1: derive paths from FQCNs in stack traces
         List<String> filePaths = extractFilePathsFromStackTraces(collectedData);
@@ -66,24 +69,20 @@ public class SourceCodePrefetcher {
         return "";
     }
 
-    @SuppressWarnings("unchecked")
     private String tryReadFiles(List<String> filePaths, String repoUrl, String baseBranch) {
         if (filePaths == null || filePaths.isEmpty()) return "";
 
         Log.info(MessageFormat.format("Pre-fetching {0} source files: {1}", filePaths.size(), filePaths));
         try {
-            Map<String, Object> result = sourceCodeTool.readSourceFiles(repoUrl, filePaths, baseBranch);
-            if (Boolean.TRUE.equals(result.get("success"))) {
-                Map<String, String> filesWithLineNumbers = (Map<String, String>) result.get("filesWithLineNumbers");
-                if (filesWithLineNumbers != null && !filesWithLineNumbers.isEmpty()) {
-                    StringBuilder sb = new StringBuilder("\n\n=== SOURCE CODE (pre-fetched) ===\n");
-                    sb.append("Use this source code to create a PR with createGitHubPRWithPatches.\n\n");
-                    filesWithLineNumbers.forEach((path, content) -> {
-                        sb.append("--- ").append(path).append(" ---\n");
-                        sb.append(content).append("\n");
-                    });
-                    return sb.toString();
-                }
+            SourceReadResult result = sourceCodeTool.readSourceFiles(repoUrl, filePaths, baseBranch);
+            if (result.success() && !result.filesWithLineNumbers().isEmpty()) {
+                StringBuilder sb = new StringBuilder("\n\n=== SOURCE CODE (pre-fetched) ===\n");
+                sb.append("Use this source code to create a PR with createGitHubPRWithPatches.\n\n");
+                result.filesWithLineNumbers().forEach((path, content) -> {
+                    sb.append("--- ").append(path).append(" ---\n");
+                    sb.append(content).append("\n");
+                });
+                return sb.toString();
             }
         } catch (Exception e) {
             Log.warn(MessageFormat.format("Failed to read files {0} (will try fallback)", filePaths), e);

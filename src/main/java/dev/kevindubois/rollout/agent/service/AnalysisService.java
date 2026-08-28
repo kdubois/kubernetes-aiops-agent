@@ -32,9 +32,10 @@ public class AnalysisService {
      * @param baseBranch target branch for PRs (defaults to "main")
      * @return the analysis result
      */
-    public AnalysisResult analyze(String memoryId, String prompt, String repoUrl, String baseBranch) throws Exception {
+    public AnalysisResult analyze(String memoryId, String prompt, String namespace,
+                                   String repoUrl, String baseBranch) throws Exception {
         AnalysisResult result = RetryHelper.executeWithRetry(
-                () -> kubernetesWorkflow.execute(memoryId, prompt),
+                () -> kubernetesWorkflow.execute(memoryId, prompt, namespace),
                 "Multi-agent workflow analysis"
         );
 

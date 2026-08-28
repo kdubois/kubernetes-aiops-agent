@@ -2,7 +2,6 @@ package dev.kevindubois.rollout.agent.service;
 
 import dev.kevindubois.rollout.agent.model.ActivityEventStore;
 import dev.kevindubois.rollout.agent.model.AnalysisResult;
-import dev.kevindubois.rollout.agent.utils.TextUtils;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
@@ -26,11 +25,10 @@ public class ActivityEvents {
     }
 
     public void analysisCompleted(AnalysisResult result) {
-        String summary = TextUtils.extractSummary(result.analysis());
-        if (summary != null) {
-            store.publish("ANALYSIS_SUMMARY", "Analysis summary", summary);
+        if (result.summary() != null && !result.summary().isBlank()) {
+            store.publish("ANALYSIS_SUMMARY", "Analysis summary", result.summary());
         }
-        store.publish("ANALYSIS_INSIGHT", TextUtils.truncate(result.analysis(), 200),
+        store.publish("ANALYSIS_INSIGHT", result.analysis(),
                 "Root cause: " + (result.rootCause() != null ? result.rootCause() : "No issues"));
         store.publish("DECISION",
                 result.promote() ? "PROMOTE recommended" : "ROLLBACK recommended",

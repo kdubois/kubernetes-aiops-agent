@@ -18,5 +18,5 @@ public interface ParallelDataWorkflow {
             MetricsDataAgent.class
         }
     )
-    String fetchData(String message);
+    String fetchData(String message, String namespace);
 }
