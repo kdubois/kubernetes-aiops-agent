@@ -7,8 +7,7 @@ import io.quarkus.logging.Log;
 
 /**
  * Non-AI agent that deterministically validates a {@link RemediationResult}.
- * Checks whether the PR link is a valid GitHub URL and that required fields are present.
- * No LLM call needed — these are simple string checks.
+ * Checks whether the PR link is a valid GitHub URL and that the remediation field is present.
  */
 public class RemediationScoringAgent {
 
@@ -21,7 +20,6 @@ public class RemediationScoringAgent {
         }
 
         String prLink = remediationResult.prLink();
-        String analysis = remediationResult.analysis();
         String remediation = remediationResult.remediation();
 
         if (prLink == null || prLink.isBlank()) {
@@ -32,8 +30,8 @@ public class RemediationScoringAgent {
             return ScoringResult.retry(20, "prLink is not a valid GitHub URL: " + prLink);
         }
 
-        if (analysis == null || analysis.isBlank()) {
-            return ScoringResult.retry(30, "analysis field is empty");
+        if (!prLink.contains("/pull/")) {
+            return ScoringResult.retry(20, "prLink does not contain /pull/ path: " + prLink);
         }
 
         if (remediation == null || remediation.isBlank()) {

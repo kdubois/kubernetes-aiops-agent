@@ -1,5 +1,6 @@
 package dev.kevindubois.rollout.agent.service;
 
+import dev.kevindubois.rollout.agent.utils.GitHubUtils;
 import io.quarkus.logging.Log;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -93,10 +94,10 @@ public class SourceCodePrefetcher {
     private List<String> searchRepoForClasses(String repoUrl, String branch, List<String> classNames) {
         List<String> foundPaths = new ArrayList<>();
         try {
-            String[] ownerRepo = repoUrl.replace("https://github.com/", "").replace(".git", "").split("/", 2);
+            String[] ownerRepo = GitHubUtils.extractOwnerAndRepo(repoUrl);
             if (githubToken == null || githubToken.isEmpty()) return foundPaths;
 
-            String authHeader = "Bearer " + githubToken;
+            String authHeader = GitHubUtils.authHeader(githubToken);
             var tree = githubClient.getTree(ownerRepo[0], ownerRepo[1], branch, "1", authHeader);
             if (tree != null && tree.tree() != null) {
                 for (var entry : tree.tree()) {
@@ -122,10 +123,10 @@ public class SourceCodePrefetcher {
         List<String> priorityFiles = new ArrayList<>();
         List<String> otherFiles = new ArrayList<>();
         try {
-            String[] ownerRepo = repoUrl.replace("https://github.com/", "").replace(".git", "").split("/", 2);
+            String[] ownerRepo = GitHubUtils.extractOwnerAndRepo(repoUrl);
             if (githubToken == null || githubToken.isEmpty()) return priorityFiles;
 
-            String authHeader = "Bearer " + githubToken;
+            String authHeader = GitHubUtils.authHeader(githubToken);
             var tree = githubClient.getTree(ownerRepo[0], ownerRepo[1], branch, "1", authHeader);
             if (tree != null && tree.tree() != null) {
                 for (var entry : tree.tree()) {

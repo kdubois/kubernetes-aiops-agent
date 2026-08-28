@@ -2,7 +2,7 @@
 
 ## Overview
 
-This directory contains **unit tests only** for the Kubernetes AI Agent. 
+This directory contains **unit tests only** for the Kubernetes AI Agent.
 
 ## Test Philosophy
 
@@ -15,12 +15,10 @@ This directory contains **unit tests only** for the Kubernetes AI Agent.
 
 | Test File | Purpose | Speed |
 |-----------|---------|-------|
-| `KubernetesAgentResponseTest.java` | Tests request/response data models | ⚡ Fast |
-| `AgentResponseParserTest.java` | Tests parsing of agent responses | ⚡ Fast |
-| `AgentResponseFormatterTest.java` | Tests response formatting | ⚡ Fast |
-| `RetryHelperTest.java` | Tests retry logic for transient errors | ⚡ Fast |
-| `GitHubIssueToolTest.java` | Tests GitHub issue creation logic | ⚡ Fast |
-| `GitHubPRToolTest.java` | Tests GitHub PR creation logic | ⚡ Fast |
+| `KubernetesAgentResponseTest.java` | Tests request/response data models | Fast |
+| `RetryHelperTest.java` | Tests retry logic for transient errors | Fast |
+| `K8sToolsTest.java` | Tests canary diagnostics and metrics tools | Fast |
+| `GitHubPatchPRToolValidationTest.java` | Tests patch validation rules | Fast |
 
 ### Test Fixtures
 
@@ -37,7 +35,7 @@ mvn test
 
 ### Run Specific Test
 ```bash
-mvn test -Dtest=KubernetesAgentResponseTest
+mvn test -Dtest=K8sToolsTest
 ```
 
 ### Run with Coverage
@@ -50,20 +48,18 @@ mvn test jacoco:report
 For manual end-to-end testing, use the console runner:
 
 ```bash
-# Set required environment variables
 export ANALYSIS_API_KEY="sk-..."
 export GITHUB_TOKEN="ghp_..."  # Optional, for PR creation
 
-# Run in console mode
 ./run-console.sh
 ```
 
 ## CI/CD
 
 The test suite runs automatically on every commit:
-- ✅ Fast unit tests (< 10 seconds)
-- ✅ No external dependencies required
-- ✅ No API keys needed
+- Fast unit tests (< 10 seconds)
+- No external dependencies required
+- No API keys needed
 
 ## Coverage Goals
 

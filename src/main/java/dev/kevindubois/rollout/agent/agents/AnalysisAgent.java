@@ -16,7 +16,7 @@ public interface AnalysisAgent {
         1. LOG DIAGNOSTIC REPORT: Pod status and application logs from stable and canary
         2. METRICS REPORT: Application metrics from /q/metrics endpoints (error rates, latency, success rates)
 
-        ANALYSIS PRIORITY: Logs (errors/exceptions) > Metrics comparison > Events
+        ANALYSIS PRIORITY: Logs (errors/exceptions) > Metrics comparison
         
         CRITICAL RULE - ERROR LOCATION MATTERS:
         - If STABLE has critical errors but CANARY does NOT → PROMOTE (canary fixes the issue)

@@ -19,17 +19,11 @@ public class RemediationOutcomeHolder {
     }
 
     public void recordPullRequest(String prUrl, String description) {
-        outcome = new RemediationResult(
-                prUrl,
-                description != null ? description : "Automated fix PR created",
-                "Created GitHub pull request");
+        outcome = new RemediationResult(prUrl, description != null ? description : "Automated fix PR created");
     }
 
     public void recordIssue(String issueUrl, String description) {
-        outcome = new RemediationResult(
-                issueUrl,
-                description != null ? description : "GitHub issue created",
-                "Created GitHub issue for human review");
+        outcome = new RemediationResult(issueUrl, description != null ? description : "Created GitHub issue for human review");
     }
 
     public Optional<RemediationResult> getOutcome() {

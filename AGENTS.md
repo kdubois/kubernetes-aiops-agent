@@ -19,32 +19,40 @@ Do not create summary or migration documents. If a change is made, update the re
 ```
 src/main/java/dev/kevindubois/rollout/agent/
   a2a/
-    KubernetesAgentResource.java    # REST endpoints: POST /a2a/analyze, GET /a2a/health
+    KubernetesAgentResource.java    # REST endpoint: POST /a2a/analyze
+    A2AAgentExecutor.java           # A2A protocol executor
+  service/
+    AnalysisService.java            # Shared analysis entry point (REST + A2A)
+    RemediationOrchestrator.java    # Triggers remediation (PR or issue) after rollback
+    SourceCodePrefetcher.java       # Prefetches source code for remediation context
+    ActivityEvents.java             # Semantic activity event publisher
   workflow/
     KubernetesWorkflow.java         # Top-level orchestrator (@SequenceAgent)
     ParallelDataWorkflow.java       # DiagnosticsDataAgent ∥ MetricsDataAgent (@ParallelAgent)
     AnalysisLoop.java               # AnalysisAgent → ScoringAgent, up to 3 iterations (@LoopAgent)
     RemediationLoop.java            # Async remediation orchestration
   agents/
-    DiagnosticsDataAgent.java       # Non-AI: pod logs, events, resource state
+    DiagnosticsDataAgent.java       # Non-AI: pod logs, resource state
     MetricsDataAgent.java           # Non-AI: /q/metrics scraping
     DataCombinerAgent.java          # Non-AI: merges diagnostics + metrics into single report
     AnalysisAgent.java              # AI: decide promote/rollback, write analysis + rootCause
     ScoringAgent.java               # AI: quality-check AnalysisResult; request retry if needed
     RemediationAgent.java           # AI: open GitHub PR (code bug) or GitHub issue (ops issue)
   k8s/
-    K8sTools.java                   # Tools: debugPod, getPodLogs, getEvents, getMetrics, getResources
+    K8sTools.java                   # getCanaryDiagnostics, getCanaryMetrics (structured concurrency)
   remediation/
-    SourceCodeTool.java             # Tool: read source files from GitHub API
-    GitHubPatchPRTool.java          # Tool: create PR with line-based patches
-    GitHubPRTool.java               # Tool: create PR with full file content
-    GitHubIssueTool.java            # Tool: create GitHub issue
+    SourceCodeTool.java             # Read source files from GitHub API (used by prefetcher)
+    GitHubPatchPRTool.java          # Tool: create PR with line-based patches (strict validation)
     GitOperations.java              # JGit: clone, branch, commit, push
+    GitHubRestClient.java           # MicroProfile REST client for GitHub API
+    RepoCloneCache.java             # Caches cloned repos to avoid repeated clones
   model/                            # Records: AnalysisResult, RemediationResult, KubernetesAgentRequest/Response
   utils/
-    ToolCallLimiter.java            # Hard cap: max 20 tool calls per workflow
+    GitHubUtils.java                # Shared owner/repo parsing and auth header formatting
+    TextUtils.java                  # Shared text utilities (extractNamespace, extractSummary, truncate)
+    RetryHelper.java                # Generic retry wrapper for transient failures
 deployment/
-  deployment.yaml                   # K8s Deployment (512Mi–2Gi memory)
+  deployment.yaml                   # K8s Deployment (512Mi–2Gi memory), probes: /q/health
   rbac.yaml                         # ClusterRole: read pods/logs/events/rollouts; exec pods
   service.yaml                      # ClusterIP :8080
   secret.yaml.template              # API key template — copy and fill before deploying
@@ -52,7 +60,7 @@ deployment/
 
 ## Prerequisites
 
-Java 21+, Maven 3.8+, kubectl/oc, an API key for any OpenAI-compatible endpoint, GitHub token with `repo` scope, Kubernetes cluster with Argo Rollouts + `rollouts-plugin-metric-ai`.
+Java 25+, Maven 3.8+, kubectl/oc, an API key for any OpenAI-compatible endpoint, GitHub token with `repo` scope, Kubernetes cluster with Argo Rollouts + `rollouts-plugin-metric-ai`.
 
 ## Development
 
@@ -85,23 +93,6 @@ public interface MyAgent {
 
 Use `@LoopAgent` for retry loops, `@SequenceAgent` for ordered steps, `@ParallelAgent` for concurrent non-AI work.
 
-### Tool Pattern
-
-```java
-@ToolBox
-public class MyK8sTool {
-    @Tool("Describe what this tool does and when to call it")
-    public String myTool(@P("namespace") String ns, @P("name") String name) {
-        try {
-            return result;
-        } catch (Exception e) {
-            logger.error("Tool failed", e);
-            return "Error: " + e.getMessage();
-        }
-    }
-}
-```
-
 ## Building and Deploying
 
 ### Fast path (no version bump)
@@ -123,25 +114,11 @@ docker buildx build --platform linux/amd64,linux/arm64 \
   -t quay.io/kevindubois/kubernetes-agent:v<version> --push .
 ```
 
-### Kind (local cluster)
-
-```bash
-kind create cluster --name k8s-agent-test
-docker build -t quay.io/kevindubois/kubernetes-agent:latest .
-kind load docker-image quay.io/kevindubois/kubernetes-agent:latest --name k8s-agent-test
-# K8s Secret path (default):
-cp deployment/secret.yaml.template deployment/secret.yaml   # fill in keys
-kubectl apply -f deployment/secret.yaml
-kubectl apply -k deployment/
-kubectl logs -f deployment/kubernetes-agent -n argo-rollouts
-```
-
 ## Testing
 
 ```bash
 mvn test
-mvn test -Dtest=AnalysisAgentTest
-./test-agent.sh local    # or k8s
+mvn test -Dtest=K8sToolsTest
 ./run-console.sh         # Interactive console mode
 ```
 
@@ -153,8 +130,8 @@ The analysis request from the plugin triggers this sequence:
 2. `DataCombinerAgent` — merges the two reports into a single `diagnosticData` string.
 3. `AnalysisLoop` — `AnalysisAgent` → `ScoringAgent`; repeats until score is acceptable or 3 iterations are exhausted.
 4. Response returned synchronously to the plugin (`promote`, `confidence`, `analysis`, `rootCause`).
-5. If `promote=false` and `repoUrl` is set, `RemediationAgent` runs asynchronously (after 3s delay):
-   - Operational signals (OOM, memory leak, heap warnings) → GitHub issue via `GitHubIssueTool`
+5. If `promote=false` and `repoUrl` is set, `RemediationOrchestrator` runs asynchronously:
+   - Operational signals (OOM, memory leak, heap warnings) → GitHub issue (deterministic)
    - Code bugs (NPE, wrong value, logic error) → GitHub PR via `GitHubPatchPRTool`
 
 ## Debugging
@@ -165,7 +142,7 @@ kubectl logs deployment/kubernetes-agent -n openshift-gitops | grep -i "error\|t
 
 # Health check
 kubectl port-forward -n openshift-gitops svc/kubernetes-agent 8080:8080
-curl http://localhost:8080/a2a/health
+curl http://localhost:8080/q/health
 ```
 
 **Common issues:**
@@ -182,6 +159,7 @@ curl http://localhost:8080/a2a/health
 - Records for DTOs — no mutable state in data contracts.
 - `@SystemMessage` should define role, output format, and constraints; `@UserMessage` passes runtime data.
 - Log at `debug` for per-operation detail, `info` for decisions, `error` for failures.
+- Use `Log.infof` (parametrized) instead of `MessageFormat.format` for logging.
 - Format: `mvn fmt:format`
 
 ## Feature Checklist
@@ -193,7 +171,6 @@ curl http://localhost:8080/a2a/health
 - [ ] Tests added and passing
 - [ ] `README.md` updated if behaviour changed
 - [ ] No compiler warnings
-- [ ] No "Made with Bob" comments
 
 ## Resources
 

@@ -29,9 +29,9 @@ logs:
 	kubectl --context $(CONTEXT) logs -f deployment/kubernetes-agent -n argo-rollouts
 
 health:
-	kubectl port-forward -n argo-rollouts svc/kubernetes-agent 8080:8080 &
+	kubectl port-forward -n openshift-gitops svc/kubernetes-agent 8080:8080 &
 	sleep 2
-	curl http://localhost:8080/a2a/health
+	curl http://localhost:8080/q/health
 	pkill -f "port-forward.*kubernetes-agent"
 
 kind-load:

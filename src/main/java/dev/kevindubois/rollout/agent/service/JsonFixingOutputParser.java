@@ -1,7 +1,6 @@
 package dev.kevindubois.rollout.agent.service;
 
 import io.quarkus.logging.Log;
-import jakarta.enterprise.context.ApplicationScoped;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -10,7 +9,6 @@ import java.util.regex.Pattern;
  * Utility that fixes common JSON formatting errors before parsing.
  * Specifically handles issues with Qwen models that sometimes use single quotes instead of double quotes.
  */
-@ApplicationScoped
 public class JsonFixingOutputParser {
     
     /**

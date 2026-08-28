@@ -28,7 +28,7 @@ public interface RemediationAgent {
         One change per line. Fix the actual buggy line, not surrounding control flow.
 
         AFTER the tool call, return EXACTLY this JSON in your response body (not in thinking/reasoning):
-        {"prLink": "<URL from tool result>", "analysis": "<what you did>", "remediation": "<action taken>"}
+        {"prLink": "<URL from tool result>", "remediation": "<action taken>"}
         """)
     @UserMessage("""
         /no_think
