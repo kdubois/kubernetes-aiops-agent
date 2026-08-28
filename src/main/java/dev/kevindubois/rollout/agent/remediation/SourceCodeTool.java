@@ -1,5 +1,6 @@
 package dev.kevindubois.rollout.agent.remediation;
 
+import dev.kevindubois.rollout.agent.utils.GitHubUtils;
 import dev.langchain4j.agent.tool.Tool;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -71,10 +72,10 @@ public class SourceCodeTool {
                 filePaths.size(), repoUrl, branch));
         
         try {
-            String[] ownerRepo = extractOwnerAndRepo(repoUrl);
+            String[] ownerRepo = GitHubUtils.extractOwnerAndRepo(repoUrl);
             String owner = ownerRepo[0];
             String repo = ownerRepo[1];
-            String authHeader = formatAuthHeader(githubToken);
+            String authHeader = GitHubUtils.authHeader(githubToken);
             
             // Read requested files via GitHub API
             Map<String, Object> result = new HashMap<>();
@@ -137,21 +138,4 @@ public class SourceCodeTool {
         }
     }
     
-    /**
-     * Format authorization header for GitHub API
-     */
-    private String formatAuthHeader(String token) {
-        return "Bearer " + token;
-    }
-    
-    /**
-     * Extract owner and repository name from URL
-     * @return Array with [owner, repo]
-     */
-    private String[] extractOwnerAndRepo(String repoUrl) {
-        // Handle formats: https://github.com/owner/repo or https://github.com/owner/repo.git
-        String cleaned = repoUrl.replace("https://github.com/", "")
-            .replace(".git", "");
-        return cleaned.split("/", 2);
-    }
 }

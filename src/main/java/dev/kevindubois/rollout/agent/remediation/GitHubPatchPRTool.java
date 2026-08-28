@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.langchain4j.agent.tool.Tool;
 import dev.kevindubois.rollout.agent.service.RemediationOutcomeHolder;
+import dev.kevindubois.rollout.agent.utils.GitHubUtils;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
@@ -139,11 +140,22 @@ public class GitHubPatchPRTool {
         try {
             // 1. Get or reuse cached clone (fetches + resets on reuse)
             Path repoPath = repoCache.getOrClone(repoUrl, githubToken);
+
+            // 2. Validate all patches before any mutation
+            for (FilePatch patch : filePatchList) {
+                Path filePath = repoPath.resolve(patch.filePath);
+                if (!Files.exists(filePath)) {
+                    return Map.of("success", false, "error", "File not found: " + patch.filePath);
+                }
+                List<String> lines = Files.readAllLines(filePath);
+                validatePatch(patch, lines);
+                validateExpectedLines(patch, lines);
+            }
             
-            // 2. Create branch
+            // 3. Create branch
             gitOps.createBranch(repoPath, branchName);
             
-            // 3. Apply patches to each file
+            // 4. Apply patches to each file
             for (FilePatch patch : filePatchList) {
                 applyPatchToFile(repoPath, patch);
             }
@@ -231,7 +243,8 @@ public class GitHubPatchPRTool {
                         int lineNumber = ((Number) changeMap.get("lineNumber")).intValue();
                         String action = (String) changeMap.get("action");
                         String content = (String) changeMap.get("content");
-                        return new LineChange(lineNumber, action, content);
+                        String expectedLine = (String) changeMap.get("expectedLine");
+                        return new LineChange(lineNumber, action, content, expectedLine);
                     })
                     .collect(Collectors.toList());
                 
@@ -284,9 +297,6 @@ public class GitHubPatchPRTool {
         // Read current file content
         List<String> lines = Files.readAllLines(filePath);
         
-        // Validate patch for common mistakes
-        validatePatch(patch, lines);
-        
         // Group changes by line number and action type
         // For insert_after on consecutive lines, we need to process them in ascending order
         // For other operations, descending order avoids offset issues
@@ -305,23 +315,9 @@ public class GitHubPatchPRTool {
             Log.debug("Processing changes in descending order");
         }
         
-        // Apply each change with validation
+        // Apply each change
         for (LineChange change : sortedChanges) {
             int lineIndex = change.lineNumber - 1; // Convert to 0-based index
-            
-            // Validate expectedLine if provided
-            if (change.expectedLine != null && !change.expectedLine.isEmpty()) {
-                if (lineIndex >= 0 && lineIndex < lines.size()) {
-                    String actualLine = lines.get(lineIndex).trim();
-                    String expectedLine = change.expectedLine.trim();
-                    if (!actualLine.equals(expectedLine)) {
-                        Log.warn(MessageFormat.format(
-                            "Line {0} validation failed in {1}. Expected: ''{2}'', Actual: ''{3}''. Skipping this change.",
-                            change.lineNumber, patch.filePath, expectedLine, actualLine));
-                        continue; // Skip this change
-                    }
-                }
-            }
             
             switch (change.action.toLowerCase()) {
                 case "replace":
@@ -369,10 +365,27 @@ public class GitHubPatchPRTool {
     }
     
     /**
-     * Validate patch for common mistakes that could lead to bad PRs.
-     * Throws on structural errors that would break compilation.
+     * Validate patch against structural rules. Throws before any clone/commit
+     * when the patch would produce a destructive or incomplete edit.
      */
-    private void validatePatch(FilePatch patch, List<String> originalLines) throws Exception {
+    static void validatePatch(FilePatch patch, List<String> originalLines) throws Exception {
+        long deleteCount = patch.changes.stream()
+                .filter(c -> "delete".equalsIgnoreCase(c.action))
+                .count();
+        if (deleteCount > 2) {
+            throw new Exception(MessageFormat.format(
+                    "Patch rejected: {0} delete operations in {1} (max 2). " +
+                    "Use `replace` on the buggy line instead of deleting entire blocks.",
+                    deleteCount, patch.filePath));
+        }
+
+        if (patch.changes.size() > 3) {
+            throw new Exception(MessageFormat.format(
+                    "Patch rejected: {0} total changes in {1} (max 3). " +
+                    "Keep patches minimal — fix the buggy line with `replace` instead of rewriting the block.",
+                    patch.changes.size(), patch.filePath));
+        }
+
         for (LineChange change : patch.changes) {
             int lineIndex = change.lineNumber - 1;
             if (lineIndex < 0 || lineIndex >= originalLines.size()) {
@@ -380,17 +393,26 @@ public class GitHubPatchPRTool {
             }
 
             String originalLine = originalLines.get(lineIndex).trim();
+            boolean removes = "delete".equalsIgnoreCase(change.action);
+            boolean replaces = "replace".equalsIgnoreCase(change.action);
+
+            if (removes || replaces) {
+                if (isStructuralLine(originalLine)) {
+                    throw new Exception(MessageFormat.format(
+                            "Patch rejected: cannot {0} structural line {1} (''{2}'') in {3}. " +
+                            "Fix the buggy line INSIDE the block with `replace` instead.",
+                            removes ? "delete" : "replace", change.lineNumber, originalLine, patch.filePath));
+                }
+            }
 
             if (!isControlFlowOpening(originalLine)) {
                 continue;
             }
 
-            boolean removes = "delete".equalsIgnoreCase(change.action);
-            boolean replaces = "replace".equalsIgnoreCase(change.action)
-                    && change.content != null
-                    && !isControlFlowOpening(change.content.trim());
+            boolean removesOrReplacesControlFlow = removes
+                    || (replaces && change.content != null && !isControlFlowOpening(change.content.trim()));
 
-            if (!removes && !replaces) {
+            if (!removesOrReplacesControlFlow) {
                 continue;
             }
 
@@ -404,19 +426,44 @@ public class GitHubPatchPRTool {
                 String verb = removes ? "deleting" : "replacing";
                 throw new Exception(MessageFormat.format(
                         "Patch rejected: {0} control flow line {1} (''{2}'') in {3} without handling the block body and closing brace. " +
-                        "This leaves the block body running unconditionally and/or orphaned braces. " +
-                        "Fix the buggy line INSIDE the block instead, or remove ALL lines of the block.",
+                        "Fix the buggy line INSIDE the block with `replace` instead of removing the control structure.",
                         verb, change.lineNumber, originalLine, patch.filePath));
             }
         }
+    }
 
-        long deleteCount = patch.changes.stream()
-                .filter(c -> "delete".equalsIgnoreCase(c.action))
-                .count();
-        if (deleteCount > 10) {
-            Log.warn(MessageFormat.format(
-                    "VALIDATION WARNING: Patch contains {0} delete operations in {1}.",
-                    deleteCount, patch.filePath));
+    private static boolean isStructuralLine(String trimmedLine) {
+        return trimmedLine.equals("}")
+                || trimmedLine.equals("} else {")
+                || trimmedLine.startsWith("} catch")
+                || trimmedLine.startsWith("catch ")
+                || trimmedLine.startsWith("catch(")
+                || trimmedLine.startsWith("return ")
+                || trimmedLine.startsWith("return;")
+                || trimmedLine.equals("return");
+    }
+
+    /**
+     * Validate expectedLine fields against current file content.
+     * Throws on mismatch instead of skipping.
+     */
+    static void validateExpectedLines(FilePatch patch, List<String> originalLines) throws Exception {
+        for (LineChange change : patch.changes) {
+            if (change.expectedLine == null || change.expectedLine.isEmpty()) {
+                continue;
+            }
+            int lineIndex = change.lineNumber - 1;
+            if (lineIndex < 0 || lineIndex >= originalLines.size()) {
+                continue;
+            }
+            String actualLine = originalLines.get(lineIndex).trim();
+            String expectedLine = change.expectedLine.trim();
+            if (!actualLine.equals(expectedLine)) {
+                throw new Exception(MessageFormat.format(
+                        "expectedLine mismatch at line {0} in {1}. Expected: ''{2}'', Actual: ''{3}''. " +
+                        "Use the correct expectedLine or omit it.",
+                        change.lineNumber, patch.filePath, expectedLine, actualLine));
+            }
         }
     }
 
@@ -442,10 +489,10 @@ public class GitHubPatchPRTool {
             String podName,
             List<FilePatch> patches
     ) throws Exception {
-        String[] ownerRepo = extractOwnerAndRepo(repoUrl);
+        String[] ownerRepo = GitHubUtils.extractOwnerAndRepo(repoUrl);
         String owner = ownerRepo[0];
         String repo = ownerRepo[1];
-        String authHeader = formatAuthHeader(githubToken);
+        String authHeader = GitHubUtils.authHeader(githubToken);
         
         // Get repository to find default branch
         GitHubRestClient.GitHubRepository repository =
@@ -468,24 +515,6 @@ public class GitHubPatchPRTool {
      */
     private String formatCommitMessage(String fixDescription) {
         return MessageFormat.format("fix: {0}", fixDescription);
-    }
-    
-    /**
-     * Format authorization header for GitHub API
-     */
-    private String formatAuthHeader(String token) {
-        return "Bearer " + token;
-    }
-    
-    /**
-     * Extract owner and repository name from URL
-     * @return Array with [owner, repo]
-     */
-    private String[] extractOwnerAndRepo(String repoUrl) {
-        // Handle formats: https://github.com/owner/repo or https://github.com/owner/repo.git
-        String cleaned = repoUrl.replace("https://github.com/", "")
-            .replace(".git", "");
-        return cleaned.split("/", 2);
     }
     
     /**

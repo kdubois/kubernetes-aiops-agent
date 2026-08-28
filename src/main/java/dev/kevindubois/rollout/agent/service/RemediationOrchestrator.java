@@ -3,6 +3,8 @@ package dev.kevindubois.rollout.agent.service;
 import dev.kevindubois.rollout.agent.model.AnalysisResult;
 import dev.kevindubois.rollout.agent.model.RemediationResult;
 import dev.kevindubois.rollout.agent.remediation.GitHubRestClient;
+import dev.kevindubois.rollout.agent.utils.GitHubUtils;
+import dev.kevindubois.rollout.agent.utils.TextUtils;
 import dev.kevindubois.rollout.agent.workflow.RemediationLoop;
 import dev.langchain4j.service.output.OutputParsingException;
 import io.quarkus.logging.Log;
@@ -11,12 +13,10 @@ import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.eclipse.microprofile.rest.client.inject.RestClient;
 
-import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
 
 @ApplicationScoped
 public class RemediationOrchestrator {
-
-    private static final int MAX_ATTEMPTS = 2;
 
     @Inject
     RemediationLoop remediationLoop;
@@ -37,6 +37,9 @@ public class RemediationOrchestrator {
     @ConfigProperty(name = "github.token")
     String githubToken;
 
+    @Inject
+    ExecutorService executor;
+
     public void triggerIfNeeded(AnalysisResult result, String prompt, String repoUrl, String baseBranch) {
         if (result.promote() || repoUrl == null || repoUrl.isEmpty()) {
             Log.debug("Skipping remediation - promote=true or no repoUrl configured");
@@ -48,11 +51,11 @@ public class RemediationOrchestrator {
 
         if (isOperationalIssue(result.rootCause())) {
             Log.info("Operational issue detected — creating GitHub issue directly (no LLM)");
-            CompletableFuture.runAsync(() -> createIssueDeterministically(result, repoUrl));
+            executor.execute(() -> createIssueDeterministically(result, repoUrl));
         } else {
             String enrichedPrompt = prompt + sourceCodePrefetcher.prefetchSourceCode(
                     prompt + "\n" + result, repoUrl, baseBranch);
-            CompletableFuture.runAsync(() -> executeWithRetry(enrichedPrompt, result, repoUrl, baseBranch));
+            executor.execute(() -> executeRemediation(enrichedPrompt, result, repoUrl, baseBranch));
         }
     }
 
@@ -63,10 +66,10 @@ public class RemediationOrchestrator {
      */
     private void createIssueDeterministically(AnalysisResult result, String repoUrl) {
         try {
-            String[] ownerRepo = extractOwnerAndRepo(repoUrl);
-            String authHeader = "Bearer " + githubToken;
+            String[] ownerRepo = GitHubUtils.extractOwnerAndRepo(repoUrl);
+            String authHeader = GitHubUtils.authHeader(githubToken);
 
-            String title = "Canary Deployment Failed: " + truncate(result.rootCause(), 100);
+            String title = "Canary Deployment Failed: " + TextUtils.truncate(result.rootCause(), 100);
             String body = String.format("""
                     ## Root Cause Analysis
                     %s
@@ -82,7 +85,7 @@ public class RemediationOrchestrator {
                     *Please review and take appropriate action*
                     """,
                     result.rootCause() != null ? result.rootCause() : "Unknown",
-                    truncate(result.analysis(), 2000));
+                    TextUtils.truncate(result.analysis(), 2000));
 
             GitHubRestClient.CreateIssueRequest request = new GitHubRestClient.CreateIssueRequest(
                     title, body,
@@ -101,39 +104,31 @@ public class RemediationOrchestrator {
         }
     }
 
-    private void executeWithRetry(String prompt, AnalysisResult result, String repoUrl, String baseBranch) {
-        for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-            outcomeHolder.reset();
-            try {
-                Log.infof("Remediation attempt %d/%d", attempt, MAX_ATTEMPTS);
-                RemediationResult outcome = remediationLoop.remediateWithRetry(prompt, result, repoUrl, baseBranch);
-                String artifactUrl = (outcome != null) ? outcome.prLink() : null;
+    private void executeRemediation(String prompt, AnalysisResult result, String repoUrl, String baseBranch) {
+        outcomeHolder.reset();
+        try {
+            Log.info("Starting remediation (max 2 iterations via RemediationLoop)");
+            RemediationResult outcome = remediationLoop.remediateWithRetry(prompt, result, repoUrl, baseBranch);
+            String artifactUrl = (outcome != null) ? outcome.prLink() : null;
 
-                if (artifactUrl == null || artifactUrl.isEmpty()) {
-                    artifactUrl = outcomeHolder.getOutcome()
-                            .map(RemediationResult::prLink)
-                            .orElse(null);
-                }
+            if (artifactUrl == null || artifactUrl.isEmpty()) {
+                artifactUrl = outcomeHolder.getOutcome()
+                        .map(RemediationResult::prLink)
+                        .orElse(null);
+            }
 
-                activityEvents.remediationCompleted(artifactUrl);
+            activityEvents.remediationCompleted(artifactUrl);
+        } catch (Exception e) {
+            if (isOutputParsingFailure(e) && tryRecoverFromToolOutcome()) {
                 return;
-            } catch (Exception e) {
-                if (isOutputParsingFailure(e) && tryRecoverFromToolOutcome()) {
-                    return;
-                }
+            }
 
-                if (attempt < MAX_ATTEMPTS) {
-                    Log.warnf("Remediation attempt %d failed, retrying: %s", attempt, e.getMessage());
-                    continue;
-                }
-
-                Log.error("Remediation failed after all attempts", e);
-                if (isOutputParsingFailure(e)) {
-                    Log.info("Falling back to GitHub issue creation after LLM failure");
-                    createIssueDeterministically(result, repoUrl);
-                } else {
-                    activityEvents.remediationFailed(e.getMessage());
-                }
+            Log.error("Remediation failed", e);
+            if (isOutputParsingFailure(e)) {
+                Log.info("Falling back to GitHub issue creation after LLM failure");
+                createIssueDeterministically(result, repoUrl);
+            } else {
+                activityEvents.remediationFailed(e.getMessage());
             }
         }
     }
@@ -156,16 +151,6 @@ public class RemediationOrchestrator {
             t = t.getCause();
         }
         return false;
-    }
-
-    private static String[] extractOwnerAndRepo(String repoUrl) {
-        String cleaned = repoUrl.replace("https://github.com/", "").replace(".git", "");
-        return cleaned.split("/", 2);
-    }
-
-    private static String truncate(String s, int maxLen) {
-        if (s == null) return "";
-        return s.length() <= maxLen ? s : s.substring(0, maxLen) + "...";
     }
 
     private static boolean isOperationalIssue(String rootCause) {

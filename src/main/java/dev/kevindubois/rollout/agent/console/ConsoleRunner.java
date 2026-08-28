@@ -79,7 +79,7 @@ public class ConsoleRunner {
                 
                 System.out.print("\nAgent > ");
                 // Execute the workflow with null repoUrl and baseBranch for console mode
-                AnalysisResult result = kubernetesWorkflow.execute(memoryId, userInput, null, "main");
+                AnalysisResult result = kubernetesWorkflow.execute(memoryId, userInput);
                 
                 // Format the response for console output
                 System.out.println("\n=== Analysis ===");
