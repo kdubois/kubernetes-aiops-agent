@@ -8,12 +8,14 @@ import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.Response.Status;
 
 import java.util.Map;
+import java.util.concurrent.TimeoutException;
 
 import dev.kevindubois.rollout.agent.model.AnalysisResult;
 import dev.kevindubois.rollout.agent.model.KubernetesAgentRequest;
 import dev.kevindubois.rollout.agent.model.KubernetesAgentResponse;
 import dev.kevindubois.rollout.agent.service.ActivityEvents;
 import dev.kevindubois.rollout.agent.service.AnalysisService;
+import dev.langchain4j.service.output.OutputParsingException;
 
 /**
  * REST endpoint for rollout analysis. Delegates to AnalysisService for the
@@ -56,23 +58,32 @@ public class KubernetesAgentResource {
 
             return Response.ok(response).build();
 
+        } catch (OutputParsingException e) {
+            Log.error("LLM output parsing failed for user: " + request.userId(), e);
+            activityEvents.requestFailed("Output parsing: " + e.getMessage());
+            return errorResponse(Status.INTERNAL_SERVER_ERROR,
+                    "LLM returned unparsable output", "OutputParsingException");
+
+        } catch (TimeoutException e) {
+            Log.error("Analysis timed out for user: " + request.userId(), e);
+            activityEvents.requestFailed("Timeout: " + e.getMessage());
+            return errorResponse(Status.GATEWAY_TIMEOUT,
+                    "Analysis timed out", "TimeoutException");
+
         } catch (Exception e) {
             Log.error("Analysis failed for user: " + request.userId(), e);
             activityEvents.requestFailed(e.getMessage());
-
-            KubernetesAgentResponse errorResponse = new KubernetesAgentResponse(
-                    "Error: " + e.getMessage(),
-                    "Analysis failed: " + e.getClass().getSimpleName(),
-                    "Unable to provide remediation due to API error. Please try again.",
-                    null,
-                    true,
-                    0
-            );
-
-            return Response.status(Status.INTERNAL_SERVER_ERROR)
-                    .entity(errorResponse)
-                    .build();
+            return errorResponse(Status.INTERNAL_SERVER_ERROR,
+                    "Error: " + e.getMessage(), e.getClass().getSimpleName());
         }
+    }
+
+    private Response errorResponse(Status status, String analysis, String rootCause) {
+        KubernetesAgentResponse body = new KubernetesAgentResponse(
+                analysis, rootCause,
+                "Unable to provide remediation due to API error. Please try again.",
+                null, true, 0);
+        return Response.status(status).entity(body).build();
     }
 
     private String buildPrompt(KubernetesAgentRequest request) {

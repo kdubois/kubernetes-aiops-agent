@@ -1,13 +1,12 @@
 package dev.kevindubois.rollout.agent.agents;
 
 import dev.kevindubois.rollout.agent.k8s.K8sTools;
+import dev.kevindubois.rollout.agent.utils.TextUtils;
 import dev.langchain4j.agentic.Agent;
 import io.quarkus.arc.Arc;
 import io.quarkus.logging.Log;
 
 import java.util.Map;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
  * Non-AI agent that fetches pod diagnostic data (status + logs) for stable and canary pods.
@@ -15,19 +14,17 @@ import java.util.regex.Pattern;
  */
 public class DiagnosticsDataAgent {
 
-    private static final Pattern NAMESPACE_PATTERN = Pattern.compile("namespace[=:\\s]+(\\S+)");
-
     @Agent(description = "Fetches pod info and logs for stable and canary pods", outputKey = "diagnosticReport")
     public static String gatherDiagnostics(String message) {
         Log.info("DiagnosticsDataAgent: fetching pod diagnostics (non-AI agent)");
 
         K8sTools k8sTools = Arc.container().instance(K8sTools.class).get();
-        String namespace = extractNamespace(message);
+        String namespace = TextUtils.extractNamespace(message);
 
         Map<String, Object> diagnostics = k8sTools.getCanaryDiagnostics(namespace, null, 200);
 
         String report = formatReport(diagnostics);
-        Log.info("DiagnosticsDataAgent: report generated (" + report.length() + " chars)");
+        Log.infof("DiagnosticsDataAgent: report generated (%d chars)", report.length());
         return report;
     }
 
@@ -69,14 +66,5 @@ public class DiagnosticsDataAgent {
             Object logsError = podData.get("logsError");
             sb.append(label).append(" LOGS: ").append(logsError != null ? logsError : "No logs available").append("\n");
         }
-    }
-
-    static String extractNamespace(String message) {
-        if (message == null) return "default";
-        Matcher matcher = NAMESPACE_PATTERN.matcher(message);
-        if (matcher.find()) {
-            return matcher.group(1);
-        }
-        return "default";
     }
 }

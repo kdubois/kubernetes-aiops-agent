@@ -1,13 +1,12 @@
 package dev.kevindubois.rollout.agent.agents;
 
 import dev.kevindubois.rollout.agent.k8s.K8sTools;
+import dev.kevindubois.rollout.agent.utils.TextUtils;
 import dev.langchain4j.agentic.Agent;
 import io.quarkus.arc.Arc;
 import io.quarkus.logging.Log;
 
 import java.util.Map;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
  * Non-AI agent that fetches application metrics from /q/metrics endpoints for stable and canary pods.
@@ -15,19 +14,17 @@ import java.util.regex.Pattern;
  */
 public class MetricsDataAgent {
 
-    private static final Pattern NAMESPACE_PATTERN = Pattern.compile("namespace[=:\\s]+(\\S+)");
-
     @Agent(description = "Fetches application metrics for stable and canary pods", outputKey = "metricsReport")
     public static String gatherMetrics(String message) {
         Log.info("MetricsDataAgent: fetching application metrics (non-AI agent)");
 
         K8sTools k8sTools = Arc.container().instance(K8sTools.class).get();
-        String namespace = extractNamespace(message);
+        String namespace = TextUtils.extractNamespace(message);
 
         Map<String, Object> metrics = k8sTools.getCanaryMetrics(namespace);
 
         String report = formatReport(metrics);
-        Log.info("MetricsDataAgent: report generated (" + report.length() + " chars)");
+        Log.infof("MetricsDataAgent: report generated (%d chars)", report.length());
         return report;
     }
 
@@ -97,14 +94,5 @@ public class MetricsDataAgent {
         if (value == null) return "N/A";
         if (value instanceof Double d) return String.format("%.1fMB", d);
         return value + "MB";
-    }
-
-    static String extractNamespace(String message) {
-        if (message == null) return "default";
-        Matcher matcher = NAMESPACE_PATTERN.matcher(message);
-        if (matcher.find()) {
-            return matcher.group(1);
-        }
-        return "default";
     }
 }

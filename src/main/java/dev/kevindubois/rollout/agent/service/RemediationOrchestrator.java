@@ -117,7 +117,8 @@ public class RemediationOrchestrator {
                         .orElse(null);
             }
 
-            activityEvents.remediationCompleted(artifactUrl);
+            activityEvents.remediationCompleted(
+                    TextUtils.isValidGitHubArtifactUrl(artifactUrl) ? artifactUrl : null);
         } catch (Exception e) {
             if (isOutputParsingFailure(e) && tryRecoverFromToolOutcome()) {
                 return;
@@ -135,6 +136,7 @@ public class RemediationOrchestrator {
 
     private boolean tryRecoverFromToolOutcome() {
         return outcomeHolder.getOutcome()
+                .filter(fallback -> TextUtils.isValidGitHubArtifactUrl(fallback.prLink()))
                 .map(fallback -> {
                     Log.warn("Remediation tool succeeded but LLM output parsing failed; using tool outcome");
                     activityEvents.remediationCompleted(fallback.prLink());
