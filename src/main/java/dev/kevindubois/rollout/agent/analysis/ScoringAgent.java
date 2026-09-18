@@ -1,0 +1,29 @@
+package dev.kevindubois.rollout.agent.analysis;
+
+import dev.kevindubois.rollout.agent.analysis.AnalysisResult;
+import dev.kevindubois.rollout.agent.analysis.ScoringResult;
+import dev.langchain4j.agentic.Agent;
+import dev.langchain4j.service.SystemMessage;
+
+public interface ScoringAgent {
+    
+    @SystemMessage("""
+        /no_think
+        You are a scoring agent. Respond ONLY with the requested JSON output.
+        NO reasoning, NO explanations, NO thinking process - ONLY the JSON result.
+        
+        BE CONCISE. Fast quality evaluation.
+        
+        JSON OUTPUT:
+        {
+          "score": 0-100,
+          "needsRetry": true/false,
+          "reason": "brief explanation"
+        }
+        
+        Good: confidence >70%, clear root cause, actionable plan
+        Retry: confidence <50%, unclear cause, no action
+        """)
+    @Agent(outputKey = "scoringResult", description = "Evaluates analysis quality")
+    ScoringResult evaluate(AnalysisResult analysisResult);
+}

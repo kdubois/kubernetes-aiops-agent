@@ -1,13 +1,12 @@
 package dev.kevindubois.rollout.agent.k8s;
 
+import dev.kevindubois.rollout.agent.observability.ActivityEventStore;
 import io.fabric8.kubernetes.api.model.*;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.quarkus.arc.Unremovable;
 import io.quarkus.logging.Log;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-
-import dev.kevindubois.rollout.agent.model.ActivityEventStore;
 
 import java.util.*;
 
@@ -40,17 +39,6 @@ public class K8sTools {
             List<Pod>[] pods = fetchPodsPairInParallel(namespace);
             List<Pod> stablePods = pods[0];
             List<Pod> canaryPods = pods[1];
-
-            if (!stablePods.isEmpty()) {
-                activityEvents.publish("TOOL_CALL", "Fetching stable pod metrics",
-                    "pod=" + stablePods.get(0).getMetadata().getName()
-                    + " (selected 1 of " + stablePods.size() + " stable pods)");
-            }
-            if (!canaryPods.isEmpty()) {
-                activityEvents.publish("TOOL_CALL", "Fetching canary pod metrics",
-                    "pod=" + canaryPods.get(0).getMetadata().getName()
-                    + " (selected 1 of " + canaryPods.size() + " canary pods)");
-            }
 
             var stableMetricsHolder = new HashMap<String, Object>();
             var canaryMetricsHolder = new HashMap<String, Object>();
@@ -109,17 +97,6 @@ public class K8sTools {
             List<Pod>[] pods = fetchPodsPairInParallel(namespace);
             List<Pod> stablePods = pods[0];
             List<Pod> canaryPods = pods[1];
-
-            if (!stablePods.isEmpty()) {
-                activityEvents.publish("TOOL_CALL", "Fetching stable pod logs",
-                    "pod=" + stablePods.get(0).getMetadata().getName()
-                    + " (selected 1 of " + stablePods.size() + " stable pods)");
-            }
-            if (!canaryPods.isEmpty()) {
-                activityEvents.publish("TOOL_CALL", "Fetching canary pod logs",
-                    "pod=" + canaryPods.get(0).getMetadata().getName()
-                    + " (selected 1 of " + canaryPods.size() + " canary pods)");
-            }
 
             var stableHolder = new HashMap<String, Object>();
             var canaryHolder = new HashMap<String, Object>();
