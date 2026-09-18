@@ -1,6 +1,7 @@
 package dev.kevindubois.rollout.agent.agents;
 
 import dev.kevindubois.rollout.agent.k8s.K8sTools;
+import dev.kevindubois.rollout.agent.k8s.PodDataResult;
 import dev.langchain4j.agentic.Agent;
 import io.quarkus.arc.Arc;
 import io.quarkus.logging.Log;
@@ -19,27 +20,23 @@ public class MetricsDataAgent {
 
         K8sTools k8sTools = Arc.container().instance(K8sTools.class).get();
 
-        Map<String, Object> metrics = k8sTools.getCanaryMetrics(namespace);
+        PodDataResult metrics = k8sTools.getCanaryMetrics(namespace);
 
         String report = formatReport(metrics);
         Log.infof("MetricsDataAgent: report generated (%d chars)", report.length());
         return report;
     }
 
-    @SuppressWarnings("unchecked")
-    private static String formatReport(Map<String, Object> metrics) {
-        if (metrics.containsKey("error")) {
-            return "=== METRICS REPORT ===\nERROR: " + metrics.get("error") + "\n=== END ===";
+    private static String formatReport(PodDataResult metrics) {
+        if (metrics.hasError()) {
+            return "=== METRICS REPORT ===\nERROR: " + metrics.error() + "\n=== END ===";
         }
 
         StringBuilder sb = new StringBuilder();
         sb.append("=== METRICS REPORT ===\n");
 
-        Map<String, Object> stable = (Map<String, Object>) metrics.get("stable");
-        Map<String, Object> canary = (Map<String, Object>) metrics.get("canary");
-
-        formatMetricsSection(sb, "STABLE", stable);
-        formatMetricsSection(sb, "CANARY", canary);
+        formatMetricsSection(sb, "STABLE", metrics.stable());
+        formatMetricsSection(sb, "CANARY", metrics.canary());
 
         sb.append("=== END ===");
         return sb.toString();

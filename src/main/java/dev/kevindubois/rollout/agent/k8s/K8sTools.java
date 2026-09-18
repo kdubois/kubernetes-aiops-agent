@@ -27,19 +27,16 @@ public class K8sTools {
     @Inject
     ActivityEventStore activityEvents;
 
-    public Map<String, Object> getCanaryMetrics(String namespace) {
+    public PodDataResult getCanaryMetrics(String namespace) {
         Log.info("=== Executing: getCanaryMetrics ===");
 
         if (namespace == null || namespace.isEmpty()) {
-            return Map.of("error", "namespace is required");
+            return PodDataResult.error("namespace is required");
         }
 
         Log.infof("Getting canary metrics for namespace: %s", namespace);
 
         try {
-            Map<String, Object> result = new HashMap<>();
-            result.put("namespace", namespace);
-
             List<Pod>[] pods = fetchPodsPairInParallel(namespace);
             List<Pod> stablePods = pods[0];
             List<Pod> canaryPods = pods[1];
@@ -79,9 +76,6 @@ public class K8sTools {
             stableThread.join();
             canaryThread.join();
 
-            result.put("stable", stableMetricsHolder);
-            result.put("canary", canaryMetricsHolder);
-
             if (!stableMetricsHolder.containsKey("error")) {
                 activityEvents.publish("TOOL_RESULT", "Stable pod metrics retrieved",
                     "pod=" + stableMetricsHolder.get("podName"));
@@ -92,19 +86,19 @@ public class K8sTools {
             }
 
             Log.info("Successfully retrieved canary metrics");
-            return result;
+            return PodDataResult.of(stableMetricsHolder, canaryMetricsHolder);
 
         } catch (Exception e) {
             Log.error("Error getting canary metrics", e);
-            return Map.of("error", e.getMessage());
+            return PodDataResult.error(e.getMessage());
         }
     }
 
-    public Map<String, Object> getCanaryDiagnostics(String namespace, String containerName, Integer tailLines) {
+    public PodDataResult getCanaryDiagnostics(String namespace, String containerName, Integer tailLines) {
         Log.info("=== Executing: getCanaryDiagnostics ===");
 
         if (namespace == null || namespace.isEmpty()) {
-            return Map.of("error", "namespace is required");
+            return PodDataResult.error("namespace is required");
         }
 
         int lines = (tailLines != null && tailLines > 0) ? tailLines : 200;
@@ -112,9 +106,6 @@ public class K8sTools {
                 namespace, containerName, lines);
 
         try {
-            Map<String, Object> result = new HashMap<>();
-            result.put("namespace", namespace);
-
             List<Pod>[] pods = fetchPodsPairInParallel(namespace);
             List<Pod> stablePods = pods[0];
             List<Pod> canaryPods = pods[1];
@@ -140,9 +131,6 @@ public class K8sTools {
             stableThread.join();
             canaryThread.join();
 
-            result.put("stable", stableHolder);
-            result.put("canary", canaryHolder);
-
             if (stableHolder.containsKey("podName")) {
                 activityEvents.publish("TOOL_RESULT", "Stable pod logs retrieved",
                     "pod=" + stableHolder.get("podName") + ", status=" + stableHolder.get("phase"));
@@ -153,11 +141,11 @@ public class K8sTools {
             }
 
             Log.info("Successfully retrieved canary diagnostics");
-            return result;
+            return PodDataResult.of(stableHolder, canaryHolder);
 
         } catch (Exception e) {
             Log.error("Error getting canary diagnostics", e);
-            return Map.of("error", e.getMessage());
+            return PodDataResult.error(e.getMessage());
         }
     }
 

@@ -74,20 +74,14 @@ class K8sToolsTest {
         when(canaryPodResource.tailingLines(anyInt())).thenReturn(canaryPodResource);
         when(canaryPodResource.getLog(anyBoolean())).thenReturn("Canary logs");
 
-        Map<String, Object> result = k8sTools.getCanaryDiagnostics(namespace, "app", 200);
+        PodDataResult result = k8sTools.getCanaryDiagnostics(namespace, "app", 200);
 
         assertNotNull(result);
-        assertEquals(namespace, result.get("namespace"));
-        assertTrue(result.containsKey("stable"));
-        assertTrue(result.containsKey("canary"));
-
-        @SuppressWarnings("unchecked")
-        Map<String, Object> stableInfo = (Map<String, Object>) result.get("stable");
-        assertEquals("stable-pod", stableInfo.get("podName"));
-
-        @SuppressWarnings("unchecked")
-        Map<String, Object> canaryInfo = (Map<String, Object>) result.get("canary");
-        assertEquals("canary-pod", canaryInfo.get("podName"));
+        assertFalse(result.hasError());
+        assertNotNull(result.stable());
+        assertNotNull(result.canary());
+        assertEquals("stable-pod", result.stable().get("podName"));
+        assertEquals("canary-pod", result.canary().get("podName"));
     }
 
     @Test
@@ -116,12 +110,11 @@ class K8sToolsTest {
         when(canaryPodResource.tailingLines(anyInt())).thenReturn(canaryPodResource);
         when(canaryPodResource.getLog(anyBoolean())).thenReturn("Canary logs");
 
-        Map<String, Object> result = k8sTools.getCanaryDiagnostics(namespace, "app", 200);
+        PodDataResult result = k8sTools.getCanaryDiagnostics(namespace, "app", 200);
 
         assertNotNull(result);
-        @SuppressWarnings("unchecked")
-        Map<String, Object> stableInfo = (Map<String, Object>) result.get("stable");
-        assertTrue(stableInfo.containsKey("error"));
+        assertNotNull(result.stable());
+        assertTrue(result.stable().containsKey("error"));
     }
 
     @Test
@@ -150,20 +143,19 @@ class K8sToolsTest {
         when(stablePodResource.tailingLines(anyInt())).thenReturn(stablePodResource);
         when(stablePodResource.getLog(anyBoolean())).thenReturn("Stable logs");
 
-        Map<String, Object> result = k8sTools.getCanaryDiagnostics(namespace, "app", 200);
+        PodDataResult result = k8sTools.getCanaryDiagnostics(namespace, "app", 200);
 
         assertNotNull(result);
-        @SuppressWarnings("unchecked")
-        Map<String, Object> canaryInfo = (Map<String, Object>) result.get("canary");
-        assertTrue(canaryInfo.containsKey("error"));
+        assertNotNull(result.canary());
+        assertTrue(result.canary().containsKey("error"));
     }
 
     @Test
     void testGetCanaryDiagnostics_EmptyNamespace() {
-        Map<String, Object> result = k8sTools.getCanaryDiagnostics("", "app", 200);
+        PodDataResult result = k8sTools.getCanaryDiagnostics("", "app", 200);
         assertNotNull(result);
-        assertTrue(result.containsKey("error"));
-        assertTrue(result.get("error").toString().contains("required"));
+        assertTrue(result.hasError());
+        assertTrue(result.error().contains("required"));
     }
 
     @Test
@@ -192,9 +184,9 @@ class K8sToolsTest {
         when(stablePodResource.tailingLines(anyInt())).thenReturn(stablePodResource);
         when(stablePodResource.getLog(anyBoolean())).thenReturn("Stable logs");
 
-        Map<String, Object> result = k8sTools.getCanaryDiagnostics(namespace, "app", null);
+        PodDataResult result = k8sTools.getCanaryDiagnostics(namespace, "app", null);
 
         assertNotNull(result);
-        assertEquals(namespace, result.get("namespace"));
+        assertFalse(result.hasError());
     }
 }

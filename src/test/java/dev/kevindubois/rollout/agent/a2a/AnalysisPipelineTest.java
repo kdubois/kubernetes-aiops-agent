@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.tomakehurst.wiremock.stubbing.Scenario;
 import dev.kevindubois.rollout.agent.k8s.K8sTools;
+import dev.kevindubois.rollout.agent.k8s.PodDataResult;
 import dev.kevindubois.rollout.agent.model.KubernetesAgentResponse;
 import dev.kevindubois.rollout.agent.remediation.GitOperations;
 import dev.kevindubois.rollout.agent.remediation.RepoCloneCache;
@@ -193,7 +194,7 @@ class AnalysisPipelineTest {
 
     // ── K8s mock setup ─────────────────────────────────────────────────
 
-    private void stubK8s(Map<String, Object> diagnostics, Map<String, Object> metrics) {
+    private void stubK8s(PodDataResult diagnostics, PodDataResult metrics) {
         when(k8sTools.getCanaryDiagnostics(NAMESPACE, null, 200)).thenReturn(diagnostics);
         when(k8sTools.getCanaryMetrics(NAMESPACE)).thenReturn(metrics);
     }
@@ -376,8 +377,8 @@ class AnalysisPipelineTest {
 
     // ── K8s diagnostics fixtures ───────────────────────────────────────
 
-    private static Map<String, Object> healthyDiagnostics() {
-        return diagnostics(
+    private static PodDataResult healthyDiagnostics() {
+        return PodDataResult.of(
                 podData("app-stable-xyz", "Running", "1/1",
                         "INFO Application started successfully\n"
                                 + "INFO Processing requests normally\n"
@@ -388,8 +389,8 @@ class AnalysisPipelineTest {
                                 + "INFO Request completed in 48ms"));
     }
 
-    private static Map<String, Object> npeDiagnostics() {
-        return diagnostics(
+    private static PodDataResult npeDiagnostics() {
+        return PodDataResult.of(
                 podData("app-stable-xyz", "Running", "1/1",
                         "INFO Application started successfully\n"
                                 + "INFO Processing requests normally"),
@@ -403,8 +404,8 @@ class AnalysisPipelineTest {
                                     at com.example.GreetingService.greet(GreetingService.java:42)"""));
     }
 
-    private static Map<String, Object> memoryLeakDiagnostics() {
-        return diagnostics(
+    private static PodDataResult memoryLeakDiagnostics() {
+        return PodDataResult.of(
                 podData("app-stable-xyz", "Running", "1/1",
                         "INFO Application started successfully\n"
                                 + "INFO Processing requests normally"),
@@ -422,43 +423,25 @@ class AnalysisPipelineTest {
 
     // ── K8s metrics fixtures ───────────────────────────────────────────
 
-    private static Map<String, Object> healthyMetrics() {
-        return metrics(
+    private static PodDataResult healthyMetrics() {
+        return PodDataResult.of(
                 metricsData(10000, 99.5, 0.5, 45.0, 120.0, null, null, null),
                 metricsData(2000, 99.2, 0.8, 48.0, 125.0, null, null, null));
     }
 
-    private static Map<String, Object> npeMetrics() {
-        return metrics(
+    private static PodDataResult npeMetrics() {
+        return PodDataResult.of(
                 metricsData(10000, 99.5, 0.5, 45.0, 120.0, null, null, null),
                 metricsData(2000, 82.0, 18.0, 250.0, 800.0, null, null, null));
     }
 
-    private static Map<String, Object> memoryLeakMetrics() {
-        return metrics(
+    private static PodDataResult memoryLeakMetrics() {
+        return PodDataResult.of(
                 metricsData(10000, 99.5, 0.5, 45.0, 120.0, 200.0, 512.0, 15.0),
                 metricsData(2000, 75.0, 25.0, 500.0, 2000.0, 480.0, 512.0, 250.0));
     }
 
     // ── Data builders ──────────────────────────────────────────────────
-
-    private static Map<String, Object> diagnostics(Map<String, Object> stable,
-                                                    Map<String, Object> canary) {
-        var m = new HashMap<String, Object>();
-        m.put("namespace", NAMESPACE);
-        m.put("stable", stable);
-        m.put("canary", canary);
-        return m;
-    }
-
-    private static Map<String, Object> metrics(Map<String, Object> stable,
-                                                Map<String, Object> canary) {
-        var m = new HashMap<String, Object>();
-        m.put("namespace", NAMESPACE);
-        m.put("stable", stable);
-        m.put("canary", canary);
-        return m;
-    }
 
     private static Map<String, Object> podData(String name, String phase,
                                                 String ready, String logs) {
