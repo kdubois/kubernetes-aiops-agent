@@ -123,6 +123,74 @@ class AnalysisPipelineTest {
                         postRequestedFor(urlPathEqualTo("/repos/test-owner/test-repo/issues"))));
     }
 
+    @Test
+    @DisplayName("LLM returns 429 on first call → retried → promote on second call")
+    void rateLimitOnFirstCall_shouldRetryAndSucceed() {
+        stubK8s(healthyDiagnostics(), healthyMetrics());
+
+        var wm = WireMockExtension.server;
+        wm.stubFor(post(urlPathEqualTo("/v1/chat/completions"))
+                .inScenario("rate-limit-retry")
+                .whenScenarioStateIs(Scenario.STARTED)
+                .withRequestBody(containing("K8s SRE analysis"))
+                .willReturn(aResponse()
+                        .withStatus(429)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"error\":{\"message\":\"429 Too Many Requests. exceeded your current quota. Please retry in 1s.\",\"type\":\"rate_limit_error\"}}"))
+                .willSetStateTo("RETRY"));
+
+        wm.stubFor(post(urlPathEqualTo("/v1/chat/completions"))
+                .inScenario("rate-limit-retry")
+                .whenScenarioStateIs("RETRY")
+                .withRequestBody(containing("K8s SRE analysis"))
+                .willReturn(okJson(chatCompletion(PROMOTE_ANALYSIS))));
+
+        wm.stubFor(post(urlPathEqualTo("/v1/chat/completions"))
+                .withRequestBody(containing("scoring agent"))
+                .willReturn(okJson(chatCompletion(ACCEPT_SCORING))));
+
+        var response = postAnalyze(NAMESPACE, null);
+
+        assertThat(response.promote()).isTrue();
+        wm.verify(2, postRequestedFor(urlPathEqualTo("/v1/chat/completions"))
+                .withRequestBody(containing("K8s SRE analysis")));
+    }
+
+    @Test
+    @DisplayName("LLM returns a non-retryable error → workflow fails without outer retries")
+    void nonRetryableError_shouldNotTriggerOuterRetry() {
+        stubK8s(healthyDiagnostics(), healthyMetrics());
+
+        // Stub the LLM to always return 400 — non-retryable error.
+        // The inner AnalysisLoop has maxIterations=3 so the LLM is called up to 3 times
+        // before the loop gives up. SmallRye @Retry must NOT add an outer retry on top of
+        // that — with maxRetries=3 an outer retry would multiply to 12 total LLM calls.
+        WireMockExtension.server.stubFor(post(urlPathEqualTo("/v1/chat/completions"))
+                .withRequestBody(containing("K8s SRE analysis"))
+                .willReturn(aResponse()
+                        .withStatus(400)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"error\":{\"message\":\"Invalid request\",\"type\":\"invalid_request_error\"}}")));
+
+        given()
+                .config(REST_CONFIG)
+                .contentType("application/json")
+                .body(Map.of(
+                        "userId", "test-user",
+                        "prompt", "Analyze canary deployment health",
+                        "context", Map.of("namespace", NAMESPACE)))
+                .when()
+                .post("/a2a/analyze")
+                .then()
+                .statusCode(500);
+
+        // Exactly one loop run (maxIterations=3 → at most 3 LLM calls), no outer retry.
+        // If SmallRye retried, we would see a multiple of that — at least 6 or more calls.
+        WireMockExtension.server.verify(lessThanOrExactly(3),
+                postRequestedFor(urlPathEqualTo("/v1/chat/completions"))
+                        .withRequestBody(containing("K8s SRE analysis")));
+    }
+
     // ── K8s mock setup ─────────────────────────────────────────────────
 
     private void stubK8s(Map<String, Object> diagnostics, Map<String, Object> metrics) {
