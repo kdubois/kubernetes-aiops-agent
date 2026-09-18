@@ -1,6 +1,6 @@
 package dev.kevindubois.rollout.agent.remediation;
 
-import dev.kevindubois.rollout.agent.model.SourceReadResult;
+import dev.kevindubois.rollout.agent.remediation.SourceReadResult;
 import dev.kevindubois.rollout.agent.utils.GitHubUtils;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;

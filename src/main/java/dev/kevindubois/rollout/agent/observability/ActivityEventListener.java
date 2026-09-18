@@ -1,8 +1,7 @@
 package dev.kevindubois.rollout.agent.observability;
 
-import dev.kevindubois.rollout.agent.model.ActivityEventStore;
-import dev.kevindubois.rollout.agent.model.RemediationResult;
-import dev.kevindubois.rollout.agent.model.ScoringResult;
+import dev.kevindubois.rollout.agent.remediation.RemediationResult;
+import dev.kevindubois.rollout.agent.analysis.ScoringResult;
 import dev.langchain4j.agentic.observability.AgentInvocationError;
 import dev.langchain4j.agentic.observability.AgentListener;
 import dev.langchain4j.agentic.observability.AgentRequest;
@@ -28,7 +27,7 @@ public class ActivityEventListener implements AgentListener {
     public void beforeAgentInvocation(AgentRequest request) {
         String name = request.agentName();
         String message = switch (name) {
-            case "ParallelDataWorkflow" -> "Fetching rollout data";
+            case "AnalysisDataAgent" -> "Fetching rollout data";
             case "DiagnosticsDataAgent" -> "Gathering pod logs";
             case "MetricsDataAgent" -> "Collecting pod metrics";
             case "DataCombinerAgent" -> "Preparing diagnostic report";
@@ -78,7 +77,7 @@ public class ActivityEventListener implements AgentListener {
             }
 
         } else if (output instanceof String) {
-            if ("ParallelDataWorkflow".equals(name)) {
+            if ("AnalysisDataAgent".equals(name)) {
                 activityEvents.publish("ANALYSIS_SUMMARY", "Logs and metrics gathered");
             }
         } else if ("RemediationAgent".equals(name) && output == null) {

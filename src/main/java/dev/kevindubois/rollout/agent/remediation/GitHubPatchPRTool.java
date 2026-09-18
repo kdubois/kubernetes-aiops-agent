@@ -3,7 +3,6 @@ package dev.kevindubois.rollout.agent.remediation;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.langchain4j.agent.tool.Tool;
-import dev.kevindubois.rollout.agent.service.RemediationOutcomeHolder;
 import dev.kevindubois.rollout.agent.utils.GitHubUtils;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -18,7 +17,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 /**
  * Tool that creates GitHub PRs using line-based patches instead of full file content.
@@ -205,9 +203,7 @@ public class GitHubPatchPRTool {
             
             Log.info(MessageFormat.format("Successfully created PR: {0}", pr.html_url()));
 
-            if (outcomeHolder != null) {
-                outcomeHolder.recordPullRequest(pr.html_url(), content.description());
-            }
+            outcomeHolder.recordPullRequest(pr.html_url(), content.description());
 
             return Map.of(
                 "success", true,
@@ -270,7 +266,7 @@ public class GitHubPatchPRTool {
             .map(patchMap -> {
                 String filePath = (String) patchMap.get("filePath");
                 List<Map<String, Object>> rawChanges = (List<Map<String, Object>>) patchMap.get("changes");
-                
+
                 List<LineChange> changes = rawChanges.stream()
                     .map(changeMap -> {
                         int lineNumber = ((Number) changeMap.get("lineNumber")).intValue();
@@ -279,41 +275,28 @@ public class GitHubPatchPRTool {
                         String expectedLine = (String) changeMap.get("expectedLine");
                         return new LineChange(lineNumber, action, content, expectedLine);
                     })
-                    .collect(Collectors.toList());
-                
+                    .toList();
+
                 return new FilePatch(filePath, changes);
             })
-            .collect(Collectors.toList());
+            .toList();
     }
-    
+
     /**
-     * Check if all changes are insert_after operations on consecutive line numbers
+     * Returns true if all changes are insert_after operations on consecutive line numbers.
      */
     private boolean isConsecutiveInsertAfter(List<LineChange> changes) {
-        if (changes.isEmpty()) {
-            return false;
+        if (changes.isEmpty()) return false;
+
+        List<Integer> lineNumbers = new ArrayList<>();
+        for (LineChange c : changes) {
+            if (!"insert_after".equalsIgnoreCase(c.action)) return false;
+            lineNumbers.add(c.lineNumber);
         }
-        
-        // Check if all are insert_after
-        boolean allInsertAfter = changes.stream()
-            .allMatch(c -> "insert_after".equalsIgnoreCase(c.action));
-        
-        if (!allInsertAfter) {
-            return false;
-        }
-        
-        // Check if line numbers are consecutive
-        List<Integer> lineNumbers = changes.stream()
-            .map(c -> c.lineNumber)
-            .sorted()
-            .toList();
-        
+        lineNumbers.sort(null);
         for (int i = 1; i < lineNumbers.size(); i++) {
-            if (lineNumbers.get(i) != lineNumbers.get(i - 1) + 1) {
-                return false;
-            }
+            if (lineNumbers.get(i) != lineNumbers.get(i - 1) + 1) return false;
         }
-        
         return true;
     }
     

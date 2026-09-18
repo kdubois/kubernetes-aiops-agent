@@ -17,9 +17,9 @@ import jakarta.inject.Inject;
 
 import java.util.List;
 
-import dev.kevindubois.rollout.agent.model.AnalysisResult;
-import dev.kevindubois.rollout.agent.service.ActivityEvents;
-import dev.kevindubois.rollout.agent.service.AnalysisService;
+import dev.kevindubois.rollout.agent.analysis.AnalysisResult;
+import dev.kevindubois.rollout.agent.observability.ActivityEvents;
+import dev.kevindubois.rollout.agent.analysis.AnalysisService;
 
 /**
  * A2A protocol bridge. Extracts message content and metadata, delegates to

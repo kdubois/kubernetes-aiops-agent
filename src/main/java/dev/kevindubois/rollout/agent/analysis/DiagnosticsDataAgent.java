@@ -1,0 +1,65 @@
+package dev.kevindubois.rollout.agent.analysis;
+
+import dev.kevindubois.rollout.agent.k8s.K8sTools;
+import dev.kevindubois.rollout.agent.k8s.PodDataResult;
+import dev.langchain4j.agentic.Agent;
+import io.quarkus.arc.Arc;
+import io.quarkus.logging.Log;
+
+import java.util.Map;
+
+/**
+ * Non-AI agent that fetches pod diagnostic data (status + logs) for stable and canary pods.
+ * Calls K8sTools directly — no LLM involved.
+ */
+public class DiagnosticsDataAgent {
+
+    @Agent(description = "Fetches pod info and logs for stable and canary pods", outputKey = "diagnosticReport")
+    public static String gatherDiagnostics(String message, String namespace) {
+        Log.info("DiagnosticsDataAgent: fetching pod diagnostics (non-AI agent)");
+
+        K8sTools k8sTools = Arc.container().instance(K8sTools.class).get();
+
+        PodDataResult diagnostics = k8sTools.getCanaryDiagnostics(namespace, null, 200);
+
+        String report = formatReport(diagnostics);
+        Log.infof("DiagnosticsDataAgent: report generated (%d chars)", report.length());
+        return report;
+    }
+
+    private static String formatReport(PodDataResult diagnostics) {
+        if (diagnostics.hasError()) {
+            return "=== LOG DIAGNOSTIC REPORT ===\nERROR: " + diagnostics.error() + "\n=== END ===";
+        }
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("=== LOG DIAGNOSTIC REPORT ===\n");
+
+        formatPodSection(sb, "STABLE", diagnostics.stable());
+        formatPodSection(sb, "CANARY", diagnostics.canary());
+
+        sb.append("=== END ===");
+        return sb.toString();
+    }
+
+    private static void formatPodSection(StringBuilder sb, String label, Map<String, Object> podData) {
+        if (podData == null || podData.containsKey("error")) {
+            sb.append(label).append(" POD: ").append(podData != null ? podData.get("error") : "No data").append("\n");
+            return;
+        }
+
+        sb.append(label).append(" POD: ")
+            .append(podData.getOrDefault("podName", "unknown"))
+            .append(" - ").append(podData.getOrDefault("phase", "unknown"))
+            .append(" - Ready: ").append(podData.getOrDefault("readyContainers", "unknown"))
+            .append("\n");
+
+        Object logs = podData.get("logs");
+        if (logs != null) {
+            sb.append(label).append(" LOGS:\n").append(logs).append("\n");
+        } else {
+            Object logsError = podData.get("logsError");
+            sb.append(label).append(" LOGS: ").append(logsError != null ? logsError : "No logs available").append("\n");
+        }
+    }
+}

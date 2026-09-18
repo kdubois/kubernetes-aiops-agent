@@ -1,6 +1,6 @@
 package dev.kevindubois.rollout.agent.remediation;
 
-import dev.kevindubois.rollout.agent.model.SourceReadResult;
+import dev.kevindubois.rollout.agent.remediation.SourceReadResult;
 import io.quarkus.test.InjectMock;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.junit.mockito.MockitoConfig;

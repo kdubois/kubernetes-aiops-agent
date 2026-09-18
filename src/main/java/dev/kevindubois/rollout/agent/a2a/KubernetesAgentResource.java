@@ -10,11 +10,9 @@ import jakarta.ws.rs.core.Response.Status;
 import java.util.Map;
 import java.util.concurrent.TimeoutException;
 
-import dev.kevindubois.rollout.agent.model.AnalysisResult;
-import dev.kevindubois.rollout.agent.model.KubernetesAgentRequest;
-import dev.kevindubois.rollout.agent.model.KubernetesAgentResponse;
-import dev.kevindubois.rollout.agent.service.ActivityEvents;
-import dev.kevindubois.rollout.agent.service.AnalysisService;
+import dev.kevindubois.rollout.agent.analysis.AnalysisResult;
+import dev.kevindubois.rollout.agent.observability.ActivityEvents;
+import dev.kevindubois.rollout.agent.analysis.AnalysisService;
 import dev.langchain4j.service.output.OutputParsingException;
 
 /**
