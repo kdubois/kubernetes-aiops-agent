@@ -50,7 +50,6 @@ src/main/java/dev/kevindubois/rollout/agent/
   utils/
     GitHubUtils.java                # Shared owner/repo parsing and auth header formatting
     TextUtils.java                  # Shared text utilities (truncate, isValidGitHubArtifactUrl)
-    RetryHelper.java                # Generic retry wrapper for transient failures
 deployment/
   deployment.yaml                   # K8s Deployment (512Mi–2Gi memory), probes: /q/health
   rbac.yaml                         # ClusterRole: read pods/logs/events/rollouts; exec pods
@@ -83,8 +82,7 @@ In production, credentials come from the `kubernetes-agent` Kubernetes Secret (K
 ### Agent Pattern
 
 ```java
-@Agent
-@RegisterAiService
+@Agent(outputKey = "result", description = "...")
 public interface MyAgent {
     @SystemMessage("You are a specialized agent for [task]. Guidelines: ...")
     String execute(String input);
