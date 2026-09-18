@@ -46,10 +46,10 @@ src/main/java/dev/kevindubois/rollout/agent/
     GitOperations.java              # JGit: clone, branch, commit, push
     GitHubRestClient.java           # MicroProfile REST client for GitHub API
     RepoCloneCache.java             # Caches cloned repos to avoid repeated clones
-  model/                            # Records: AnalysisResult, RemediationResult, KubernetesAgentRequest/Response
+  model/                            # Records: AnalysisResult, RemediationResult, IssueCategory, PrContent, SourceReadResult, KubernetesAgentRequest/Response
   utils/
     GitHubUtils.java                # Shared owner/repo parsing and auth header formatting
-    TextUtils.java                  # Shared text utilities (extractNamespace, extractSummary, truncate)
+    TextUtils.java                  # Shared text utilities (truncate, isValidGitHubArtifactUrl)
     RetryHelper.java                # Generic retry wrapper for transient failures
 deployment/
   deployment.yaml                   # K8s Deployment (512Mi–2Gi memory), probes: /q/health
