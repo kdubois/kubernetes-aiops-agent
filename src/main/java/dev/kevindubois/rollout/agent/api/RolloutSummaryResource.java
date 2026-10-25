@@ -59,10 +59,6 @@ public class RolloutSummaryResource {
             boolean available,
             String error
     ) {
-        public static RolloutSummary notFound(String namespace, String name) {
-            return new RolloutSummary(namespace, name, "NotFound", 0, 100, 0, 0, false, "Rollout not found");
-        }
-
         public static RolloutSummary error(String namespace, String name, String error) {
             return new RolloutSummary(namespace, name, "Error", 0, 100, 0, 0, false, error);
         }
