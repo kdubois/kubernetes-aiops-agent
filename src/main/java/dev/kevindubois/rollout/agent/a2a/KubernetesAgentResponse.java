@@ -24,7 +24,6 @@ import java.util.Objects;
  * @param prLink GitHub pull request link if automated fix was created (nullable)
  * @param promote Whether to promote the canary deployment
  * @param confidence Confidence score between 0 and 100 (inclusive)
- * @param pausedRollout Rollout name paused for human review by the uncertainty gate (nullable)
  */
 public record KubernetesAgentResponse(
     String analysis,
@@ -36,16 +35,8 @@ public record KubernetesAgentResponse(
     String pausedRollout
 ) {
     /**
-     * Compatibility constructor without a pause.
-     */
-    public KubernetesAgentResponse(String analysis, String rootCause, String remediation,
-            String prLink, boolean promote, int confidence) {
-        this(analysis, rootCause, remediation, prLink, promote, confidence, null);
-    }
-
-    /**
      * Compact canonical constructor with validation.
-     *
+     * 
      * @throws IllegalArgumentException if confidence is not in range [0, 100]
      * @throws NullPointerException if any required field (except prLink and pausedRollout) is null
      */
@@ -54,14 +45,14 @@ public record KubernetesAgentResponse(
         Objects.requireNonNull(analysis, "analysis cannot be null");
         Objects.requireNonNull(rootCause, "rootCause cannot be null");
         Objects.requireNonNull(remediation, "remediation cannot be null");
-
+        
         // Validate confidence range
         if (confidence < 0 || confidence > 100) {
             throw new IllegalArgumentException(
                 "confidence must be between 0 and 100, got: " + confidence
             );
         }
-
+        
         // Normalize empty strings to prevent inconsistencies
         analysis = analysis.trim();
         rootCause = rootCause.trim();
@@ -79,11 +70,11 @@ public record KubernetesAgentResponse(
             }
         }
     }
-
+    
     /**
      * Creates a default response with empty values.
      * Useful as a starting point for builder-style construction.
-     *
+     * 
      * @return A new response with empty strings and default values
      */
     public static KubernetesAgentResponse empty() {
@@ -104,7 +95,8 @@ public record KubernetesAgentResponse(
             this.remediation, 
             this.prLink, 
             this.promote, 
-            this.confidence
+            this.confidence, 
+            this.pausedRollout
         );
     }
     
@@ -122,7 +114,8 @@ public record KubernetesAgentResponse(
             this.remediation, 
             this.prLink, 
             this.promote, 
-            this.confidence
+            this.confidence, 
+            this.pausedRollout
         );
     }
     
@@ -140,7 +133,8 @@ public record KubernetesAgentResponse(
             remediation, 
             this.prLink, 
             this.promote, 
-            this.confidence
+            this.confidence, 
+            this.pausedRollout
         );
     }
     
@@ -157,7 +151,8 @@ public record KubernetesAgentResponse(
             this.remediation, 
             prLink, 
             this.promote, 
-            this.confidence
+            this.confidence, 
+            this.pausedRollout
         );
     }
     
@@ -174,7 +169,8 @@ public record KubernetesAgentResponse(
             this.remediation, 
             this.prLink, 
             promote, 
-            this.confidence
+            this.confidence, 
+            this.pausedRollout
         );
     }
     
@@ -192,7 +188,8 @@ public record KubernetesAgentResponse(
             this.remediation, 
             this.prLink, 
             this.promote, 
-            confidence
+            confidence, 
+            this.pausedRollout
         );
     }
     

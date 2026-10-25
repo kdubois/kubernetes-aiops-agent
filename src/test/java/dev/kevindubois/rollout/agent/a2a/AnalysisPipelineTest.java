@@ -81,7 +81,7 @@ class AnalysisPipelineTest {
         assertThat(response.promote()).isTrue();
         assertThat(response.confidence()).isGreaterThanOrEqualTo(80);
         assertThat(response.pausedRollout()).isNull();
-        verify(k8sTools, never()).pauseRollout(any());
+        verify(k8sTools, never()).pauseRollout(any(), any());
     }
 
     @Test
@@ -89,14 +89,14 @@ class AnalysisPipelineTest {
     void lowConfidencePromoteWithPauseGate_shouldPauseRollout() {
         stubK8s(healthyDiagnostics(), healthyMetrics());
         stubLlm(LOW_CONFIDENCE_PROMOTE, ACCEPT_SCORING);
-        when(k8sTools.pauseRollout(NAMESPACE)).thenReturn("quarkus-demo");
+        when(k8sTools.pauseRollout(NAMESPACE, null)).thenReturn("quarkus-demo");
 
         var response = postAnalyzeWithPauseGate(NAMESPACE, 70);
 
         assertThat(response.promote()).isTrue();
         assertThat(response.confidence()).isEqualTo(55);
         assertThat(response.pausedRollout()).isEqualTo("quarkus-demo");
-        verify(k8sTools).pauseRollout(NAMESPACE);
+        verify(k8sTools).pauseRollout(NAMESPACE, null);
     }
 
     @Test
@@ -109,7 +109,7 @@ class AnalysisPipelineTest {
 
         assertThat(response.promote()).isTrue();
         assertThat(response.pausedRollout()).isNull();
-        verify(k8sTools, never()).pauseRollout(any());
+        verify(k8sTools, never()).pauseRollout(any(), any());
     }
 
     @Test

@@ -38,24 +38,25 @@ public class AnalysisService {
     /**
      * Execute the full analysis pipeline: workflow + uncertainty gate + events + remediation trigger.
      *
-     * @param memoryId   conversation/session ID for the agent memory
-     * @param prompt     assembled prompt including context
-     * @param namespace  Kubernetes namespace to analyze
-     * @param repoUrl    repository URL for remediation (nullable)
-     * @param baseBranch target branch for PRs (defaults to "main")
-     * @param pauseGate  opt-in promotion pause gate
+     * @param memoryId    conversation/session ID for the agent memory
+     * @param prompt      assembled prompt including context
+     * @param namespace   Kubernetes namespace to analyze
+     * @param rolloutName rollout to pause when the gate fires (nullable — first rollout in the namespace)
+     * @param repoUrl     repository URL for remediation (nullable)
+     * @param baseBranch  target branch for PRs (defaults to "main")
+     * @param pauseGate   opt-in promotion pause gate (nullable — treated as disabled)
      * @return the analysis result and the rollout paused by the gate, if any
      */
     @Retry(maxRetries = 3, delay = 1, delayUnit = ChronoUnit.SECONDS,
            retryOn = RetriableException.class, abortOn = NonRetriableException.class)
     @ExponentialBackoff(factor = 2, maxDelay = 60, maxDelayUnit = ChronoUnit.SECONDS)
-    public AnalysisOutcome analyze(String memoryId, String prompt, String namespace,
+    public AnalysisOutcome analyze(String memoryId, String prompt, String namespace, String rolloutName,
                                    String repoUrl, String baseBranch, PauseGate pauseGate) throws Exception {
         AnalysisResult result = analysisOrchestratorAgent.execute(memoryId, prompt, namespace);
 
         activityEvents.analysisCompleted(result);
 
-        String pausedRollout = pauseIfNeeded(pauseGate, result, namespace);
+        String pausedRollout = pauseIfNeeded(pauseGate, result, namespace, rolloutName);
 
         remediationOrchestrator.triggerIfNeeded(result, prompt, repoUrl, baseBranch);
 
@@ -66,16 +67,22 @@ public class AnalysisService {
     /**
      * Pauses the rollout when the gate requests it. The measurement itself stays
      * successful: the pause, not an abort, is what holds the rollout for review.
+     * An already-paused rollout is not re-patched; a rollout a human unpaused is
+     * paused again while the analysis is still below the threshold.
      */
-    private String pauseIfNeeded(PauseGate pauseGate, AnalysisResult result, String namespace) {
+    private String pauseIfNeeded(PauseGate pauseGate, AnalysisResult result, String namespace, String rolloutName) {
+        if (pauseGate == null) {
+            pauseGate = PauseGate.DISABLED;
+        }
         if (!pauseGate.shouldPause(result)) {
             return null;
         }
         Log.infof("Uncertainty gate: confidence %d below threshold %d, pausing rollout for review",
                 result.confidence(), pauseGate.threshold());
-        String rollout = k8sTools.pauseRollout(namespace);
+        String rollout = k8sTools.pauseRollout(namespace, rolloutName);
         if (rollout == null) {
             Log.warnf("Uncertainty gate requested a pause but no rollout was paused in namespace %s", namespace);
+            activityEvents.pauseFailed("namespace=" + namespace + ", confidence=" + result.confidence());
         }
         return rollout;
     }

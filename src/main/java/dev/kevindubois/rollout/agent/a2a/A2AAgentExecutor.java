@@ -17,11 +17,11 @@ import jakarta.inject.Inject;
 
 import java.util.List;
 
-import dev.kevindubois.rollout.agent.analysis.AnalysisResult;
 import dev.kevindubois.rollout.agent.analysis.AnalysisOutcome;
+import dev.kevindubois.rollout.agent.analysis.AnalysisResult;
+import dev.kevindubois.rollout.agent.analysis.AnalysisService;
 import dev.kevindubois.rollout.agent.analysis.PauseGate;
 import dev.kevindubois.rollout.agent.observability.ActivityEvents;
-import dev.kevindubois.rollout.agent.analysis.AnalysisService;
 
 /**
  * A2A protocol bridge. Extracts message content and metadata, delegates to
@@ -56,11 +56,12 @@ public class A2AAgentExecutor {
                     String repoUrl = extractMetadataValue(context.getMessage(), "repoUrl");
                     String baseBranch = extractMetadataValue(context.getMessage(), "baseBranch", "main");
                     String namespace = extractMetadataValue(context.getMessage(), "namespace", "default");
+                    String rolloutName = extractMetadataValue(context.getMessage(), "rolloutName");
                     PauseGate pauseGate = PauseGate.fromMap(
                             context.getMessage() != null ? context.getMessage().getMetadata() : null);
 
                     AnalysisOutcome outcome = analysisService.analyze(
-                            memoryId, messageContent, namespace, repoUrl, baseBranch, pauseGate);
+                            memoryId, messageContent, namespace, rolloutName, repoUrl, baseBranch, pauseGate);
 
                     String response = formatAnalysisResult(outcome);
                     updater.addArtifact(List.of(new TextPart(response, null)), null, null, null);

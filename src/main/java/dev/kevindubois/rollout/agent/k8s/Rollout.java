@@ -9,5 +9,5 @@ import io.fabric8.kubernetes.model.annotation.Version;
 @Group("argoproj.io")
 @Version("v1alpha1")
 @Kind("Rollout")
-public class Rollout extends CustomResource<Void, RolloutStatus> implements Namespaced {
+public class Rollout extends CustomResource<RolloutSpec, RolloutStatus> implements Namespaced {
 }
