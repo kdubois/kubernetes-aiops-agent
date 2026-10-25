@@ -9,7 +9,7 @@ An autonomous AI agent for Kubernetes software delivery debugging and remediatio
 The Kubernetes Agent is an intelligent system that:
 
 - **Debugs** Kubernetes pods automatically
-- **Analyzes** logs, events, and metrics
+- **Analyzes** logs, metrics, events, and rollout status
 - **Identifies** root causes of issues
 - **Creates** GitHub pull requests with fixes
 - **Integrates** with Argo Rollouts for canary analysis
@@ -95,20 +95,23 @@ flowchart LR
         direction TB
         B1[DiagnosticsDataAgent]:::diagnostic
         B2[MetricsDataAgent]:::diagnostic
+        B3[RolloutStatusDataAgent]:::diagnostic
         
         subgraph K8S[K8s Data Sources]
             direction LR
             K1[Canary Pods]:::canary
             K2[Stable Pods]:::stable
+            K3[Rollout CR]:::stable
         end
         
         B1 --> K1
         B1 --> K2
         B2 --> K1
         B2 --> K2
+        B3 --> K3
     end
 
-    B --> C[DataCombinerAgent<br/>merge canary + stable data]:::combiner
+    B --> C[DataCombinerAgent<br/>merge logs, rollout status, and metrics]:::combiner
     C --> D[AnalysisAgent<br/>AI evaluation]:::analysis
     D --> E[ScoringAgent<br/>quality check]:::scoring
 
@@ -457,6 +460,7 @@ kubernetes-agent/
 │   ├── agents/                       # Agent interfaces
 │   │   ├── DiagnosticsDataAgent.java # Pod diagnostics and logs gathering
 │   │   ├── MetricsDataAgent.java    # Metrics gathering
+│   │   ├── RolloutStatusDataAgent.java # Rollout phase, step, and traffic weights
 │   │   ├── DataCombinerAgent.java   # Combine data sources
 │   │   ├── AnalysisAgent.java       # Analysis logic
 │   │   ├── ScoringAgent.java        # Quality scoring

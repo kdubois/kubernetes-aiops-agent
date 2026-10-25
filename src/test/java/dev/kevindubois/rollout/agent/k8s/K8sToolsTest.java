@@ -159,6 +159,105 @@ class K8sToolsTest {
     }
 
     @Test
+    void testGetRolloutStatus_Success() {
+        String namespace = "default";
+        mockRollouts(namespace, K8sTestFixtures.createTestRollout(
+                "demo-rollout", namespace, "Progressing", 2, 30));
+        mockPods(namespace, 2, 3);
+
+        RolloutStatusData result = k8sTools.getRolloutStatus(namespace, null);
+
+        assertFalse(result.hasError());
+        assertEquals("demo-rollout", result.rolloutName());
+        assertEquals("Progressing", result.phase());
+        assertEquals(2, result.currentStepIndex());
+        assertEquals(30, result.canaryWeight());
+        assertEquals(70, result.stableWeight());
+        assertEquals(2, result.stablePodCount());
+        assertEquals(3, result.canaryPodCount());
+    }
+
+    @Test
+    void testGetRolloutStatus_FallbackStepWeights() {
+        String namespace = "default";
+        // No live weights reported: canaryWeight -1 makes the fixture omit them
+        mockRollouts(namespace, K8sTestFixtures.createTestRollout(
+                "demo-rollout", namespace, "Progressing", 4, -1));
+        mockPods(namespace, 1, 1);
+
+        RolloutStatusData result = k8sTools.getRolloutStatus(namespace, null);
+
+        assertFalse(result.hasError());
+        assertEquals(60, result.canaryWeight());
+        assertEquals(40, result.stableWeight());
+    }
+
+    @Test
+    void testGetRolloutStatus_DegradedZeroCanaryWeight() {
+        String namespace = "default";
+        mockRollouts(namespace, K8sTestFixtures.createTestRollout(
+                "demo-rollout", namespace, "Degraded", 2, 60));
+        mockPods(namespace, 1, 1);
+
+        RolloutStatusData result = k8sTools.getRolloutStatus(namespace, null);
+
+        assertFalse(result.hasError());
+        assertEquals(0, result.canaryWeight());
+    }
+
+    @Test
+    void testGetRolloutStatus_NoRollouts() {
+        String namespace = "default";
+        mockRollouts(namespace, null);
+        mockPods(namespace, 0, 0);
+
+        RolloutStatusData result = k8sTools.getRolloutStatus(namespace, null);
+
+        assertTrue(result.hasError());
+        assertTrue(result.error().contains("No Rollout found"));
+    }
+
+    @Test
+    void testGetRolloutStatus_EmptyNamespace() {
+        RolloutStatusData result = k8sTools.getRolloutStatus("", null);
+        assertNotNull(result);
+        assertTrue(result.hasError());
+        assertTrue(result.error().contains("required"));
+    }
+
+    @SuppressWarnings("unchecked")
+    private void mockRollouts(String namespace, Rollout rollout) {
+        MixedOperation<Rollout, KubernetesResourceList<Rollout>, Resource<Rollout>> rolloutOp = mock(MixedOperation.class);
+        NonNamespaceOperation<Rollout, KubernetesResourceList<Rollout>, Resource<Rollout>> rolloutNsOp =
+                mock(NonNamespaceOperation.class);
+        when(k8sClient.resources(Rollout.class)).thenReturn(rolloutOp);
+        when(rolloutOp.inNamespace(namespace)).thenReturn(rolloutNsOp);
+
+        KubernetesResourceList<Rollout> rolloutList = mock(KubernetesResourceList.class);
+        when(rolloutNsOp.list()).thenReturn(rolloutList);
+        when(rolloutList.getItems()).thenReturn(rollout != null ? List.of(rollout) : List.of());
+    }
+
+    private void mockPods(String namespace, int stableCount, int canaryCount) {
+        PodList stablePodList = new PodList();
+        for (int i = 0; i < stableCount; i++) {
+            stablePodList.getItems().add(K8sTestFixtures.createTestPod("stable-" + i, namespace));
+        }
+        PodList canaryPodList = new PodList();
+        for (int i = 0; i < canaryCount; i++) {
+            canaryPodList.getItems().add(K8sTestFixtures.createTestPod("canary-" + i, namespace));
+        }
+
+        FilterWatchListDeletable<Pod, PodList, PodResource> stableLabelOp = mock(FilterWatchListDeletable.class);
+        FilterWatchListDeletable<Pod, PodList, PodResource> canaryLabelOp = mock(FilterWatchListDeletable.class);
+
+        when(nsOp.withLabels(Map.of("role", "stable"))).thenReturn(stableLabelOp);
+        when(stableLabelOp.list()).thenReturn(stablePodList);
+        when(nsOp.withLabels(Map.of("role", "canary"))).thenReturn(canaryLabelOp);
+        when(canaryLabelOp.list()).thenReturn(canaryPodList);
+    }
+
+    @Test
     void testGetCanaryDiagnostics_DefaultTailLines() {
         String namespace = "default";
         Pod stablePod = K8sTestFixtures.createTestPod("stable-pod", namespace);
