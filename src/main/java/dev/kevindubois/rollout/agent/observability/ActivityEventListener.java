@@ -29,6 +29,7 @@ public class ActivityEventListener implements AgentListener {
         String message = switch (name) {
             case "AnalysisDataAgent" -> "Fetching rollout data";
             case "DiagnosticsDataAgent" -> "Gathering pod logs";
+            case "RolloutStatusDataAgent" -> "Reading rollout status";
             case "MetricsDataAgent" -> "Collecting pod metrics";
             case "DataCombinerAgent" -> "Preparing diagnostic report";
             case "AnalysisLoop" -> "Starting AI analysis loop";

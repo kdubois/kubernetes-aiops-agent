@@ -225,13 +225,67 @@ class K8sToolsTest {
         assertTrue(result.error().contains("required"));
     }
 
+    @Test
+    void testGetRolloutStatus_ByName() {
+        String namespace = "default";
+        Rollout rollout = K8sTestFixtures.createTestRollout("demo-rollout", namespace, "Progressing", 2, 30);
+        Resource<Rollout> namedResource = mock(Resource.class);
+        when(rolloutNsOpFor(namespace).withName("demo-rollout")).thenReturn(namedResource);
+        when(namedResource.get()).thenReturn(rollout);
+        mockPods(namespace, 1, 1);
+
+        RolloutStatusData result = k8sTools.getRolloutStatus(namespace, "demo-rollout");
+
+        assertFalse(result.hasError());
+        assertEquals("demo-rollout", result.rolloutName());
+        assertEquals(30, result.canaryWeight());
+    }
+
+    @Test
+    void testGetRolloutStatus_ByNameNotFound() {
+        String namespace = "default";
+        Resource<Rollout> namedResource = mock(Resource.class);
+        when(rolloutNsOpFor(namespace).withName("missing-rollout")).thenReturn(namedResource);
+        when(namedResource.get()).thenReturn(null);
+
+        RolloutStatusData result = k8sTools.getRolloutStatus(namespace, "missing-rollout");
+
+        assertTrue(result.hasError());
+        assertTrue(result.error().contains("missing-rollout"));
+        assertTrue(result.error().contains(namespace));
+    }
+
+    @Test
+    void testGetRolloutStatus_HealthyConvergedZeroCanaryWeight() {
+        String namespace = "default";
+        Rollout rollout = K8sTestFixtures.createTestRollout("demo-rollout", namespace, "Healthy", 6, 60);
+        // A finished rollout reports the same replica-set hash for stable and canary
+        rollout.getStatus().setCanaryRS(rollout.getStatus().getStableRS());
+        mockRollouts(namespace, rollout);
+        mockPods(namespace, 2, 2);
+
+        RolloutStatusData result = k8sTools.getRolloutStatus(namespace, null);
+
+        assertFalse(result.hasError());
+        assertEquals("Healthy", result.phase());
+        assertEquals(0, result.canaryWeight());
+        assertEquals(100, result.stableWeight());
+    }
+
     @SuppressWarnings("unchecked")
-    private void mockRollouts(String namespace, Rollout rollout) {
+    private NonNamespaceOperation<Rollout, KubernetesResourceList<Rollout>, Resource<Rollout>> rolloutNsOpFor(String namespace) {
         MixedOperation<Rollout, KubernetesResourceList<Rollout>, Resource<Rollout>> rolloutOp = mock(MixedOperation.class);
         NonNamespaceOperation<Rollout, KubernetesResourceList<Rollout>, Resource<Rollout>> rolloutNsOp =
                 mock(NonNamespaceOperation.class);
         when(k8sClient.resources(Rollout.class)).thenReturn(rolloutOp);
         when(rolloutOp.inNamespace(namespace)).thenReturn(rolloutNsOp);
+        return rolloutNsOp;
+    }
+
+    @SuppressWarnings("unchecked")
+    private void mockRollouts(String namespace, Rollout rollout) {
+        NonNamespaceOperation<Rollout, KubernetesResourceList<Rollout>, Resource<Rollout>> rolloutNsOp =
+                rolloutNsOpFor(namespace);
 
         KubernetesResourceList<Rollout> rolloutList = mock(KubernetesResourceList.class);
         when(rolloutNsOp.list()).thenReturn(rolloutList);

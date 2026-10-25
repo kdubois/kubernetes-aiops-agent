@@ -101,7 +101,7 @@ flowchart LR
             direction LR
             K1[Canary Pods]:::canary
             K2[Stable Pods]:::stable
-            K3[Rollout CR]:::stable
+            K3[Rollout CR]:::data
         end
         
         B1 --> K1
@@ -457,24 +457,26 @@ kubectl logs deployment/kubernetes-agent -n openshift-gitops | grep -i "git\|git
 ```
 kubernetes-agent/
 ├── src/main/java/dev/kevindubois/rollout/agent/
-│   ├── agents/                       # Agent interfaces
-│   │   ├── DiagnosticsDataAgent.java # Pod diagnostics and logs gathering
-│   │   ├── MetricsDataAgent.java    # Metrics gathering
-│   │   ├── RolloutStatusDataAgent.java # Rollout phase, step, and traffic weights
-│   │   ├── DataCombinerAgent.java   # Combine data sources
-│   │   ├── AnalysisAgent.java       # Analysis logic
-│   │   ├── ScoringAgent.java        # Quality scoring
-│   │   └── RemediationAgent.java    # PR creation
-│   ├── workflow/                     # Workflow orchestration
-│   │   ├── KubernetesWorkflow.java  # Main workflow
-│   │   ├── ParallelDataWorkflow.java # Parallel data gathering
-│   │   └── AnalysisLoop.java        # Retry loop
-│   ├── k8s/                          # Kubernetes tools
-│   │   └── K8sTools.java            # K8s debugging tools
 │   ├── a2a/                          # A2A REST API
 │   │   ├── KubernetesAgentResource.java
 │   │   └── A2AAgentExecutor.java
-│   ├── model/                        # Data models
+│   ├── analysis/                     # Analysis pipeline
+│   │   ├── AnalysisOrchestratorAgent.java # Main workflow (@SequenceAgent)
+│   │   ├── AnalysisService.java      # Shared analysis entry point (REST + A2A)
+│   │   ├── AnalysisDataAgent.java    # Parallel data gathering (@ParallelAgent)
+│   │   ├── DiagnosticsDataAgent.java # Pod diagnostics and logs gathering
+│   │   ├── RolloutStatusDataAgent.java # Rollout phase, step, and traffic weights
+│   │   ├── MetricsDataAgent.java     # Metrics gathering
+│   │   ├── DataCombinerAgent.java    # Combine data sources
+│   │   ├── AnalysisLoop.java         # Analysis retry loop (@LoopAgent)
+│   │   ├── AnalysisAgent.java        # AI analysis and promote/rollback decision
+│   │   └── ScoringAgent.java         # Quality scoring
+│   ├── api/
+│   │   └── RolloutSummaryResource.java # Rollout summary REST endpoint
+│   ├── k8s/                          # Kubernetes tools and Rollout CR models
+│   │   └── K8sTools.java             # K8s data gathering tools
+│   ├── observability/                # Activity events for the demo UI
+│   ├── remediation/                  # PR/issue creation, Git and GitHub clients
 │   └── utils/                        # Utilities
 ├── deployment/                       # Kubernetes manifests
 │   ├── deployment.yaml

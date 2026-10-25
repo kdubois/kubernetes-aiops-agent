@@ -48,6 +48,9 @@ public class K8sTools {
         try {
             Rollout rollout = findRollout(namespace, rolloutName);
             if (rollout == null) {
+                if (rolloutName != null && !rolloutName.isBlank()) {
+                    return RolloutStatusData.error("Rollout '" + rolloutName + "' not found in namespace " + namespace);
+                }
                 return RolloutStatusData.error("No Rollout found in namespace " + namespace);
             }
 

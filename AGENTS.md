@@ -21,32 +21,35 @@ src/main/java/dev/kevindubois/rollout/agent/
   a2a/
     KubernetesAgentResource.java    # REST endpoint: POST /a2a/analyze
     A2AAgentExecutor.java           # A2A protocol executor
-  service/
+  analysis/
+    AnalysisOrchestratorAgent.java  # Top-level orchestrator (@SequenceAgent)
     AnalysisService.java            # Shared analysis entry point (REST + A2A)
-    RemediationOrchestrator.java    # Triggers remediation (PR or issue) after rollback
-    SourceCodePrefetcher.java       # Prefetches source code for remediation context
-    ActivityEvents.java             # Semantic activity event publisher
-  workflow/
-    KubernetesWorkflow.java         # Top-level orchestrator (@SequenceAgent)
-    ParallelDataWorkflow.java       # DiagnosticsDataAgent ∥ MetricsDataAgent (@ParallelAgent)
-    AnalysisLoop.java               # AnalysisAgent → ScoringAgent, up to 3 iterations (@LoopAgent)
-    RemediationLoop.java            # Async remediation orchestration
-  agents/
+    AnalysisDataAgent.java          # DiagnosticsDataAgent ∥ RolloutStatusDataAgent ∥ MetricsDataAgent (@ParallelAgent)
     DiagnosticsDataAgent.java       # Non-AI: pod logs, resource state
+    RolloutStatusDataAgent.java     # Non-AI: rollout phase, step, traffic weights
     MetricsDataAgent.java           # Non-AI: /q/metrics scraping
-    DataCombinerAgent.java          # Non-AI: merges diagnostics + metrics into single report
+    DataCombinerAgent.java          # Non-AI: merges diagnostics, rollout status, and metrics into single report
+    AnalysisLoop.java               # AnalysisAgent → ScoringAgent, up to 3 iterations (@LoopAgent)
     AnalysisAgent.java              # AI: decide promote/rollback, write analysis + rootCause
     ScoringAgent.java               # AI: quality-check AnalysisResult; request retry if needed
-    RemediationAgent.java           # AI: open GitHub PR (code bug) or GitHub issue (ops issue)
+  api/
+    RolloutSummaryResource.java     # REST endpoint: GET /a2a/rollout/summary
   k8s/
-    K8sTools.java                   # getCanaryDiagnostics, getCanaryMetrics (structured concurrency)
+    K8sTools.java                   # getCanaryDiagnostics, getCanaryMetrics, getRolloutStatus (structured concurrency)
+    RolloutStatusData.java          # Record: rollout phase, step, weights, pod counts
+  observability/
+    ActivityEventListener.java      # Publishes agent activity events for the demo UI
+    ActivityEventsResource.java     # REST endpoint: activity event stream
   remediation/
+    RemediationOrchestrator.java    # Triggers remediation (PR or issue) after rollback
+    RemediationLoop.java            # Async remediation orchestration
+    RemediationAgent.java           # AI: open GitHub PR (code bug) or GitHub issue (ops issue)
+    SourceCodePrefetcher.java       # Prefetches source code for remediation context
     SourceCodeTool.java             # Read source files from GitHub API (used by prefetcher)
     GitHubPatchPRTool.java          # Tool: create PR with line-based patches (strict validation)
     GitOperations.java              # JGit: clone, branch, commit, push
     GitHubRestClient.java           # MicroProfile REST client for GitHub API
     RepoCloneCache.java             # Caches cloned repos to avoid repeated clones
-  model/                            # Records: AnalysisResult, RemediationResult, IssueCategory, PrContent, SourceReadResult, KubernetesAgentRequest/Response
   utils/
     GitHubUtils.java                # Shared owner/repo parsing and auth header formatting
     TextUtils.java                  # Shared text utilities (truncate, isValidGitHubArtifactUrl)
@@ -124,8 +127,8 @@ mvn test -Dtest=K8sToolsTest
 
 The analysis request from the plugin triggers this sequence:
 
-1. `ParallelDataWorkflow` — `DiagnosticsDataAgent` and `MetricsDataAgent` run concurrently using only Kubernetes tools (no LLM).
-2. `DataCombinerAgent` — merges the two reports into a single `diagnosticData` string.
+1. `AnalysisDataAgent` — `DiagnosticsDataAgent`, `RolloutStatusDataAgent`, and `MetricsDataAgent` run concurrently using only Kubernetes tools (no LLM).
+2. `DataCombinerAgent` — merges the three reports into a single `diagnosticData` string.
 3. `AnalysisLoop` — `AnalysisAgent` → `ScoringAgent`; repeats until score is acceptable or 3 iterations are exhausted.
 4. Response returned synchronously to the plugin (`promote`, `confidence`, `analysis`, `rootCause`).
 5. If `promote=false` and `repoUrl` is set, `RemediationOrchestrator` runs asynchronously:
