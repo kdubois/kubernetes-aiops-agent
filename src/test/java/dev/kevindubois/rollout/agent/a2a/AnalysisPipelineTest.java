@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.tomakehurst.wiremock.stubbing.Scenario;
 import dev.kevindubois.rollout.agent.k8s.K8sTools;
+import dev.kevindubois.rollout.agent.k8s.RolloutStatusData;
 import dev.kevindubois.rollout.agent.a2a.KubernetesAgentResponse;
 import dev.kevindubois.rollout.agent.k8s.PodDataResult;
 import dev.kevindubois.rollout.agent.remediation.GitOperations;
@@ -197,6 +198,8 @@ class AnalysisPipelineTest {
     private void stubK8s(PodDataResult diagnostics, PodDataResult metrics) {
         when(k8sTools.getCanaryDiagnostics(NAMESPACE, null, 200)).thenReturn(diagnostics);
         when(k8sTools.getCanaryMetrics(NAMESPACE)).thenReturn(metrics);
+        when(k8sTools.getRolloutStatus(NAMESPACE, null)).thenReturn(new RolloutStatusData(
+                null, "demo-rollout", NAMESPACE, "Progressing", 2, 30, 70, 2, 3));
     }
 
     // ── WireMock stubs ─────────────────────────────────────────────────

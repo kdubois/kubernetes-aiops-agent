@@ -1,5 +1,10 @@
 package dev.kevindubois.rollout.agent.fixtures;
 
+import dev.kevindubois.rollout.agent.k8s.CanaryStatus;
+import dev.kevindubois.rollout.agent.k8s.CanaryWeights;
+import dev.kevindubois.rollout.agent.k8s.Rollout;
+import dev.kevindubois.rollout.agent.k8s.RolloutStatus;
+import dev.kevindubois.rollout.agent.k8s.TrafficWeight;
 import io.fabric8.kubernetes.api.model.*;
 import io.fabric8.kubernetes.api.model.metrics.v1beta1.ContainerMetrics;
 import io.fabric8.kubernetes.api.model.metrics.v1beta1.PodMetrics;
@@ -282,6 +287,36 @@ public class K8sTestFixtures {
             }
         }
         return logs.toString();
+    }
+
+    /**
+     * Creates a test Argo Rollouts resource with the given phase, step index, and canary weight.
+     * A negative canaryWeight omits the live weights so the step-index fallback applies.
+     */
+    public static Rollout createTestRollout(String name, String namespace, String phase,
+                                            Integer currentStepIndex, int canaryWeight) {
+        RolloutStatus status = new RolloutStatus();
+        status.setPhase(phase);
+        status.setCurrentStepIndex(currentStepIndex);
+        status.setStableRS("stable-hash-123");
+        status.setCanaryRS("canary-hash-456");
+        if (canaryWeight >= 0) {
+            TrafficWeight canary = new TrafficWeight();
+            canary.setWeight(canaryWeight);
+            TrafficWeight stable = new TrafficWeight();
+            stable.setWeight(100 - canaryWeight);
+            CanaryWeights weights = new CanaryWeights();
+            weights.setCanary(canary);
+            weights.setStable(stable);
+            CanaryStatus canaryStatus = new CanaryStatus();
+            canaryStatus.setWeights(weights);
+            status.setCanary(canaryStatus);
+        }
+
+        Rollout rollout = new Rollout();
+        rollout.setMetadata(new ObjectMetaBuilder().withName(name).withNamespace(namespace).build());
+        rollout.setStatus(status);
+        return rollout;
     }
 
     /**

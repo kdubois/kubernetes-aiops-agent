@@ -1,11 +1,8 @@
 package dev.kevindubois.rollout.agent.api;
 
-import dev.kevindubois.rollout.agent.k8s.CanaryWeights;
-import dev.kevindubois.rollout.agent.k8s.Rollout;
-import dev.kevindubois.rollout.agent.k8s.RolloutStatus;
-import io.fabric8.kubernetes.client.KubernetesClient;
+import dev.kevindubois.rollout.agent.k8s.K8sTools;
+import dev.kevindubois.rollout.agent.k8s.RolloutStatusData;
 import io.quarkus.logging.Log;
-import java.util.Optional;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
@@ -16,11 +13,8 @@ import jakarta.ws.rs.core.MediaType;
 @Path("/a2a/rollout")
 public class RolloutSummaryResource {
 
-    // Canary weight per step index fallback setting
-    private static final int[] STEP_WEIGHTS = {10, 10, 30, 30, 60, 60, 100};
-
     @Inject
-    KubernetesClient kubernetesClient;
+    K8sTools k8sTools;
 
     @GET
     @Path("/summary")
@@ -31,31 +25,20 @@ public class RolloutSummaryResource {
         String effectiveRolloutName = (rolloutName == null || rolloutName.isBlank()) ? "quarkus-demo" : rolloutName;
 
         try {
-            RolloutStatus status = Optional.ofNullable(kubernetesClient.resources(Rollout.class)
-                    .inNamespace(effectiveNamespace)
-                    .withName(effectiveRolloutName)
-                    .get())
-                    .map(Rollout::getStatus)
-                    .orElse(null);
+            RolloutStatusData status = k8sTools.getRolloutStatus(effectiveNamespace, effectiveRolloutName);
 
-            if (status == null) {
-                return RolloutSummary.notFound(effectiveNamespace, effectiveRolloutName);
+            if (status.hasError()) {
+                return RolloutSummary.error(effectiveNamespace, effectiveRolloutName, status.error());
             }
-
-            int canaryWeight = getCanaryWeight(status);
-            int stableWeight = 100 - canaryWeight;
-            long stablePodCount = countPods(effectiveNamespace, effectiveRolloutName, "stable");
-            long canaryPodCount = countPods(effectiveNamespace, effectiveRolloutName, "canary");
-            String phase = status.getPhase() != null ? status.getPhase() : "Unknown";
 
             return new RolloutSummary(
                     effectiveNamespace,
-                    effectiveRolloutName,
-                    phase,
-                    canaryWeight,
-                    stableWeight,
-                    stablePodCount,
-                    canaryPodCount,
+                    status.rolloutName(),
+                    status.phase(),
+                    status.canaryWeight(),
+                    status.stableWeight(),
+                    status.stablePodCount(),
+                    status.canaryPodCount(),
                     true,
                     null
             );
@@ -63,49 +46,6 @@ public class RolloutSummaryResource {
             Log.error("Failed to fetch rollout summary", e);
             return RolloutSummary.error(effectiveNamespace, effectiveRolloutName, e.getMessage());
         }
-    }
-
-    private long countPods(String namespace, String rolloutName, String role) {
-        return kubernetesClient.pods()
-                .inNamespace(namespace)
-                .withLabel("app", rolloutName)
-                .withLabel("role", role)
-                .list()
-                .getItems()
-                .stream()
-                .filter(p -> p.getMetadata() != null && p.getMetadata().getDeletionTimestamp() == null)
-                .count();
-    }
-
-    private int getCanaryWeight(RolloutStatus status) {
-        String phase = status.getPhase() != null ? status.getPhase() : "Unknown";
-
-        if ("Degraded".equals(phase) || "Aborted".equals(phase)) {
-            return 0;
-        }
-
-        // When a rollout finishes, stableRS and canaryRS converge to the same hash.
-        if ("Healthy".equals(phase)
-                && status.getStableRS() != null
-                && status.getStableRS().equals(status.getCanaryRS())) {
-            return 0;
-        }
-
-        // Prefer the live traffic-weight reported by the controller.
-        if (status.getCanary() != null) {
-            CanaryWeights weights = status.getCanary().getWeights();
-            if (weights != null && weights.getCanary() != null) {
-                return weights.getCanary().getWeight();
-            }
-        }
-
-        // Fall back to the step-index table when live weights are unavailable.
-        Integer stepIndex = status.getCurrentStepIndex();
-        if (stepIndex != null && stepIndex >= 0 && stepIndex < STEP_WEIGHTS.length) {
-            return STEP_WEIGHTS[stepIndex];
-        }
-
-        return 0;
     }
 
     public record RolloutSummary(

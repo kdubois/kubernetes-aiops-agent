@@ -20,11 +20,109 @@ import java.util.*;
 @Unremovable
 public class K8sTools {
 
+    /**
+     * Canary weight per step index, used as a fallback when the controller
+     * does not report live traffic weights. Matches the demo rollout's steps:
+     * 10% (steps 0-3), 60% (steps 4-5), 100% (steps 6-7).
+     */
+    private static final int[] STEP_WEIGHTS = {10, 10, 10, 10, 60, 60, 100, 100};
+
     @Inject
     KubernetesClient k8sClient;
 
     @Inject
     ActivityEventStore activityEvents;
+
+    /**
+     * Fetches the Argo Rollouts resource status for a namespace: phase, current step,
+     * traffic split, and stable/canary pod counts. When no rollout name is given,
+     * the first rollout in the namespace is used.
+     */
+    public RolloutStatusData getRolloutStatus(String namespace, String rolloutName) {
+        Log.info("=== Executing: getRolloutStatus ===");
+
+        if (namespace == null || namespace.isEmpty()) {
+            return RolloutStatusData.error("namespace is required");
+        }
+
+        try {
+            Rollout rollout = findRollout(namespace, rolloutName);
+            if (rollout == null) {
+                return RolloutStatusData.error("No Rollout found in namespace " + namespace);
+            }
+
+            RolloutStatus status = rollout.getStatus();
+            String name = rollout.getMetadata().getName();
+            String phase = (status != null && status.getPhase() != null) ? status.getPhase() : "Unknown";
+            int canaryWeight = status != null ? getCanaryWeight(status) : 0;
+            Integer currentStepIndex = status != null ? status.getCurrentStepIndex() : null;
+
+            List<Pod>[] pods = fetchPodsPairInParallel(namespace);
+            long stablePodCount = countActivePods(pods[0]);
+            long canaryPodCount = countActivePods(pods[1]);
+
+            activityEvents.publish("TOOL_RESULT", "Rollout status retrieved",
+                    "rollout=" + name + ", phase=" + phase + ", canaryWeight=" + canaryWeight + "%");
+
+            Log.infof("Retrieved rollout status for %s/%s: phase=%s, canaryWeight=%d%%",
+                    namespace, name, phase, canaryWeight);
+            return new RolloutStatusData(null, name, namespace, phase, currentStepIndex,
+                    canaryWeight, 100 - canaryWeight, stablePodCount, canaryPodCount);
+
+        } catch (Exception e) {
+            Log.error("Error getting rollout status", e);
+            return RolloutStatusData.error(e.getMessage());
+        }
+    }
+
+    private Rollout findRollout(String namespace, String rolloutName) {
+        var rollouts = k8sClient.resources(Rollout.class).inNamespace(namespace);
+        if (rolloutName != null && !rolloutName.isBlank()) {
+            return rollouts.withName(rolloutName).get();
+        }
+        List<Rollout> items = rollouts.list().getItems();
+        if (items.size() > 1) {
+            Log.warnf("Multiple Rollouts in namespace %s, using %s", namespace, items.get(0).getMetadata().getName());
+        }
+        return items.isEmpty() ? null : items.get(0);
+    }
+
+    private long countActivePods(List<Pod> pods) {
+        return pods.stream()
+                .filter(p -> p.getMetadata() != null && p.getMetadata().getDeletionTimestamp() == null)
+                .count();
+    }
+
+    private int getCanaryWeight(RolloutStatus status) {
+        String phase = status.getPhase() != null ? status.getPhase() : "Unknown";
+
+        if ("Degraded".equals(phase) || "Aborted".equals(phase)) {
+            return 0;
+        }
+
+        // When a rollout finishes, stableRS and canaryRS converge to the same hash.
+        if ("Healthy".equals(phase)
+                && status.getStableRS() != null
+                && status.getStableRS().equals(status.getCanaryRS())) {
+            return 0;
+        }
+
+        // Prefer the live traffic weight reported by the controller.
+        if (status.getCanary() != null) {
+            CanaryWeights weights = status.getCanary().getWeights();
+            if (weights != null && weights.getCanary() != null) {
+                return weights.getCanary().getWeight();
+            }
+        }
+
+        // Fall back to the step-index table when live weights are unavailable.
+        Integer stepIndex = status.getCurrentStepIndex();
+        if (stepIndex != null && stepIndex >= 0 && stepIndex < STEP_WEIGHTS.length) {
+            return STEP_WEIGHTS[stepIndex];
+        }
+
+        return 0;
+    }
 
     public PodDataResult getCanaryMetrics(String namespace) {
         Log.info("=== Executing: getCanaryMetrics ===");
