@@ -96,6 +96,12 @@ The remediation agent can read source files from the repository to make more acc
 - **REST API**: Expose analysis capabilities via HTTP
 - **Integration**: Works with `rollouts-plugin-metric-ai` for canary analysis
 
+### Uncertainty pause gate
+
+When the caller sends `pauseOnUncertainty: true` in the request context, the agent pauses the rollout instead of letting a low-confidence promote decision proceed: if the analysis promotes with confidence below `uncertaintyThreshold` (default 50), the Rollout's `spec.paused` is patched and a human decides with `oc argo rollouts unpause`. The measurement itself stays successful — the pause, not an abort, is what holds the rollout. A rollback decision never pauses, since the abort already stops the rollout. The paused rollout name is returned in the response's `pausedRollout` field and published as a `PAUSE` activity event.
+
+Pausing requires patch permission on rollouts in the target namespace, granted by a namespaced Role (see the `progressive-delivery` repo); the agent is read-only everywhere else.
+
 ## Architecture
 
 ```mermaid

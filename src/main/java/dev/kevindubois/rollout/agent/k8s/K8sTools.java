@@ -3,6 +3,8 @@ package dev.kevindubois.rollout.agent.k8s;
 import dev.kevindubois.rollout.agent.observability.ActivityEventStore;
 import io.fabric8.kubernetes.api.model.*;
 import io.fabric8.kubernetes.client.KubernetesClient;
+import io.fabric8.kubernetes.client.dsl.base.PatchContext;
+import io.fabric8.kubernetes.client.dsl.base.PatchType;
 import io.quarkus.arc.Unremovable;
 import io.quarkus.logging.Log;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -75,6 +77,44 @@ public class K8sTools {
         } catch (Exception e) {
             Log.error("Error getting rollout status", e);
             return RolloutStatusData.error(e.getMessage());
+        }
+    }
+
+    /**
+     * Pauses the rollout in the namespace so a human can review before promotion
+     * continues. Argo Rollouts holds the current step until the rollout is unpaused.
+     *
+     * @return the paused rollout name, or null if no rollout was found or the patch failed
+     */
+    public String pauseRollout(String namespace) {
+        Log.info("=== Executing: pauseRollout ===");
+
+        if (namespace == null || namespace.isEmpty()) {
+            Log.warn("pauseRollout: namespace is required");
+            return null;
+        }
+
+        try {
+            Rollout rollout = findRollout(namespace, null);
+            if (rollout == null) {
+                Log.warnf("pauseRollout: no Rollout found in namespace %s", namespace);
+                return null;
+            }
+
+            String name = rollout.getMetadata().getName();
+            // JSON merge patch: sets only spec.paused and leaves the rest of the spec untouched
+            k8sClient.resources(Rollout.class)
+                    .inNamespace(namespace)
+                    .withName(name)
+                    .patch(PatchContext.of(PatchType.JSON_MERGE), "{\"spec\":{\"paused\":true}}");
+
+            activityEvents.publish("PAUSE", "Rollout paused for human review", "rollout=" + name);
+            Log.infof("Paused rollout %s/%s pending human review", namespace, name);
+            return name;
+
+        } catch (Exception e) {
+            Log.error("Error pausing rollout", e);
+            return null;
         }
     }
 

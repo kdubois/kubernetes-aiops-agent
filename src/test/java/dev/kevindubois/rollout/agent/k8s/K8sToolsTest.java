@@ -4,6 +4,7 @@ import dev.kevindubois.rollout.agent.fixtures.K8sTestFixtures;
 import io.fabric8.kubernetes.api.model.*;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.dsl.*;
+import io.fabric8.kubernetes.client.dsl.base.PatchContext;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.InjectMock;
 import jakarta.inject.Inject;
@@ -223,6 +224,45 @@ class K8sToolsTest {
         assertNotNull(result);
         assertTrue(result.hasError());
         assertTrue(result.error().contains("required"));
+    }
+
+    @Test
+    void testPauseRollout_Success() {
+        String namespace = "default";
+        Rollout rollout = K8sTestFixtures.createTestRollout("demo-rollout", namespace, "Progressing", 2, 30);
+        var rolloutNsOp = rolloutNsOpFor(namespace);
+
+        KubernetesResourceList<Rollout> rolloutList = mock(KubernetesResourceList.class);
+        when(rolloutNsOp.list()).thenReturn(rolloutList);
+        when(rolloutList.getItems()).thenReturn(List.of(rollout));
+
+        Resource<Rollout> namedResource = mock(Resource.class);
+        when(rolloutNsOp.withName("demo-rollout")).thenReturn(namedResource);
+        when(namedResource.patch(any(PatchContext.class), anyString())).thenReturn(rollout);
+
+        String paused = k8sTools.pauseRollout(namespace);
+
+        assertEquals("demo-rollout", paused);
+        verify(namedResource).patch(any(PatchContext.class), eq("{\"spec\":{\"paused\":true}}"));
+    }
+
+    @Test
+    void testPauseRollout_NoRollouts() {
+        String namespace = "default";
+        var rolloutNsOp = rolloutNsOpFor(namespace);
+
+        KubernetesResourceList<Rollout> rolloutList = mock(KubernetesResourceList.class);
+        when(rolloutNsOp.list()).thenReturn(rolloutList);
+        when(rolloutList.getItems()).thenReturn(List.of());
+
+        String paused = k8sTools.pauseRollout(namespace);
+
+        assertNull(paused);
+    }
+
+    @Test
+    void testPauseRollout_EmptyNamespace() {
+        assertNull(k8sTools.pauseRollout(""));
     }
 
     @Test

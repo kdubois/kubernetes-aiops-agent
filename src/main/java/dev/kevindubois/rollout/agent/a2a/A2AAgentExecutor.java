@@ -18,6 +18,8 @@ import jakarta.inject.Inject;
 import java.util.List;
 
 import dev.kevindubois.rollout.agent.analysis.AnalysisResult;
+import dev.kevindubois.rollout.agent.analysis.AnalysisOutcome;
+import dev.kevindubois.rollout.agent.analysis.PauseGate;
 import dev.kevindubois.rollout.agent.observability.ActivityEvents;
 import dev.kevindubois.rollout.agent.analysis.AnalysisService;
 
@@ -54,10 +56,13 @@ public class A2AAgentExecutor {
                     String repoUrl = extractMetadataValue(context.getMessage(), "repoUrl");
                     String baseBranch = extractMetadataValue(context.getMessage(), "baseBranch", "main");
                     String namespace = extractMetadataValue(context.getMessage(), "namespace", "default");
+                    PauseGate pauseGate = PauseGate.fromMap(
+                            context.getMessage() != null ? context.getMessage().getMetadata() : null);
 
-                    AnalysisResult result = analysisService.analyze(memoryId, messageContent, namespace, repoUrl, baseBranch);
+                    AnalysisOutcome outcome = analysisService.analyze(
+                            memoryId, messageContent, namespace, repoUrl, baseBranch, pauseGate);
 
-                    String response = formatAnalysisResult(result);
+                    String response = formatAnalysisResult(outcome);
                     updater.addArtifact(List.of(new TextPart(response, null)), null, null, null);
                     updater.complete();
 
@@ -122,11 +127,17 @@ public class A2AAgentExecutor {
                         .trim();
             }
 
-            private String formatAnalysisResult(AnalysisResult result) {
+            private String formatAnalysisResult(AnalysisOutcome outcome) {
+                AnalysisResult result = outcome.result();
                 StringBuilder sb = new StringBuilder();
                 sb.append("## Analysis Result\n\n");
                 sb.append("**Decision:** ").append(result.promote() ? "PROMOTE" : "ROLLBACK").append("\n");
                 sb.append("**Confidence:** ").append(result.confidence()).append("%\n\n");
+
+                if (outcome.pausedRollout() != null) {
+                    sb.append("**Paused:** rollout `").append(outcome.pausedRollout())
+                            .append("` is paused for human review (confidence below threshold)\n\n");
+                }
 
                 if (result.analysis() != null && !result.analysis().isEmpty()) {
                     sb.append("### Analysis\n").append(result.analysis()).append("\n\n");

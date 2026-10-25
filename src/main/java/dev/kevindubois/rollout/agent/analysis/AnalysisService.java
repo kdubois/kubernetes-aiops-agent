@@ -1,6 +1,7 @@
 package dev.kevindubois.rollout.agent.analysis;
 
 import dev.kevindubois.rollout.agent.analysis.AnalysisResult;
+import dev.kevindubois.rollout.agent.k8s.K8sTools;
 import dev.kevindubois.rollout.agent.observability.ActivityEvents;
 import dev.kevindubois.rollout.agent.remediation.RemediationOrchestrator;
 import dev.kevindubois.rollout.agent.analysis.AnalysisOrchestratorAgent;
@@ -16,7 +17,8 @@ import java.time.temporal.ChronoUnit;
 
 /**
  * Single entry point for rollout analysis used by both the REST endpoint and A2A executor.
- * Runs the workflow with retry, publishes activity events, and triggers remediation on rollback.
+ * Runs the workflow, applies the uncertainty pause gate, publishes activity events,
+ * and triggers remediation on rollback.
  */
 @ApplicationScoped
 public class AnalysisService {
@@ -30,28 +32,51 @@ public class AnalysisService {
     @Inject
     ActivityEvents activityEvents;
 
+    @Inject
+    K8sTools k8sTools;
+
     /**
-     * Execute the full analysis pipeline: workflow + events + remediation trigger.
+     * Execute the full analysis pipeline: workflow + uncertainty gate + events + remediation trigger.
      *
      * @param memoryId   conversation/session ID for the agent memory
      * @param prompt     assembled prompt including context
      * @param namespace  Kubernetes namespace to analyze
      * @param repoUrl    repository URL for remediation (nullable)
      * @param baseBranch target branch for PRs (defaults to "main")
-     * @return the analysis result
+     * @param pauseGate  opt-in promotion pause gate
+     * @return the analysis result and the rollout paused by the gate, if any
      */
     @Retry(maxRetries = 3, delay = 1, delayUnit = ChronoUnit.SECONDS,
            retryOn = RetriableException.class, abortOn = NonRetriableException.class)
     @ExponentialBackoff(factor = 2, maxDelay = 60, maxDelayUnit = ChronoUnit.SECONDS)
-    public AnalysisResult analyze(String memoryId, String prompt, String namespace,
-                                   String repoUrl, String baseBranch) throws Exception {
+    public AnalysisOutcome analyze(String memoryId, String prompt, String namespace,
+                                   String repoUrl, String baseBranch, PauseGate pauseGate) throws Exception {
         AnalysisResult result = analysisOrchestratorAgent.execute(memoryId, prompt, namespace);
 
         activityEvents.analysisCompleted(result);
 
+        String pausedRollout = pauseIfNeeded(pauseGate, result, namespace);
+
         remediationOrchestrator.triggerIfNeeded(result, prompt, repoUrl, baseBranch);
 
         Log.info("Analysis pipeline completed successfully");
-        return result;
+        return new AnalysisOutcome(result, pausedRollout);
+    }
+
+    /**
+     * Pauses the rollout when the gate requests it. The measurement itself stays
+     * successful: the pause, not an abort, is what holds the rollout for review.
+     */
+    private String pauseIfNeeded(PauseGate pauseGate, AnalysisResult result, String namespace) {
+        if (!pauseGate.shouldPause(result)) {
+            return null;
+        }
+        Log.infof("Uncertainty gate: confidence %d below threshold %d, pausing rollout for review",
+                result.confidence(), pauseGate.threshold());
+        String rollout = k8sTools.pauseRollout(namespace);
+        if (rollout == null) {
+            Log.warnf("Uncertainty gate requested a pause but no rollout was paused in namespace %s", namespace);
+        }
+        return rollout;
     }
 }

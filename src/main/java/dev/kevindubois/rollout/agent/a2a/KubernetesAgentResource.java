@@ -11,6 +11,8 @@ import java.util.Map;
 import java.util.concurrent.TimeoutException;
 
 import dev.kevindubois.rollout.agent.analysis.AnalysisResult;
+import dev.kevindubois.rollout.agent.analysis.AnalysisOutcome;
+import dev.kevindubois.rollout.agent.analysis.PauseGate;
 import dev.kevindubois.rollout.agent.observability.ActivityEvents;
 import dev.kevindubois.rollout.agent.analysis.AnalysisService;
 import dev.langchain4j.service.output.OutputParsingException;
@@ -41,10 +43,12 @@ public class KubernetesAgentResource {
             String repoUrl = context != null ? (String) context.get("repoUrl") : null;
             String baseBranch = context != null ? (String) context.get("baseBranch") : "main";
             String namespace = context != null ? (String) context.get("namespace") : "default";
+            PauseGate pauseGate = PauseGate.fromMap(context);
             String prompt = buildPrompt(request);
             String memoryId = request.getEffectiveMemoryId();
 
-            AnalysisResult result = analysisService.analyze(memoryId, prompt, namespace, repoUrl, baseBranch);
+            AnalysisOutcome outcome = analysisService.analyze(memoryId, prompt, namespace, repoUrl, baseBranch, pauseGate);
+            AnalysisResult result = outcome.result();
 
             KubernetesAgentResponse response = new KubernetesAgentResponse(
                     result.analysis(),
@@ -52,7 +56,8 @@ public class KubernetesAgentResource {
                     result.remediation(),
                     null,
                     result.promote(),
-                    result.confidence()
+                    result.confidence(),
+                    outcome.pausedRollout()
             );
 
             return Response.ok(response).build();
