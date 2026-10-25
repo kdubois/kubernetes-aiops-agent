@@ -1,0 +1,94 @@
+{
+  "description": "Labelled diagnostic scenarios for evaluating the AnalysisAgent. Each case carries the three report sections exactly as the data agents format them, plus the expected decision. Used by AnalysisEvalTest (opt-in, calls the live model) and AnalysisEvalSetTest (structure validation, always runs).",
+  "cases": [
+    {
+      "name": "healthy-canary",
+      "diagnosticReport": "=== LOG DIAGNOSTIC REPORT ===\nSTABLE POD: quarkus-demo-stable-7d9f6 - Running - Ready: 1/1\nSTABLE LOGS:\nINFO Application started (v1.0.0)\nINFO Processing requests normally\nINFO Request completed in 45ms\nCANARY POD: quarkus-demo-canary-9b2k4 - Running - Ready: 1/1\nCANARY LOGS:\nINFO Application started (v1.1.0)\nINFO Processing requests normally\nINFO Request completed in 48ms\n=== END ===",
+      "rolloutReport": "=== ROLLOUT STATUS REPORT ===\nROLLOUT: quarkus-demo (namespace quarkus-demo)\nPHASE: Progressing\nSTEP INDEX: 4\nTRAFFIC: canary 60%, stable 40%\nPODS: stable 8, canary 2\n=== END ===",
+      "metricsReport": "=== METRICS REPORT ===\nSTABLE METRICS: totalRequests=10000, successRate=99.50%, errorRate=0.50%, p95=45.0ms, p99=120.0ms\nCANARY METRICS: totalRequests=2000, successRate=99.20%, errorRate=0.80%, p95=48.0ms, p99=125.0ms\n=== END ===",
+      "expected": {
+        "promote": true,
+        "issueCategory": "NO_ISSUES",
+        "minConfidence": 80
+      }
+    },
+    {
+      "name": "npe-in-canary",
+      "diagnosticReport": "=== LOG DIAGNOSTIC REPORT ===\nSTABLE POD: quarkus-demo-stable-7d9f6 - Running - Ready: 1/1\nSTABLE LOGS:\nINFO Application started (v1.0.0)\nINFO Processing requests normally\nCANARY POD: quarkus-demo-canary-9b2k4 - Running - Ready: 1/1\nCANARY LOGS:\nINFO Application started (v2.0.0)\nERROR java.lang.NullPointerException: Cannot invoke \"String.length()\" because \"str\" is null\n    at com.example.GreetingService.greet(GreetingService.java:42)\n    at com.example.GreetingResource.hello(GreetingResource.java:18)\nERROR java.lang.NullPointerException: Cannot invoke \"String.length()\" because \"str\" is null\n    at com.example.GreetingService.greet(GreetingService.java:42)\n  [Previous error repeated 34 times]\n=== END ===",
+      "rolloutReport": "=== ROLLOUT STATUS REPORT ===\nROLLOUT: quarkus-demo (namespace quarkus-demo)\nPHASE: Progressing\nSTEP INDEX: 2\nTRAFFIC: canary 30%, stable 70%\nPODS: stable 7, canary 3\n=== END ===",
+      "metricsReport": "=== METRICS REPORT ===\nSTABLE METRICS: totalRequests=10000, successRate=99.50%, errorRate=0.50%, p95=45.0ms, p99=120.0ms\nCANARY METRICS: totalRequests=2000, successRate=82.00%, errorRate=18.00%, p95=250.0ms, p99=800.0ms\n=== END ===",
+      "expected": {
+        "promote": false,
+        "issueCategory": "CODE_BUG",
+        "minConfidence": 70,
+        "rootCauseContains": "nullpointer"
+      }
+    },
+    {
+      "name": "memory-leak-in-canary",
+      "diagnosticReport": "=== LOG DIAGNOSTIC REPORT ===\nSTABLE POD: quarkus-demo-stable-7d9f6 - Running - Ready: 1/1\nSTABLE LOGS:\nINFO Application started (v1.0.0)\nINFO Processing requests normally\nCANARY POD: quarkus-demo-canary-9b2k4 - Running - Ready: 1/1\nCANARY LOGS:\nINFO Application started (v3.0.0)\nWARN Heap usage above 80%: 450MB / 512MB\nWARN GC overhead limit approaching - consecutive full GCs detected\nERROR java.lang.OutOfMemoryError: Java heap space\n    at java.util.ArrayList.grow(ArrayList.java:265)\n    at java.util.ArrayList.add(ArrayList.java:462)\nERROR java.lang.OutOfMemoryError: Java heap space\nWARN Pod memory approaching limit: 480MB / 512MB\n  [Previous error repeated 12 times]\n=== END ===",
+      "rolloutReport": "=== ROLLOUT STATUS REPORT ===\nROLLOUT: quarkus-demo (namespace quarkus-demo)\nPHASE: Progressing\nSTEP INDEX: 2\nTRAFFIC: canary 30%, stable 70%\nPODS: stable 7, canary 3\n=== END ===",
+      "metricsReport": "=== METRICS REPORT ===\nSTABLE METRICS: totalRequests=10000, successRate=99.50%, errorRate=0.50%, p95=45.0ms, p99=120.0ms, heapUsed=200.0MB/512.0MB, gcCount=15\nCANARY METRICS: totalRequests=2000, successRate=75.00%, errorRate=25.00%, p95=500.0ms, p99=2000.0ms, heapUsed=480.0MB/512.0MB, gcCount=250\n=== END ===",
+      "expected": {
+        "promote": false,
+        "issueCategory": "OPERATIONAL",
+        "minConfidence": 70,
+        "rootCauseContains": "outofmemory"
+      }
+    },
+    {
+      "name": "latency-drift-in-canary",
+      "diagnosticReport": "=== LOG DIAGNOSTIC REPORT ===\nSTABLE POD: quarkus-demo-stable-7d9f6 - Running - Ready: 1/1\nSTABLE LOGS:\nINFO Application started (v1.0.0)\nINFO Processing requests normally\nINFO Request completed in 45ms\nCANARY POD: quarkus-demo-canary-9b2k4 - Running - Ready: 1/1\nCANARY LOGS:\nINFO Application started (v4.0.0)\nINFO Processing requests normally\nINFO Request completed in 250ms\n=== END ===",
+      "rolloutReport": "=== ROLLOUT STATUS REPORT ===\nROLLOUT: quarkus-demo (namespace quarkus-demo)\nPHASE: Progressing\nSTEP INDEX: 4\nTRAFFIC: canary 60%, stable 40%\nPODS: stable 8, canary 2\n=== END ===",
+      "metricsReport": "=== METRICS REPORT ===\nSTABLE METRICS: totalRequests=10000, successRate=99.50%, errorRate=0.50%, p95=45.0ms, p99=120.0ms\nCANARY METRICS: totalRequests=3000, successRate=99.10%, errorRate=0.90%, p95=250.0ms, p99=300.0ms\n=== END ===",
+      "expected": {
+        "promote": false,
+        "issueCategory": "CODE_BUG",
+        "minConfidence": 60,
+        "rootCauseContains": "latency"
+      }
+    },
+    {
+      "name": "npe-in-stable-only",
+      "diagnosticReport": "=== LOG DIAGNOSTIC REPORT ===\nSTABLE POD: quarkus-demo-stable-7d9f6 - Running - Ready: 1/1\nSTABLE LOGS:\nINFO Application started (v1.0.0)\nERROR java.lang.NullPointerException: Cannot invoke \"String.length()\" because \"str\" is null\n    at com.example.GreetingService.greet(GreetingService.java:42)\n  [Previous error repeated 28 times]\nCANARY POD: quarkus-demo-canary-9b2k4 - Running - Ready: 1/1\nCANARY LOGS:\nINFO Application started (v2.0.0)\nINFO Processing requests normally\nINFO Request completed in 45ms\n=== END ===",
+      "rolloutReport": "=== ROLLOUT STATUS REPORT ===\nROLLOUT: quarkus-demo (namespace quarkus-demo)\nPHASE: Progressing\nSTEP INDEX: 2\nTRAFFIC: canary 30%, stable 70%\nPODS: stable 7, canary 3\n=== END ===",
+      "metricsReport": "=== METRICS REPORT ===\nSTABLE METRICS: totalRequests=10000, successRate=85.00%, errorRate=15.00%, p95=45.0ms, p99=120.0ms\nCANARY METRICS: totalRequests=2000, successRate=99.60%, errorRate=0.40%, p95=44.0ms, p99=118.0ms\n=== END ===",
+      "expected": {
+        "promote": true,
+        "issueCategory": "NO_ISSUES",
+        "minConfidence": 70
+      }
+    },
+    {
+      "name": "same-errors-in-stable-and-canary",
+      "diagnosticReport": "=== LOG DIAGNOSTIC REPORT ===\nSTABLE POD: quarkus-demo-stable-7d9f6 - Running - Ready: 1/1\nSTABLE LOGS:\nINFO Application started (v1.0.0)\nWARN Upstream timeout calling inventory service\n    at com.example.InventoryClient.fetch(InventoryClient.java:77)\nINFO Processing requests normally\nCANARY POD: quarkus-demo-canary-9b2k4 - Running - Ready: 1/1\nCANARY LOGS:\nINFO Application started (v1.1.0)\nWARN Upstream timeout calling inventory service\n    at com.example.InventoryClient.fetch(InventoryClient.java:77)\nINFO Processing requests normally\n=== END ===",
+      "rolloutReport": "=== ROLLOUT STATUS REPORT ===\nROLLOUT: quarkus-demo (namespace quarkus-demo)\nPHASE: Progressing\nSTEP INDEX: 2\nTRAFFIC: canary 30%, stable 70%\nPODS: stable 7, canary 3\n=== END ===",
+      "metricsReport": "=== METRICS REPORT ===\nSTABLE METRICS: totalRequests=10000, successRate=97.00%, errorRate=3.00%, p95=60.0ms, p99=150.0ms\nCANARY METRICS: totalRequests=2000, successRate=97.20%, errorRate=2.80%, p95=58.0ms, p99=148.0ms\n=== END ===",
+      "expected": {
+        "promote": true,
+        "minConfidence": 50
+      }
+    },
+    {
+      "name": "early-canary-thin-metrics",
+      "diagnosticReport": "=== LOG DIAGNOSTIC REPORT ===\nSTABLE POD: quarkus-demo-stable-7d9f6 - Running - Ready: 1/1\nSTABLE LOGS:\nINFO Application started (v1.0.0)\nINFO Processing requests normally\nCANARY POD: quarkus-demo-canary-9b2k4 - Running - Ready: 1/1\nCANARY LOGS:\nINFO Application started (v1.1.0)\nINFO Processing requests normally\n=== END ===",
+      "rolloutReport": "=== ROLLOUT STATUS REPORT ===\nROLLOUT: quarkus-demo (namespace quarkus-demo)\nPHASE: Progressing\nSTEP INDEX: 0\nTRAFFIC: canary 10%, stable 90%\nPODS: stable 9, canary 1\n=== END ===",
+      "metricsReport": "=== METRICS REPORT ===\nSTABLE METRICS: totalRequests=10000, successRate=99.50%, errorRate=0.50%, p95=45.0ms, p99=120.0ms\nCANARY METRICS: totalRequests=150, successRate=98.00%, errorRate=2.00%, p95=52.0ms, p99=130.0ms\n=== END ===",
+      "expected": {
+        "promote": true,
+        "issueCategory": "NO_ISSUES",
+        "minConfidence": 60
+      }
+    },
+    {
+      "name": "canary-crash-loop",
+      "diagnosticReport": "=== LOG DIAGNOSTIC REPORT ===\nSTABLE POD: quarkus-demo-stable-7d9f6 - Running - Ready: 1/1\nSTABLE LOGS:\nINFO Application started (v1.0.0)\nINFO Processing requests normally\nCANARY POD: quarkus-demo-canary-9b2k4 - Running - Ready: 0/1\nCANARY LOGS:\nINFO Application starting (v2.0.0)\nERROR Failed to start application: java.lang.IllegalStateException: Required configuration property 'database.url' is not set\n    at com.example.StartupValidator.validate(StartupValidator.java:31)\nINFO Application stopping\n  [Previous error repeated 8 times]\n=== END ===",
+      "rolloutReport": "=== ROLLOUT STATUS REPORT ===\nROLLOUT: quarkus-demo (namespace quarkus-demo)\nPHASE: Progressing\nSTEP INDEX: 0\nTRAFFIC: canary 10%, stable 90%\nPODS: stable 9, canary 1\n=== END ===",
+      "metricsReport": "=== METRICS REPORT ===\nSTABLE METRICS: totalRequests=10000, successRate=99.50%, errorRate=0.50%, p95=45.0ms, p99=120.0ms\nCANARY METRICS: Failed to connect to pod metrics endpoint\n=== END ===",
+      "expected": {
+        "promote": false,
+        "minConfidence": 60
+      }
+    }
+  ]
+}

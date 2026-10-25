@@ -22,6 +22,18 @@ See the [Demo Script](../argo-rollouts-quarkus-demo/DEMO_SCRIPT.md) for detailed
 - **Happy Path**: Successful deployment with AI analysis
 - **NullPointerException Bug**: Bug detection with automatic rollback and PR creation
 - **Memory Leak**: Performance issue detection with automatic rollback
+- **Latency Drift**: Metrics-only regression that passes the early analysis and fails the later one
+
+### Analysis evaluation
+
+The labelled evaluation set in [`src/test/resources/analysis-eval.json`](src/test/resources/analysis-eval.json) measures how often the analysis agrees with the expected decision for known scenarios: the four demo outcomes plus edge cases (bug in stable only, same errors in both, early canary with thin metrics, crash-looping canary). It calls the configured chat model once per case and writes a report to `target/analysis-eval-report.md`:
+
+```bash
+ANALYSIS_API_KEY=... ANALYSIS_BASE_URL=... ANALYSIS_MODEL=... \
+  mvn test -Dtest=AnalysisEvalTest -Danalysis.eval=true
+```
+
+The normal suite never runs the evaluation because it calls the live model; `AnalysisEvalSetTest` (always on) only validates the evaluation set's structure. Run the evaluation before and after changing the `AnalysisAgent` prompt or model to see whether agreement moved.
 
 ### Quick Test
 

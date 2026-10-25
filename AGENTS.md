@@ -121,7 +121,13 @@ docker buildx build --platform linux/amd64,linux/arm64 \
 mvn test
 mvn test -Dtest=K8sToolsTest
 ./run-console.sh         # Interactive console mode
+
+# Labelled analysis evaluation (calls the live model, opt-in):
+ANALYSIS_API_KEY=... ANALYSIS_BASE_URL=... ANALYSIS_MODEL=... \
+  mvn test -Dtest=AnalysisEvalTest -Danalysis.eval=true
 ```
+
+The evaluation cases live in `src/test/resources/analysis-eval.json`; the report is written to `target/analysis-eval-report.md`. Run it before and after changing the `AnalysisAgent` prompt or model, and add a case whenever a new failure mode matters.
 
 ## Workflow
 
