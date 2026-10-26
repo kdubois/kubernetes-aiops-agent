@@ -10,6 +10,7 @@ The Kubernetes Agent is an intelligent system that:
 
 - **Debugs** Kubernetes pods automatically
 - **Analyzes** logs, metrics, events, and rollout status
+- **Aggregates** metrics across every stable and canary pod — latency quantiles and heap take the worst pod, so a regression on any single pod is visible
 - **Identifies** root causes of issues
 - **Creates** GitHub pull requests with fixes
 - **Integrates** with Argo Rollouts for canary analysis

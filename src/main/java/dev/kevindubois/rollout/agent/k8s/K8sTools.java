@@ -145,21 +145,19 @@ public class K8sTools {
             var canaryMetricsHolder = new HashMap<String, Object>();
 
             Thread stableThread = Thread.ofVirtual().start(() -> {
-                if (!stablePods.isEmpty()) {
-                    Pod pod = stablePods.get(0);
-                    stableMetricsHolder.putAll(fetchApplicationMetricsInternal(namespace, pod.getMetadata().getName(), "/q/metrics", 8080));
-                    stableMetricsHolder.put("podName", pod.getMetadata().getName());
-                } else {
-                    stableMetricsHolder.put("error", "No stable pods found");
+                try {
+                    stableMetricsHolder.putAll(collectSideMetrics(namespace, stablePods));
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    stableMetricsHolder.put("error", "Stable metrics collection interrupted");
                 }
             });
             Thread canaryThread = Thread.ofVirtual().start(() -> {
-                if (!canaryPods.isEmpty()) {
-                    Pod pod = canaryPods.get(0);
-                    canaryMetricsHolder.putAll(fetchApplicationMetricsInternal(namespace, pod.getMetadata().getName(), "/q/metrics", 8080));
-                    canaryMetricsHolder.put("podName", pod.getMetadata().getName());
-                } else {
-                    canaryMetricsHolder.put("error", "No canary pods found");
+                try {
+                    canaryMetricsHolder.putAll(collectSideMetrics(namespace, canaryPods));
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    canaryMetricsHolder.put("error", "Canary metrics collection interrupted");
                 }
             });
             stableThread.join();
@@ -167,11 +165,11 @@ public class K8sTools {
 
             if (!stableMetricsHolder.containsKey("error")) {
                 activityEvents.publish("TOOL_RESULT", "Stable pod metrics retrieved",
-                    "pod=" + stableMetricsHolder.get("podName"));
+                    "pods=" + stableMetricsHolder.get("podCount"));
             }
             if (!canaryMetricsHolder.containsKey("error")) {
                 activityEvents.publish("TOOL_RESULT", "Canary pod metrics retrieved",
-                    "pod=" + canaryMetricsHolder.get("podName"));
+                    "pods=" + canaryMetricsHolder.get("podCount"));
             }
 
             Log.info("Successfully retrieved canary metrics");
@@ -181,6 +179,105 @@ public class K8sTools {
             Log.error("Error getting canary metrics", e);
             return PodDataResult.error(e.getMessage());
         }
+    }
+
+    /**
+     * Scrapes /q/metrics from every pod on one side, in parallel, and aggregates the
+     * results. Sampling a single pod hides regressions that only some pods exhibit —
+     * notably pods created by a canary scale-up, whose scenario timers started later.
+     */
+    private Map<String, Object> collectSideMetrics(String namespace, List<Pod> pods) throws InterruptedException {
+        if (pods.isEmpty()) {
+            return Map.of("error", "No pods found");
+        }
+
+        List<Map<String, Object>> perPod = new ArrayList<>(Collections.nCopies(pods.size(), null));
+        List<Thread> threads = new ArrayList<>();
+        for (int i = 0; i < pods.size(); i++) {
+            final int index = i;
+            final Pod pod = pods.get(i);
+            threads.add(Thread.ofVirtual().start(() ->
+                    perPod.set(index, fetchApplicationMetricsInternal(namespace, pod.getMetadata().getName(), "/q/metrics", 8080))));
+        }
+        for (Thread thread : threads) {
+            thread.join();
+        }
+        return aggregateMetrics(perPod);
+    }
+
+    /**
+     * Aggregates per-pod metric maps into one side-level map. Counters sum across
+     * pods, rates are recomputed from the summed counters, and latency quantiles and
+     * heap usage take the worst pod: a single slow pod is a real regression for the
+     * traffic it serves, and averaging would dilute exactly the signal the canary
+     * analysis needs. Pods that could not be scraped are skipped.
+     */
+    static Map<String, Object> aggregateMetrics(List<Map<String, Object>> perPod) {
+        List<Map<String, Object>> scraped = perPod.stream()
+                .filter(metrics -> metrics != null && !metrics.containsKey("error"))
+                .toList();
+        if (scraped.isEmpty()) {
+            return Map.of("error", perPod.isEmpty() ? "No pods found" : "No pod metrics could be scraped");
+        }
+
+        double totalRequests = 0;
+        double successfulRequests = 0;
+        double latencySumSeconds = 0;
+        double latencyCount = 0;
+        double p50 = 0;
+        double p95 = 0;
+        double p99 = 0;
+        double heapUsedMb = 0;
+        double heapMaxMb = 0;
+        double gcCount = 0;
+        for (Map<String, Object> metrics : scraped) {
+            totalRequests += asDouble(metrics.get("totalRequests"));
+            successfulRequests += asDouble(metrics.get("successfulRequests"));
+            latencySumSeconds += asDouble(metrics.get("latencySumSeconds"));
+            latencyCount += asDouble(metrics.get("latencyCount"));
+            p50 = Math.max(p50, asDouble(metrics.get("latencyP50Ms")));
+            p95 = Math.max(p95, asDouble(metrics.get("latencyP95Ms")));
+            p99 = Math.max(p99, asDouble(metrics.get("latencyP99Ms")));
+            heapUsedMb = Math.max(heapUsedMb, asDouble(metrics.get("heapUsedMb")));
+            heapMaxMb = Math.max(heapMaxMb, asDouble(metrics.get("heapMaxMb")));
+            gcCount = Math.max(gcCount, asDouble(metrics.get("gcCount")));
+        }
+
+        Map<String, Object> aggregated = new HashMap<>();
+        aggregated.put("totalRequests", totalRequests);
+        aggregated.put("successfulRequests", successfulRequests);
+        if (totalRequests > 0) {
+            aggregated.put("calculatedSuccessRate", successfulRequests / totalRequests * 100);
+            aggregated.put("errorRate", (totalRequests - successfulRequests) / totalRequests * 100);
+        }
+        if (latencyCount > 0) {
+            aggregated.put("latencyMeanMs", latencySumSeconds / latencyCount * 1000);
+        }
+        aggregated.put("latencyP50Ms", p50);
+        aggregated.put("latencyP95Ms", p95);
+        aggregated.put("latencyP99Ms", p99);
+        if (heapMaxMb > 0) {
+            aggregated.put("heapUsedMb", heapUsedMb);
+            aggregated.put("heapMaxMb", heapMaxMb);
+        }
+        if (gcCount > 0) {
+            aggregated.put("gcCount", gcCount);
+        }
+        for (Map<String, Object> metrics : scraped) {
+            if (metrics.containsKey("version")) {
+                aggregated.put("version", metrics.get("version"));
+            }
+            if (metrics.containsKey("scenario")) {
+                aggregated.put("scenario", metrics.get("scenario"));
+            }
+            break;
+        }
+        aggregated.put("podCount", (long) scraped.size());
+        return aggregated;
+    }
+
+    private static double asDouble(Object value) {
+        return value instanceof Number number ? number.doubleValue() : 0;
     }
 
     public PodDataResult getCanaryDiagnostics(String namespace, String containerName, Integer tailLines) {

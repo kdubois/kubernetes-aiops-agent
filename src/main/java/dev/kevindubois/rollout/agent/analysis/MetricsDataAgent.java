@@ -54,6 +54,9 @@ public class MetricsDataAgent {
         sb.append(", errorRate=").append(formatPercent(metricsData.get("errorRate"), null));
         sb.append(", p95=").append(formatMs(metricsData.get("latencyP95Ms")));
         sb.append(", p99=").append(formatMs(metricsData.get("latencyP99Ms")));
+        if (metricsData.containsKey("podCount")) {
+            sb.append(", pods=").append(formatNumber(metricsData.get("podCount")));
+        }
         
         if (metricsData.containsKey("heapUsedMb") || metricsData.containsKey("heapMaxMb")) {
             sb.append(", heapUsed=").append(formatMb(metricsData.get("heapUsedMb")));
