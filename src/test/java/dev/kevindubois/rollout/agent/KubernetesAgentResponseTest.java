@@ -74,6 +74,7 @@ class KubernetesAgentResponseTest {
             null,
             true,
             80
+        , null
         );
         assertTrue(responseTrue.promote());
         
@@ -85,6 +86,7 @@ class KubernetesAgentResponseTest {
             null,
             false,
             50
+        , null
         );
         assertFalse(responseFalse.promote());
     }
@@ -99,6 +101,7 @@ class KubernetesAgentResponseTest {
             "https://github.com/test-org/test-repo/pull/123",
             false,
             85
+        , null
         );
         
         // Then
@@ -120,6 +123,7 @@ class KubernetesAgentResponseTest {
             null,
             true,
             0
+        , null
         );
         
         // Then
@@ -174,7 +178,7 @@ class KubernetesAgentResponseTest {
     @Test
     void testKubernetesAgentResponse_BuilderMethods() {
         // Given
-        KubernetesAgentResponse response = new KubernetesAgentResponse("Initial analysis", "Initial root cause", "Initial remediation", null, false, 50);
+        KubernetesAgentResponse response = new KubernetesAgentResponse("Initial analysis", "Initial root cause", "Initial remediation", null, false, 50, null);
         
         // When
         KubernetesAgentResponse updatedResponse = response

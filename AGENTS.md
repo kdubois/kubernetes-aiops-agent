@@ -137,7 +137,8 @@ The analysis request from the plugin triggers this sequence:
 2. `DataCombinerAgent` — merges the three reports into a single `diagnosticData` string.
 3. `AnalysisLoop` — `AnalysisAgent` → `ScoringAgent`; repeats until score is acceptable or 3 iterations are exhausted.
 4. Response returned synchronously to the plugin (`promote`, `confidence`, `analysis`, `rootCause`).
-5. If `promote=false` and `repoUrl` is set, `RemediationOrchestrator` runs asynchronously:
+5. If `pauseOnUncertainty` is enabled and the result promotes with confidence below `uncertaintyThreshold`, the rollout is paused for human review (`spec.paused` patch, namespaced Role required).
+6. If `promote=false` and `repoUrl` is set, `RemediationOrchestrator` runs asynchronously:
    - Operational signals (OOM, memory leak, heap warnings) → GitHub issue (deterministic)
    - Code bugs (NPE, wrong value, logic error) → GitHub PR via `GitHubPatchPRTool`
 

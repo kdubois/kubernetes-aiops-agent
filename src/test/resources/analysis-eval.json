@@ -49,6 +49,17 @@
       }
     },
     {
+      "name": "paused-rollout-healthy-evidence",
+      "diagnosticReport": "=== LOG DIAGNOSTIC REPORT ===\nSTABLE POD: quarkus-demo-stable-7d9f6 - Running - Ready: 1/1\nSTABLE LOGS:\nINFO Application started (v1.1.0)\nINFO Processing requests normally\nCANARY POD: quarkus-demo-canary-9b2k4 - Running - Ready: 1/1\nCANARY LOGS:\nINFO Application started (v1.1.0)\nINFO Processing requests normally\n=== END ===",
+      "rolloutReport": "=== ROLLOUT STATUS REPORT ===\nROLLOUT: quarkus-demo (namespace quarkus-demo)\nPHASE: Paused\nSTEP INDEX: 2\nTRAFFIC: canary 30%, stable 70%\nPODS: stable 7, canary 3\n=== END ===",
+      "metricsReport": "=== METRICS REPORT ===\nSTABLE METRICS: totalRequests=10000, successRate=99.50%, errorRate=0.50%, p95=45.0ms, p99=120.0ms\nCANARY METRICS: totalRequests=2000, successRate=99.30%, errorRate=0.70%, p95=47.0ms, p99=124.0ms\n=== END ===",
+      "expected": {
+        "promote": true,
+        "issueCategory": "NO_ISSUES",
+        "minConfidence": 70
+      }
+    },
+    {
       "name": "npe-in-stable-only",
       "diagnosticReport": "=== LOG DIAGNOSTIC REPORT ===\nSTABLE POD: quarkus-demo-stable-7d9f6 - Running - Ready: 1/1\nSTABLE LOGS:\nINFO Application started (v1.0.0)\nERROR java.lang.NullPointerException: Cannot invoke \"String.length()\" because \"str\" is null\n    at com.example.GreetingService.greet(GreetingService.java:42)\n  [Previous error repeated 28 times]\nCANARY POD: quarkus-demo-canary-9b2k4 - Running - Ready: 1/1\nCANARY LOGS:\nINFO Application started (v2.0.0)\nINFO Processing requests normally\nINFO Request completed in 45ms\n=== END ===",
       "rolloutReport": "=== ROLLOUT STATUS REPORT ===\nROLLOUT: quarkus-demo (namespace quarkus-demo)\nPHASE: Progressing\nSTEP INDEX: 2\nTRAFFIC: canary 30%, stable 70%\nPODS: stable 7, canary 3\n=== END ===",

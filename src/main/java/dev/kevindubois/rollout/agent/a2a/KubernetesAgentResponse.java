@@ -31,13 +31,14 @@ public record KubernetesAgentResponse(
     String remediation,
     String prLink,
     boolean promote,
-    int confidence
+    int confidence,
+    String pausedRollout
 ) {
     /**
      * Compact canonical constructor with validation.
      * 
      * @throws IllegalArgumentException if confidence is not in range [0, 100]
-     * @throws NullPointerException if any required field (except prLink) is null
+     * @throws NullPointerException if any required field (except prLink and pausedRollout) is null
      */
     public KubernetesAgentResponse {
         // Validate required fields
@@ -62,6 +63,12 @@ public record KubernetesAgentResponse(
                 prLink = null;
             }
         }
+        if (pausedRollout != null) {
+            pausedRollout = pausedRollout.trim();
+            if (pausedRollout.isEmpty()) {
+                pausedRollout = null;
+            }
+        }
     }
     
     /**
@@ -71,7 +78,7 @@ public record KubernetesAgentResponse(
      * @return A new response with empty strings and default values
      */
     public static KubernetesAgentResponse empty() {
-        return new KubernetesAgentResponse("", "", "", null, false, 0);
+        return new KubernetesAgentResponse("", "", "", null, false, 0, null);
     }
     
     /**
@@ -88,7 +95,8 @@ public record KubernetesAgentResponse(
             this.remediation, 
             this.prLink, 
             this.promote, 
-            this.confidence
+            this.confidence, 
+            this.pausedRollout
         );
     }
     
@@ -106,7 +114,8 @@ public record KubernetesAgentResponse(
             this.remediation, 
             this.prLink, 
             this.promote, 
-            this.confidence
+            this.confidence, 
+            this.pausedRollout
         );
     }
     
@@ -124,7 +133,8 @@ public record KubernetesAgentResponse(
             remediation, 
             this.prLink, 
             this.promote, 
-            this.confidence
+            this.confidence, 
+            this.pausedRollout
         );
     }
     
@@ -141,7 +151,8 @@ public record KubernetesAgentResponse(
             this.remediation, 
             prLink, 
             this.promote, 
-            this.confidence
+            this.confidence, 
+            this.pausedRollout
         );
     }
     
@@ -158,7 +169,8 @@ public record KubernetesAgentResponse(
             this.remediation, 
             this.prLink, 
             promote, 
-            this.confidence
+            this.confidence, 
+            this.pausedRollout
         );
     }
     
@@ -176,7 +188,8 @@ public record KubernetesAgentResponse(
             this.remediation, 
             this.prLink, 
             this.promote, 
-            confidence
+            confidence, 
+            this.pausedRollout
         );
     }
     

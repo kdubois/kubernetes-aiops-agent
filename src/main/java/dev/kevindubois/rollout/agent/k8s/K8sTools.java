@@ -3,6 +3,8 @@ package dev.kevindubois.rollout.agent.k8s;
 import dev.kevindubois.rollout.agent.observability.ActivityEventStore;
 import io.fabric8.kubernetes.api.model.*;
 import io.fabric8.kubernetes.client.KubernetesClient;
+import io.fabric8.kubernetes.client.dsl.base.PatchContext;
+import io.fabric8.kubernetes.client.dsl.base.PatchType;
 import io.quarkus.arc.Unremovable;
 import io.quarkus.logging.Log;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -75,6 +77,55 @@ public class K8sTools {
         } catch (Exception e) {
             Log.error("Error getting rollout status", e);
             return RolloutStatusData.error(e.getMessage());
+        }
+    }
+
+    /**
+     * Pauses a rollout so a human can review before promotion continues. Argo Rollouts
+     * holds the current step until the rollout is unpaused. When no name is given, the
+     * first rollout in the namespace is used.
+     *
+     * <p>An already-paused rollout is not re-patched and does not re-publish a pause
+     * event. A rollout that a human has unpaused is paused again on a later request —
+     * each analysis applies the gate policy.
+     *
+     * @return the paused rollout name, or null if no rollout was found or the patch failed
+     */
+    public String pauseRollout(String namespace, String rolloutName) {
+        Log.info("=== Executing: pauseRollout ===");
+
+        if (namespace == null || namespace.isEmpty()) {
+            Log.warn("pauseRollout: namespace is required");
+            return null;
+        }
+
+        try {
+            Rollout rollout = findRollout(namespace, rolloutName);
+            if (rollout == null) {
+                Log.warnf("pauseRollout: no Rollout found in namespace %s", namespace);
+                return null;
+            }
+
+            String name = rollout.getMetadata().getName();
+
+            if (rollout.getSpec() != null && Boolean.TRUE.equals(rollout.getSpec().getPaused())) {
+                Log.infof("Rollout %s/%s is already paused, skipping the patch", namespace, name);
+                return name;
+            }
+
+            // JSON merge patch: sets only spec.paused and leaves the rest of the spec untouched
+            k8sClient.resources(Rollout.class)
+                    .inNamespace(namespace)
+                    .withName(name)
+                    .patch(PatchContext.of(PatchType.JSON_MERGE), "{\"spec\":{\"paused\":true}}");
+
+            activityEvents.publish("PAUSE", "Rollout paused for human review", "rollout=" + name);
+            Log.infof("Paused rollout %s/%s pending human review", namespace, name);
+            return name;
+
+        } catch (Exception e) {
+            Log.error("Error pausing rollout", e);
+            return null;
         }
     }
 

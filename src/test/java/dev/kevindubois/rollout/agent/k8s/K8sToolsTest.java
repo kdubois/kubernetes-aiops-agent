@@ -4,6 +4,7 @@ import dev.kevindubois.rollout.agent.fixtures.K8sTestFixtures;
 import io.fabric8.kubernetes.api.model.*;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.dsl.*;
+import io.fabric8.kubernetes.client.dsl.base.PatchContext;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.InjectMock;
 import jakarta.inject.Inject;
@@ -223,6 +224,104 @@ class K8sToolsTest {
         assertNotNull(result);
         assertTrue(result.hasError());
         assertTrue(result.error().contains("required"));
+    }
+
+    @Test
+    void testPauseRollout_Success() {
+        String namespace = "default";
+        Rollout rollout = K8sTestFixtures.createTestRollout("demo-rollout", namespace, "Progressing", 2, 30);
+        var rolloutNsOp = rolloutNsOpFor(namespace);
+
+        KubernetesResourceList<Rollout> rolloutList = mock(KubernetesResourceList.class);
+        when(rolloutNsOp.list()).thenReturn(rolloutList);
+        when(rolloutList.getItems()).thenReturn(List.of(rollout));
+
+        Resource<Rollout> namedResource = mock(Resource.class);
+        when(rolloutNsOp.withName("demo-rollout")).thenReturn(namedResource);
+        when(namedResource.patch(any(PatchContext.class), anyString())).thenReturn(rollout);
+
+        String paused = k8sTools.pauseRollout(namespace, null);
+
+        assertEquals("demo-rollout", paused);
+        verify(namedResource).patch(any(PatchContext.class), eq("{\"spec\":{\"paused\":true}}"));
+    }
+
+    @Test
+    void testPauseRollout_PausesTheNamedRolloutAmongSeveral() {
+        String namespace = "default";
+        Rollout target = K8sTestFixtures.createTestRollout("demo-rollout", namespace, "Progressing", 2, 30);
+        var rolloutNsOp = rolloutNsOpFor(namespace);
+
+        Resource<Rollout> namedResource = mock(Resource.class);
+        when(rolloutNsOp.withName("demo-rollout")).thenReturn(namedResource);
+        when(namedResource.get()).thenReturn(target);
+        when(namedResource.patch(any(PatchContext.class), anyString())).thenReturn(target);
+
+        String paused = k8sTools.pauseRollout(namespace, "demo-rollout");
+
+        assertEquals("demo-rollout", paused);
+        verify(namedResource).patch(any(PatchContext.class), eq("{\"spec\":{\"paused\":true}}"));
+    }
+
+    @Test
+    void testPauseRollout_AlreadyPausedSkipsThePatch() {
+        String namespace = "default";
+        Rollout rollout = K8sTestFixtures.createTestRollout("demo-rollout", namespace, "Progressing", 2, 30);
+        RolloutSpec spec = new RolloutSpec();
+        spec.setPaused(true);
+        rollout.setSpec(spec);
+        var rolloutNsOp = rolloutNsOpFor(namespace);
+
+        KubernetesResourceList<Rollout> rolloutList = mock(KubernetesResourceList.class);
+        when(rolloutNsOp.list()).thenReturn(rolloutList);
+        when(rolloutList.getItems()).thenReturn(List.of(rollout));
+
+        Resource<Rollout> namedResource = mock(Resource.class);
+        when(rolloutNsOp.withName("demo-rollout")).thenReturn(namedResource);
+
+        String paused = k8sTools.pauseRollout(namespace, null);
+
+        assertEquals("demo-rollout", paused);
+        verify(namedResource, never()).patch(any(PatchContext.class), anyString());
+    }
+
+    @Test
+    void testPauseRollout_PatchFails() {
+        String namespace = "default";
+        Rollout rollout = K8sTestFixtures.createTestRollout("demo-rollout", namespace, "Progressing", 2, 30);
+        var rolloutNsOp = rolloutNsOpFor(namespace);
+
+        KubernetesResourceList<Rollout> rolloutList = mock(KubernetesResourceList.class);
+        when(rolloutNsOp.list()).thenReturn(rolloutList);
+        when(rolloutList.getItems()).thenReturn(List.of(rollout));
+
+        Resource<Rollout> namedResource = mock(Resource.class);
+        when(rolloutNsOp.withName("demo-rollout")).thenReturn(namedResource);
+        when(namedResource.patch(any(PatchContext.class), anyString()))
+                .thenThrow(new RuntimeException("403 Forbidden"));
+
+        String paused = k8sTools.pauseRollout(namespace, null);
+
+        assertNull(paused);
+    }
+
+    @Test
+    void testPauseRollout_NoRollouts() {
+        String namespace = "default";
+        var rolloutNsOp = rolloutNsOpFor(namespace);
+
+        KubernetesResourceList<Rollout> rolloutList = mock(KubernetesResourceList.class);
+        when(rolloutNsOp.list()).thenReturn(rolloutList);
+        when(rolloutList.getItems()).thenReturn(List.of());
+
+        String paused = k8sTools.pauseRollout(namespace, null);
+
+        assertNull(paused);
+    }
+
+    @Test
+    void testPauseRollout_EmptyNamespace() {
+        assertNull(k8sTools.pauseRollout("", null));
     }
 
     @Test

@@ -32,6 +32,8 @@ import static io.restassured.RestAssured.given;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -78,6 +80,36 @@ class AnalysisPipelineTest {
 
         assertThat(response.promote()).isTrue();
         assertThat(response.confidence()).isGreaterThanOrEqualTo(80);
+        assertThat(response.pausedRollout()).isNull();
+        verify(k8sTools, never()).pauseRollout(any(), any());
+    }
+
+    @Test
+    @DisplayName("Low-confidence promote with the pause gate → rollout paused, measurement stays successful")
+    void lowConfidencePromoteWithPauseGate_shouldPauseRollout() {
+        stubK8s(healthyDiagnostics(), healthyMetrics());
+        stubLlm(LOW_CONFIDENCE_PROMOTE, ACCEPT_SCORING);
+        when(k8sTools.pauseRollout(NAMESPACE, null)).thenReturn("quarkus-demo");
+
+        var response = postAnalyzeWithPauseGate(NAMESPACE, 70);
+
+        assertThat(response.promote()).isTrue();
+        assertThat(response.confidence()).isEqualTo(55);
+        assertThat(response.pausedRollout()).isEqualTo("quarkus-demo");
+        verify(k8sTools).pauseRollout(NAMESPACE, null);
+    }
+
+    @Test
+    @DisplayName("Low-confidence promote without the pause gate → promote, no pause")
+    void lowConfidencePromoteWithoutPauseGate_shouldNotPause() {
+        stubK8s(healthyDiagnostics(), healthyMetrics());
+        stubLlm(LOW_CONFIDENCE_PROMOTE, ACCEPT_SCORING);
+
+        var response = postAnalyze(NAMESPACE, null);
+
+        assertThat(response.promote()).isTrue();
+        assertThat(response.pausedRollout()).isNull();
+        verify(k8sTools, never()).pauseRollout(any(), any());
     }
 
     @Test
@@ -281,11 +313,22 @@ class AnalysisPipelineTest {
     // ── HTTP request helper ────────────────────────────────────────────
 
     private KubernetesAgentResponse postAnalyze(String namespace, String repoUrl) {
+        return postAnalyze(namespace, repoUrl, null);
+    }
+
+    private KubernetesAgentResponse postAnalyzeWithPauseGate(String namespace, int threshold) {
+        return postAnalyze(namespace, null, Map.of("pauseOnUncertainty", true, "uncertaintyThreshold", threshold));
+    }
+
+    private KubernetesAgentResponse postAnalyze(String namespace, String repoUrl, Map<String, Object> extraContext) {
         Map<String, Object> context = new HashMap<>();
         context.put("namespace", namespace);
         if (repoUrl != null) {
             context.put("repoUrl", repoUrl);
             context.put("baseBranch", "main");
+        }
+        if (extraContext != null) {
+            context.putAll(extraContext);
         }
 
         return given()
@@ -481,6 +524,15 @@ class AnalysisPipelineTest {
             "rootCause":"No issues detected",\
             "remediation":"Promote canary to stable",\
             "summary":"Canary healthy - promote",\
+            "issueCategory":"NO_ISSUES",\
+            "suspectClasses":[]}""";
+
+    private static final String LOW_CONFIDENCE_PROMOTE = """
+            {"promote":true,"confidence":55,\
+            "analysis":"Canary metrics mostly within threshold, but the sample is small and the error rate difference is borderline. Promoting with reservations.",\
+            "rootCause":"No clear issues, insufficient signal for a confident decision",\
+            "remediation":"Promote canary but monitor closely",\
+            "summary":"Canary acceptable - promote with low confidence",\
             "issueCategory":"NO_ISSUES",\
             "suspectClasses":[]}""";
 

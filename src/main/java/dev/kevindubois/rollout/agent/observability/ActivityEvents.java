@@ -38,6 +38,10 @@ public class ActivityEvents {
         store.publish("REMEDIATION", "Remediation triggered", "Analyzing root cause for automated fix");
     }
 
+    public void pauseFailed(String detail) {
+        store.publish("PAUSE_FAILED", "Pause requested but no rollout was paused", detail);
+    }
+
     public void remediationFailed(String reason) {
         store.publish("REMEDIATION", "Failed", reason);
     }
