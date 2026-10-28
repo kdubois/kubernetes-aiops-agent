@@ -1,41 +1,38 @@
 package dev.kevindubois.rollout.agent.remediation;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.kevindubois.rollout.agent.analysis.AnalysisResult;
-import dev.kevindubois.rollout.agent.remediation.RemediationResult;
-import dev.kevindubois.rollout.agent.utils.GitHubUtils;
-import dev.kevindubois.rollout.agent.utils.TextUtils;
 import dev.kevindubois.rollout.agent.observability.ActivityEvents;
-import dev.kevindubois.rollout.agent.remediation.RemediationLoop;
-import dev.langchain4j.service.output.OutputParsingException;
+import dev.kevindubois.rollout.agent.remediation.a2a.RemediationA2AAgentProducer;
+import dev.kevindubois.rollout.agent.remediation.a2a.RemediationRequest;
+import dev.kevindubois.rollout.agent.remediation.a2a.RemediationResponse;
+import dev.kevindubois.rollout.agent.utils.TextUtils;
 import io.quarkus.logging.Log;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
-import org.eclipse.microprofile.rest.client.inject.RestClient;
 
 import java.util.concurrent.ExecutorService;
 
+/**
+ * Delegates remediation to the remote remediation agent over A2A after a
+ * rollback decision. The coding agent, the sandbox isolation, the test-suite
+ * verification and the GitHub work all live in the remote agent — this side
+ * only composes the request from the analysis result and reports the outcome
+ * through the activity events when the sandbox run finishes.
+ */
 @ApplicationScoped
 public class RemediationOrchestrator {
 
-    @Inject
-    RemediationLoop remediationLoop;
+    private static final int MAX_ERROR_LOG_LENGTH = 4000;
 
     @Inject
-    SourceCodePrefetcher sourceCodePrefetcher;
+    RemediationA2AAgentProducer remediationAgentProducer;
 
     @Inject
     ActivityEvents activityEvents;
 
     @Inject
-    RemediationOutcomeHolder outcomeHolder;
-
-    @Inject
-    @RestClient
-    GitHubRestClient githubClient;
-
-    @ConfigProperty(name = "github.token")
-    String githubToken;
+    ObjectMapper mapper;
 
     @Inject
     ExecutorService executor;
@@ -46,115 +43,32 @@ public class RemediationOrchestrator {
             return;
         }
 
-        Log.info("Triggering async remediation for rollback decision");
+        Log.info("Delegating remediation to the remediation agent over A2A");
         activityEvents.remediationTriggered();
 
-        if (result.isOperational()) {
-            Log.info("Operational issue detected — creating GitHub issue directly (no LLM)");
-            executor.execute(() -> createIssueDeterministically(result, repoUrl));
-        } else {
-            String enrichedPrompt = prompt + sourceCodePrefetcher.prefetchSourceCode(
-                    prompt + "\n" + result, result.suspectClasses(), repoUrl, baseBranch);
-            executor.execute(() -> executeRemediation(enrichedPrompt, result, repoUrl, baseBranch));
-        }
-    }
+        RemediationRequest request = new RemediationRequest(
+                repoUrl,
+                baseBranch,
+                result.issueCategory() != null ? result.issueCategory().name() : null,
+                result.summary(),
+                result.rootCause(),
+                result.analysis(),
+                TextUtils.truncate(prompt, MAX_ERROR_LOG_LENGTH));
 
-    /**
-     * Create a GitHub issue directly without LLM involvement.
-     * Used for operational issues (OOM, memory leaks, etc.) where the analysis
-     * result already contains all the information needed.
-     */
-    private void createIssueDeterministically(AnalysisResult result, String repoUrl) {
-        try {
-            String[] ownerRepo = GitHubUtils.extractOwnerAndRepo(repoUrl);
-            String authHeader = GitHubUtils.authHeader(githubToken);
-
-            String titleSuffix = (result.summary() != null && !result.summary().isBlank())
-                    ? result.summary() : TextUtils.truncate(result.rootCause(), 100);
-            String title = "Canary Deployment Failed: " + titleSuffix;
-            String body = String.format("""
-                    ## Root Cause Analysis
-                    %s
-
-                    ## Analysis Details
-                    %s
-
-                    ## Related Kubernetes Resources
-                    - **Root cause type**: Operational issue (automated PR not applicable)
-
-                    ---
-                    *This issue was automatically created by Kubernetes AI Agent*
-                    *Please review and take appropriate action*
-                    """,
-                    result.rootCause() != null ? result.rootCause() : "Unknown",
-                    TextUtils.truncate(result.analysis(), 2000));
-
-            GitHubRestClient.CreateIssueRequest request = new GitHubRestClient.CreateIssueRequest(
-                    title, body,
-                    new String[]{"deployment-failure", "canary"},
-                    new String[]{"kdubois"});
-
-            GitHubRestClient.GitHubIssue issue = githubClient.createIssue(
-                    ownerRepo[0], ownerRepo[1], authHeader, request);
-
-            Log.infof("Created GitHub issue deterministically: %s", issue.html_url());
-            activityEvents.remediationCompleted(issue.html_url());
-
-        } catch (Exception e) {
-            Log.error("Failed to create GitHub issue", e);
-            activityEvents.remediationFailed("Failed to create issue: " + e.getMessage());
-        }
-    }
-
-    private void executeRemediation(String prompt, AnalysisResult result, String repoUrl, String baseBranch) {
-        outcomeHolder.reset();
-        try {
-            Log.info("Starting remediation (max 2 iterations via RemediationLoop)");
-            RemediationResult outcome = remediationLoop.remediateWithRetry(prompt, result, repoUrl, baseBranch);
-            String artifactUrl = (outcome != null) ? outcome.prLink() : null;
-
-            if (artifactUrl == null || artifactUrl.isEmpty()) {
-                artifactUrl = outcomeHolder.getOutcome()
-                        .map(RemediationResult::prLink)
-                        .orElse(null);
+        executor.execute(() -> {
+            try {
+                String responseJson = remediationAgentProducer.agent().remediate(
+                        mapper.writeValueAsString(request));
+                RemediationResponse response = mapper.readValue(responseJson, RemediationResponse.class);
+                Log.infof("Remediation agent finished: %s %s", response.status(), response.artifactLink());
+                activityEvents.remediationCompleted(
+                        TextUtils.isValidGitHubArtifactUrl(response.artifactLink())
+                                ? response.artifactLink()
+                                : null);
+            } catch (Exception e) {
+                Log.error("A2A remediation failed", e);
+                activityEvents.remediationFailed("A2A remediation failed: " + e.getMessage());
             }
-
-            activityEvents.remediationCompleted(
-                    TextUtils.isValidGitHubArtifactUrl(artifactUrl) ? artifactUrl : null);
-        } catch (Exception e) {
-            if (isOutputParsingFailure(e) && tryRecoverFromToolOutcome()) {
-                return;
-            }
-
-            Log.error("Remediation failed", e);
-            if (isOutputParsingFailure(e)) {
-                Log.info("Falling back to GitHub issue creation after LLM failure");
-                createIssueDeterministically(result, repoUrl);
-            } else {
-                activityEvents.remediationFailed(e.getMessage());
-            }
-        }
+        });
     }
-
-    private boolean tryRecoverFromToolOutcome() {
-        return outcomeHolder.getOutcome()
-                .filter(fallback -> TextUtils.isValidGitHubArtifactUrl(fallback.prLink()))
-                .map(fallback -> {
-                    Log.warn("Remediation tool succeeded but LLM output parsing failed; using tool outcome");
-                    activityEvents.remediationCompleted(fallback.prLink());
-                    return true;
-                })
-                .orElse(false);
-    }
-
-    private static boolean isOutputParsingFailure(Throwable t) {
-        while (t != null) {
-            if (t instanceof OutputParsingException) {
-                return true;
-            }
-            t = t.getCause();
-        }
-        return false;
-    }
-
 }

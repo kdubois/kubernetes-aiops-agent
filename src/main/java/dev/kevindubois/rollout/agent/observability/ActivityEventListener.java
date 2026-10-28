@@ -1,6 +1,5 @@
 package dev.kevindubois.rollout.agent.observability;
 
-import dev.kevindubois.rollout.agent.remediation.RemediationResult;
 import dev.kevindubois.rollout.agent.analysis.ScoringResult;
 import dev.langchain4j.agentic.observability.AgentInvocationError;
 import dev.langchain4j.agentic.observability.AgentListener;
@@ -35,9 +34,7 @@ public class ActivityEventListener implements AgentListener {
             case "AnalysisLoop" -> "Starting AI analysis loop";
             case "AnalysisAgent" -> "Analyzing rollout health";
             case "ScoringAgent" -> "Scoring confidence";
-            case "RemediationAgent" -> "Creating remediation PR/Issue";
-            case "RemediationLoop" -> "Starting remediation loop";
-            case "RemediationScoringAgent" -> "Scoring remediation quality";
+            case "Remediation Agent" -> "Remediating via the sandboxed coding agent";
             default -> null;
         };
 
@@ -59,30 +56,12 @@ public class ActivityEventListener implements AgentListener {
                     activityEvents.publish("RETRY",
                             "Retrying analysis", result.reason());
                 }
-            } else if ("RemediationScoringAgent".equals(name)) {
-                activityEvents.publish("CONFIDENCE_SCORE",
-                        "Remediation score: " + result.score() + "/100", result.reason());
-                if (result.needsRetry()) {
-                    activityEvents.publish("RETRY",
-                            "Retrying remediation", result.reason());
-                }
-            }
-
-        } else if (output instanceof RemediationResult result) {
-            if ("RemediationAgent".equals(name)) {
-                if (result.prLink() != null && !result.prLink().isEmpty()) {
-                    activityEvents.publish("REMEDIATION", "GitHub artifact created", result.prLink());
-                } else {
-                    activityEvents.publish("REMEDIATION", "Remediation completed", "No GitHub artifact created");
-                }
             }
 
         } else if (output instanceof String) {
             if ("AnalysisDataAgent".equals(name)) {
                 activityEvents.publish("ANALYSIS_SUMMARY", "Logs and metrics gathered");
             }
-        } else if ("RemediationAgent".equals(name) && output == null) {
-            activityEvents.publish("REMEDIATION", "Failed", "Agent returned null");
         }
     }
 
