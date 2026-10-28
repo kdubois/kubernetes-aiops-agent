@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.tomakehurst.wiremock.stubbing.Scenario;
 import dev.kevindubois.rollout.agent.k8s.K8sTools;
+import dev.kevindubois.rollout.agent.observability.ActivityEvents;
 import dev.kevindubois.rollout.agent.k8s.RolloutStatusData;
 import dev.kevindubois.rollout.agent.a2a.KubernetesAgentResponse;
 import dev.kevindubois.rollout.agent.k8s.PodDataResult;
@@ -51,6 +52,9 @@ class AnalysisPipelineTest {
 
     @InjectMock
     K8sTools k8sTools;
+
+    @InjectMock
+    ActivityEvents activityEvents;
 
     @BeforeEach
     void setUp() {
@@ -118,9 +122,12 @@ class AnalysisPipelineTest {
         assertThat(response.confidence()).isGreaterThanOrEqualTo(70);
         assertThat(response.rootCause()).containsIgnoringCase("NullPointerException");
 
-        await().atMost(15, TimeUnit.SECONDS).untilAsserted(() ->
-                WireMockExtension.server.verify(
-                        postRequestedFor(urlPathEqualTo("/"))));
+        await().atMost(15, TimeUnit.SECONDS).untilAsserted(() -> {
+            WireMockExtension.server.verify(
+                    postRequestedFor(urlPathEqualTo("/")));
+            // the outcome reaches the activity events, not just the wire
+            verify(activityEvents).remediationCompleted("https://github.com/test-owner/test-repo/pull/42");
+        });
     }
 
     @Test
@@ -139,9 +146,12 @@ class AnalysisPipelineTest {
         assertThat(response.promote()).isFalse();
         assertThat(response.confidence()).isGreaterThanOrEqualTo(70);
 
-        await().atMost(10, TimeUnit.SECONDS).untilAsserted(() ->
-                WireMockExtension.server.verify(
-                        postRequestedFor(urlPathEqualTo("/"))));
+        await().atMost(10, TimeUnit.SECONDS).untilAsserted(() -> {
+            WireMockExtension.server.verify(
+                    postRequestedFor(urlPathEqualTo("/")));
+            // issue links pass the same validation as PR links
+            verify(activityEvents).remediationCompleted("https://github.com/test-owner/test-repo/issues/1");
+        });
     }
 
     @Test
@@ -274,7 +284,7 @@ class AnalysisPipelineTest {
                         "id":"task-1","contextId":"ctx-1",\
                         "status":{"state":"TASK_STATE_COMPLETED",\
                         "timestamp":"2026-01-01T00:00:00Z"},\
-                        "artifacts":[{"parts":[{"text":"%s"}]}],\
+                        "artifacts":[{"artifactId":"artifact-1","parts":[{"text":"%s"}]}],\
                         "history":[]}}}"""
                         .formatted(responseJson.replace("\\", "\\\\").replace("\"", "\\\"")))));
     }

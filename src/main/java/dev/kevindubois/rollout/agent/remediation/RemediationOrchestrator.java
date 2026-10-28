@@ -8,10 +8,14 @@ import dev.kevindubois.rollout.agent.remediation.a2a.RemediationRequest;
 import dev.kevindubois.rollout.agent.remediation.a2a.RemediationResponse;
 import dev.kevindubois.rollout.agent.utils.TextUtils;
 import io.quarkus.logging.Log;
+import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Delegates remediation to the remote remediation agent over A2A after a
@@ -19,11 +23,16 @@ import java.util.concurrent.ExecutorService;
  * verification and the GitHub work all live in the remote agent — this side
  * only composes the request from the analysis result and reports the outcome
  * through the activity events when the sandbox run finishes.
+ *
+ * <p>Runs on its own virtual-thread executor with a call timeout: a sandbox
+ * run takes minutes and must not occupy a Quarkus core thread, and a hung
+ * A2A call must not block the executor forever.
  */
 @ApplicationScoped
 public class RemediationOrchestrator {
 
-    private static final int MAX_ERROR_LOG_LENGTH = 4000;
+    private static final int MAX_CONTEXT_LENGTH = 4000;
+    private static final int CALL_TIMEOUT_MINUTES = 35;
 
     @Inject
     RemediationA2AAgentProducer remediationAgentProducer;
@@ -34,8 +43,12 @@ public class RemediationOrchestrator {
     @Inject
     ObjectMapper mapper;
 
-    @Inject
-    ExecutorService executor;
+    private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+
+    @PreDestroy
+    void shutdown() {
+        executor.shutdown();
+    }
 
     public void triggerIfNeeded(AnalysisResult result, String prompt, String repoUrl, String baseBranch) {
         if (result.promote() || repoUrl == null || repoUrl.isEmpty()) {
@@ -53,22 +66,33 @@ public class RemediationOrchestrator {
                 result.summary(),
                 result.rootCause(),
                 result.analysis(),
-                TextUtils.truncate(prompt, MAX_ERROR_LOG_LENGTH));
+                TextUtils.truncate(prompt, MAX_CONTEXT_LENGTH));
 
-        executor.execute(() -> {
-            try {
-                String responseJson = remediationAgentProducer.agent().remediate(
-                        mapper.writeValueAsString(request));
-                RemediationResponse response = mapper.readValue(responseJson, RemediationResponse.class);
-                Log.infof("Remediation agent finished: %s %s", response.status(), response.artifactLink());
-                activityEvents.remediationCompleted(
-                        TextUtils.isValidGitHubArtifactUrl(response.artifactLink())
-                                ? response.artifactLink()
-                                : null);
-            } catch (Exception e) {
-                Log.error("A2A remediation failed", e);
-                activityEvents.remediationFailed("A2A remediation failed: " + e.getMessage());
-            }
-        });
+        CompletableFuture.runAsync(() -> invokeRemediationAgent(request), executor);
+    }
+
+    private void invokeRemediationAgent(RemediationRequest request) {
+        try {
+            String responseJson = CompletableFuture
+                    .supplyAsync(() -> remediationAgentProducer.agent().remediate(toJson(request)), executor)
+                    .get(CALL_TIMEOUT_MINUTES, TimeUnit.MINUTES);
+            RemediationResponse response = mapper.readValue(responseJson, RemediationResponse.class);
+            Log.infof("Remediation agent finished: %s %s", response.status(), response.artifactLink());
+            activityEvents.remediationCompleted(
+                    TextUtils.isValidGitHubArtifactUrl(response.artifactLink())
+                            ? response.artifactLink()
+                            : null);
+        } catch (Exception e) {
+            Log.error("A2A remediation failed", e);
+            activityEvents.remediationFailed("A2A remediation failed: " + e.getMessage());
+        }
+    }
+
+    private String toJson(RemediationRequest request) {
+        try {
+            return mapper.writeValueAsString(request);
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to serialize remediation request", e);
+        }
     }
 }

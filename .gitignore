@@ -21,3 +21,5 @@ deployment/secret.yaml
 .env
 
 
+.codex/
+.quarkus/
