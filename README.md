@@ -56,28 +56,21 @@ cd ../argo-rollouts-quarkus-demo
 
 ### Remediation Capabilities
 
-- **Source Code Analysis**: Read repository files to understand code structure and make informed fixes
-- **Git Operations**: Clone, branch, commit, push (using JGit library)
-- **Line-Based Patching**: Surgical code fixes using precise line-level changes
-- **GitHub PRs**: Automatically create pull requests with:
-    - Root cause analysis
-    - Code fixes based on actual source code
-    - Testing recommendations
-    - Links to Kubernetes resources
-- **Validation**: Built-in checks to prevent bad PRs (excessive deletions, structural damage)
+After a rollback decision with a repository URL configured, the agent delegates the fix to the
+[remediation-agent](../remediation-agent) service over A2A — a LangChain4j A2A client agent
+invoked asynchronously, so the analysis response returns to Argo Rollouts immediately.
 
-### Source Code Access
+The remote remediation agent:
 
-The remediation agent can read source files from the repository to make more accurate fix decisions:
+- **Swappable coding agent**: runs opencode (or pi, Bob) in an isolated sandbox pod — `restricted-v2`, no
+  service-account token, read-only root filesystem, egress limited to GitHub, Maven Central and the LLM endpoint
+- **Verified fixes**: the repository's own test suite runs inside the sandbox after the coding agent finishes;
+  a branch is pushed only when the suite is green
+- **Evidence-bearing PRs**: pull requests carry the test results, files changed, model, sandbox name and duration
+- **Issues for operational problems**: OOM, memory leaks and other operational signals open a GitHub issue instead
 
-- **On-Demand File Reading**: Agent requests specific files only when needed
-- **Batch Operations**: Read multiple files in a single operation for efficiency
-- **Common Use Cases**:
-  - Analyze configuration files (`application.properties`, YAML configs)
-  - Review dependency files (`pom.xml`, `build.gradle`, `package.json`)
-  - Examine application code referenced in error logs
-  - Identify exact line numbers for precise fixes
-- **Smart Analysis**: Agent uses actual source code context to propose better fixes
+The sandboxed flow is defined in the [remediation-agent repository](../remediation-agent); this service only
+composes the request from the analysis result and reports the outcome through the activity events.
 
 **Example**: When detecting a NullPointerException in logs, the agent can:
 1. Read the source file mentioned in the stack trace
@@ -139,17 +132,16 @@ flowchart LR
     E -->|retry| D
     E -->|return decision| F([Return]):::plugin
 
-    E -->|async remediation| G
+    E -->|async A2A delegation| G
 
-    subgraph G[RemediationAgent]
+    subgraph G[RemediationAgent (A2A)]
         direction TB
-        G1{Code fixable?}:::decision
-        G2[SourceCodePrefetcher]:::remediation
-        G3[Create PR]:::remediation
-        G4[Create Issue]:::remediation
-        G1 -->|Yes| G2
-        G2 --> G3
-        G1 -->|No| G4
+        G1[Sandbox: coding agent]:::remediation
+        G2[Repository test suite]:::remediation
+        G3[PR with evidence / Issue]:::remediation
+        G1 --> G2
+        G2 -->|green| G3
+        G2 -->|red| G3
     end
 
     classDef plugin fill:#90caf9,stroke:#1565c0,stroke-width:3px,color:#000
@@ -396,9 +388,7 @@ spec:
 | `ANALYSIS_API_KEY` | Yes | API key for the analysis model (any OpenAI-compatible endpoint) |
 | `ANALYSIS_BASE_URL` | No | Base URL for analysis model API (default: "https://api.openai.com/v1") |
 | `ANALYSIS_MODEL` | No | Analysis model name (default: "gpt-4o") |
-| `REMEDIATION_API_KEY` | No | API key for remediation model (defaults to ANALYSIS_API_KEY) |
-| `REMEDIATION_BASE_URL` | No | Base URL for remediation model API (defaults to ANALYSIS_BASE_URL) |
-| `REMEDIATION_MODEL` | No | Remediation model name (defaults to ANALYSIS_MODEL) |
+| `REMEDIATION_AGENT_URL` | No | URL of the remediation-agent A2A service (defaults to `http://remediation-agent:8080`) |
 | `GITHUB_TOKEN` | Yes | GitHub personal access token (needs `repo` scope) |
 | `GIT_USERNAME` | No | Git commit username (default: "kubernetes-agent") |
 | `GIT_EMAIL` | No | Git commit email (default: "agent@example.com") |
@@ -449,7 +439,7 @@ curl http://localhost:8080/q/health
 kubectl get secret kubernetes-agent -n openshift-gitops
 
 # Check environment variables in pod
-kubectl exec -n openshift-gitops deployment/kubernetes-agent -- env | grep -E "ANALYSIS_API_KEY|REMEDIATION_API_KEY|GITHUB_TOKEN"
+kubectl exec -n openshift-gitops deployment/kubernetes-agent -- env | grep -E "ANALYSIS_API_KEY|GITHUB_TOKEN|REMEDIATION_AGENT_URL"
 ```
 
 ### PR creation failing

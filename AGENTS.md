@@ -41,17 +41,13 @@ src/main/java/dev/kevindubois/rollout/agent/
     ActivityEventListener.java      # Publishes agent activity events for the demo UI
     ActivityEventsResource.java     # REST endpoint: activity event stream
   remediation/
-    RemediationOrchestrator.java    # Triggers remediation (PR or issue) after rollback
-    RemediationLoop.java            # Async remediation orchestration
-    RemediationAgent.java           # AI: open GitHub PR (code bug) or GitHub issue (ops issue)
-    SourceCodePrefetcher.java       # Prefetches source code for remediation context
-    SourceCodeTool.java             # Read source files from GitHub API (used by prefetcher)
-    GitHubPatchPRTool.java          # Tool: create PR with line-based patches (strict validation)
-    GitOperations.java              # JGit: clone, branch, commit, push
-    GitHubRestClient.java           # MicroProfile REST client for GitHub API
-    RepoCloneCache.java             # Caches cloned repos to avoid repeated clones
+    RemediationOrchestrator.java    # Delegates remediation to the remediation-agent over A2A after rollback
+    a2a/
+      RemediationA2AAgent.java         # Typed client interface for the remote A2A agent
+      RemediationA2AAgentProducer.java # Lazy LangChain4j A2A client builder (agent card over HTTP)
+      RemediationRequest.java          # A2A request contract (repoUrl, rootCause, analysis, ...)
+      RemediationResponse.java         # A2A response contract (status, prLink/issueLink, evidence)
   utils/
-    GitHubUtils.java                # Shared owner/repo parsing and auth header formatting
     TextUtils.java                  # Shared text utilities (truncate, isValidGitHubArtifactUrl)
 deployment/
   deployment.yaml                   # K8s Deployment (512Mi–2Gi memory), probes: /q/health
@@ -158,9 +154,9 @@ curl http://localhost:8080/q/health
 | Symptom | Fix |
 |---|---|
 | Pod not starting | Check secret exists (K8s path) or Vault is reachable (Vault path) |
-| API key errors | Verify the secret keys match the expected env vars (ANALYSIS_API_KEY, REMEDIATION_API_KEY) |
+| API key errors | Verify the secret keys match the expected env vars (ANALYSIS_API_KEY) |
 | Tool calls failing | Check RBAC — agent needs read access to pods, logs, events |
-| GitHub PR not created | Verify `github.token` is set (env var or Vault KV `github_token`); token needs `repo` scope |
+| Remediation not delegated | The A2A agent card is fetched lazily from `remediation.agent.url`; check the remediation-agent service is up and the URL resolves |
 
 ## Code Standards
 

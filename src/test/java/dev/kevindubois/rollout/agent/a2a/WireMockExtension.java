@@ -26,7 +26,7 @@ public class WireMockExtension implements QuarkusTestResourceLifecycleManager {
                 "quarkus.langchain4j.openai.api-key", "test-key",
                 "quarkus.langchain4j.openai.remediation.base-url", baseUrl + "/v1",
                 "quarkus.langchain4j.openai.remediation.api-key", "test-key",
-                "quarkus.rest-client.github-api.url", baseUrl,
+                "remediation.agent.url", baseUrl,
                 "github.token", "test-token"
         );
     }

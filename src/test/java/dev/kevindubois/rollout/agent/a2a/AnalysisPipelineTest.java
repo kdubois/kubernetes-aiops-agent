@@ -4,11 +4,10 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.tomakehurst.wiremock.stubbing.Scenario;
 import dev.kevindubois.rollout.agent.k8s.K8sTools;
+import dev.kevindubois.rollout.agent.observability.ActivityEvents;
 import dev.kevindubois.rollout.agent.k8s.RolloutStatusData;
 import dev.kevindubois.rollout.agent.a2a.KubernetesAgentResponse;
 import dev.kevindubois.rollout.agent.k8s.PodDataResult;
-import dev.kevindubois.rollout.agent.remediation.GitOperations;
-import dev.kevindubois.rollout.agent.remediation.RepoCloneCache;
 import io.quarkus.test.InjectMock;
 import io.quarkus.test.common.QuarkusTestResource;
 import io.quarkus.test.junit.QuarkusTest;
@@ -17,11 +16,7 @@ import io.restassured.config.RestAssuredConfig;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -39,8 +34,9 @@ import static org.mockito.Mockito.when;
 /**
  * End-to-end integration test for the analysis pipeline.
  * Exercises the full path from REST request through the multi-agent workflow
- * (K8s data gathering → LLM analysis → scoring → remediation) using
- * WireMock for the LLM and GitHub APIs and a mocked K8sTools for cluster data.
+ * (K8s data gathering → LLM analysis → scoring → A2A remediation delegation)
+ * using WireMock for the LLM and the remediation A2A agent and a mocked
+ * K8sTools for cluster data.
  */
 @QuarkusTest
 @QuarkusTestResource(value = WireMockExtension.class, restrictToAnnotatedClass = true)
@@ -58,10 +54,7 @@ class AnalysisPipelineTest {
     K8sTools k8sTools;
 
     @InjectMock
-    RepoCloneCache repoCloneCache;
-
-    @InjectMock
-    GitOperations gitOperations;
+    ActivityEvents activityEvents;
 
     @BeforeEach
     void setUp() {
@@ -113,21 +106,15 @@ class AnalysisPipelineTest {
     }
 
     @Test
-    @DisplayName("NullPointerException in canary → rollback (CODE_BUG) + GitHub PR created")
-    void npeInCanary_shouldRollbackAndCreatePR(@TempDir Path tempRepo) throws Exception {
-        Path srcDir = tempRepo.resolve("src/main/java/com/example");
-        Files.createDirectories(srcDir);
-        Files.writeString(srcDir.resolve("GreetingService.java"), GREETING_SERVICE_SOURCE);
-
+    @DisplayName("NullPointerException in canary → rollback (CODE_BUG) + remediation delegated over A2A")
+    void npeInCanary_shouldRollbackAndDelegateRemediation() {
         stubK8s(npeDiagnostics(), npeMetrics());
         stubLlm(NPE_ANALYSIS, ACCEPT_SCORING);
-        when(repoCloneCache.getOrClone(any(), any())).thenReturn(tempRepo);
-
-        stubGitHubFileContent("src/main/java/com/example/GreetingService.java",
-                GREETING_SERVICE_SOURCE);
-        stubGitHubRepository();
-        stubGitHubPRCreation();
-        stubRemediationLlm();
+        stubRemediationAgent("""
+                {"status":"success","prLink":"https://github.com/test-owner/test-repo/pull/42",\
+                "issueLink":null,"branch":"fix/k8s-issue-ab12","filesChanged":2,\
+                "testSummary":"Tests run: 10, Failures: 0","sandbox":"remediation-ab12",\
+                "model":"test-model","message":null}""");
 
         var response = postAnalyze(NAMESPACE, "https://github.com/test-owner/test-repo");
 
@@ -135,26 +122,36 @@ class AnalysisPipelineTest {
         assertThat(response.confidence()).isGreaterThanOrEqualTo(70);
         assertThat(response.rootCause()).containsIgnoringCase("NullPointerException");
 
-        await().atMost(15, TimeUnit.SECONDS).untilAsserted(() ->
-                WireMockExtension.server.verify(
-                        postRequestedFor(urlPathEqualTo("/repos/test-owner/test-repo/pulls"))));
+        await().atMost(15, TimeUnit.SECONDS).untilAsserted(() -> {
+            WireMockExtension.server.verify(
+                    postRequestedFor(urlPathEqualTo("/")));
+            // the outcome reaches the activity events, not just the wire
+            verify(activityEvents).remediationCompleted("https://github.com/test-owner/test-repo/pull/42");
+        });
     }
 
     @Test
-    @DisplayName("OutOfMemoryError in canary → rollback (OPERATIONAL) + GitHub issue created")
-    void memoryLeak_shouldRollbackAndCreateGitHubIssue() {
+    @DisplayName("OutOfMemoryError in canary → rollback (OPERATIONAL) + remediation delegated over A2A")
+    void memoryLeak_shouldRollbackAndDelegateRemediation() {
         stubK8s(memoryLeakDiagnostics(), memoryLeakMetrics());
         stubLlm(MEMORY_LEAK_ANALYSIS, ACCEPT_SCORING);
-        stubGitHubIssueCreation();
+        stubRemediationAgent("""
+                {"status":"issue","prLink":null,\
+                "issueLink":"https://github.com/test-owner/test-repo/issues/1",\
+                "branch":null,"filesChanged":0,"testSummary":null,"sandbox":null,\
+                "model":null,"message":"Operational issue detected by canary analysis"}""");
 
         var response = postAnalyze(NAMESPACE, "https://github.com/test-owner/test-repo");
 
         assertThat(response.promote()).isFalse();
         assertThat(response.confidence()).isGreaterThanOrEqualTo(70);
 
-        await().atMost(10, TimeUnit.SECONDS).untilAsserted(() ->
-                WireMockExtension.server.verify(
-                        postRequestedFor(urlPathEqualTo("/repos/test-owner/test-repo/issues"))));
+        await().atMost(10, TimeUnit.SECONDS).untilAsserted(() -> {
+            WireMockExtension.server.verify(
+                    postRequestedFor(urlPathEqualTo("/")));
+            // issue links pass the same validation as PR links
+            verify(activityEvents).remediationCompleted("https://github.com/test-owner/test-repo/issues/1");
+        });
     }
 
     @Test
@@ -259,55 +256,37 @@ class AnalysisPipelineTest {
                                 "state":"open",\
                                 "title":"Canary Deployment Failed"}""")));
     }
-
-    private void stubGitHubFileContent(String filePath, String content) {
-        String base64Content = Base64.getEncoder().encodeToString(content.getBytes());
-        String fileName = filePath.substring(filePath.lastIndexOf('/') + 1);
-        WireMockExtension.server.stubFor(get(urlPathEqualTo(
-                "/repos/test-owner/test-repo/contents/" + filePath))
-                .willReturn(okJson(String.format(
-                        "{\"name\":\"%s\",\"path\":\"%s\",\"sha\":\"abc123\"," +
-                        "\"size\":%d,\"type\":\"file\"," +
-                        "\"content\":\"%s\",\"encoding\":\"base64\"}",
-                        fileName, filePath, content.length(), base64Content))));
-    }
-
-    private void stubGitHubRepository() {
-        WireMockExtension.server.stubFor(get(urlPathEqualTo("/repos/test-owner/test-repo"))
-                .willReturn(okJson(
-                        "{\"name\":\"test-repo\",\"full_name\":\"test-owner/test-repo\"," +
-                        "\"default_branch\":\"main\"," +
-                        "\"html_url\":\"https://github.com/test-owner/test-repo\"}")));
-    }
-
-    private void stubGitHubPRCreation() {
-        WireMockExtension.server.stubFor(post(urlPathEqualTo("/repos/test-owner/test-repo/pulls"))
-                .willReturn(aResponse()
-                        .withStatus(201)
-                        .withHeader("Content-Type", "application/json")
-                        .withBody(
-                                "{\"number\":42," +
-                                "\"html_url\":\"https://github.com/test-owner/test-repo/pull/42\"," +
-                                "\"state\":\"open\"," +
-                                "\"title\":\"Fix: Null-guard greet() to prevent NPE\"}")));
-    }
-
-    private void stubRemediationLlm() {
+    /**
+     * Stubs the remediation agent over A2A: the agent card and a SendMessage
+     * call that completes immediately with the given RemediationResponse JSON
+     * as the task artifact.
+     */
+    private void stubRemediationAgent(String responseJson) {
         var wm = WireMockExtension.server;
+        String baseUrl = wm.baseUrl();
 
-        wm.stubFor(post(urlPathEqualTo("/v1/chat/completions"))
-                .inScenario("remediation")
-                .whenScenarioStateIs(Scenario.STARTED)
-                .withRequestBody(containing("Remediation agent"))
-                .willReturn(okJson(toolCallCompletion("createGitHubPRWithPatches",
-                        remediationToolArgs())))
-                .willSetStateTo("TOOL_EXECUTED"));
+        wm.stubFor(get(urlPathEqualTo("/.well-known/agent-card.json"))
+                .willReturn(okJson("""
+                        {"name":"Remediation Agent",\
+                        "description":"Remediates failed canary rollouts",\
+                        "version":"1.0.0",\
+                        "protocolVersion":"1.0.0",\
+                        "capabilities":{"streaming":false,"pushNotifications":false},\
+                        "defaultInputModes":["text"],\
+                        "defaultOutputModes":["text"],\
+                        "skills":[{"id":"remediate","name":"Remediate canary rollback"}],\
+                        "supportedInterfaces":[{"protocolBinding":"JSONRPC","url":"%s"}]}"""
+                        .formatted(baseUrl))));
 
-        wm.stubFor(post(urlPathEqualTo("/v1/chat/completions"))
-                .inScenario("remediation")
-                .whenScenarioStateIs("TOOL_EXECUTED")
-                .withRequestBody(containing("Remediation agent"))
-                .willReturn(okJson(chatCompletion(REMEDIATION_RESULT))));
+        wm.stubFor(post(urlPathEqualTo("/"))
+                .willReturn(okJson("""
+                        {"jsonrpc":"2.0","id":"test-id","result":{"task":{\
+                        "id":"task-1","contextId":"ctx-1",\
+                        "status":{"state":"TASK_STATE_COMPLETED",\
+                        "timestamp":"2026-01-01T00:00:00Z"},\
+                        "artifacts":[{"artifactId":"artifact-1","parts":[{"text":"%s"}]}],\
+                        "history":[]}}}"""
+                        .formatted(responseJson.replace("\\", "\\\\").replace("\"", "\\\"")))));
     }
 
     // ── HTTP request helper ────────────────────────────────────────────
@@ -368,58 +347,7 @@ class AnalysisPipelineTest {
         }
     }
 
-    private static String toolCallCompletion(String toolName, String arguments) {
-        try {
-            Map<String, Object> message = new HashMap<>();
-            message.put("role", "assistant");
-            message.put("content", null);
-            message.put("tool_calls", List.of(Map.of(
-                    "id", "call_test123",
-                    "type", "function",
-                    "function", Map.of(
-                            "name", toolName,
-                            "arguments", arguments))));
 
-            return MAPPER.writeValueAsString(Map.of(
-                    "id", "chatcmpl-toolcall",
-                    "object", "chat.completion",
-                    "created", 1234567890,
-                    "model", "gpt-4o",
-                    "choices", List.of(Map.of(
-                            "index", 0,
-                            "message", message,
-                            "finish_reason", "tool_calls")),
-                    "usage", Map.of(
-                            "prompt_tokens", 100,
-                            "completion_tokens", 50,
-                            "total_tokens", 150)));
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    private static String remediationToolArgs() {
-        try {
-            String patches = MAPPER.writeValueAsString(List.of(Map.of(
-                    "filePath", "src/main/java/com/example/GreetingService.java",
-                    "changes", List.of(Map.of(
-                            "lineNumber", 9,
-                            "action", "replace",
-                            "content", "        String greeting = \"Hello, \" + (name != null ? name.toUpperCase() : \"World\") + \"!\";")))));
-
-            return MAPPER.writeValueAsString(Map.ofEntries(
-                    Map.entry("repoUrl", "https://github.com/test-owner/test-repo"),
-                    Map.entry("patches", patches),
-                    Map.entry("title", "Null-guard greet() to prevent NPE"),
-                    Map.entry("fixDescription", "Added null check for name parameter"),
-                    Map.entry("rootCause", "NullPointerException when name is null"),
-                    Map.entry("namespace", "test-ns"),
-                    Map.entry("podName", "app-canary-abc"),
-                    Map.entry("testingRecommendations", "Test with null name")));
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-    }
 
     // ── K8s diagnostics fixtures ───────────────────────────────────────
 
@@ -557,22 +485,5 @@ class AnalysisPipelineTest {
     private static final String ACCEPT_SCORING = """
             {"score":90,"needsRetry":false,"reason":"Analysis quality acceptable"}""";
 
-    private static final String REMEDIATION_RESULT = """
-            {"prLink":"https://github.com/test-owner/test-repo/pull/42",\
-            "remediation":"Added null check for name parameter in GreetingService.greet()"}""";
 
-    private static final String GREETING_SERVICE_SOURCE = """
-            package com.example;
-
-            import jakarta.enterprise.context.ApplicationScoped;
-
-            @ApplicationScoped
-            public class GreetingService {
-
-                public String greet(String name) {
-                    String greeting = "Hello, " + name.toUpperCase() + "!";
-                    return greeting;
-                }
-            }
-            """;
 }
