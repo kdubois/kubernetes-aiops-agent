@@ -164,6 +164,8 @@ curl http://localhost:8080/q/health
 
 ## Code Standards
 
+- Clean, idiomatic Quarkus code. No overengineering — the simplest solution that works.
+- No repetition, no boilerplate. Prefer records over object mappers or manual DTO mapping; use Java 25 idioms (records, pattern matching, sealed types, text blocks) where they fit.
 - Records for DTOs — no mutable state in data contracts.
 - `@SystemMessage` should define role, output format, and constraints; `@UserMessage` passes runtime data.
 - Log at `debug` for per-operation detail, `info` for decisions, `error` for failures.
