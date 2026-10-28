@@ -66,9 +66,6 @@ public class K8sTools {
             long stablePodCount = countActivePods(pods[0]);
             long canaryPodCount = countActivePods(pods[1]);
 
-            activityEvents.publish("TOOL_RESULT", "Rollout status retrieved",
-                    "rollout=" + name + ", phase=" + phase + ", canaryWeight=" + canaryWeight + "%");
-
             Log.infof("Retrieved rollout status for %s/%s: phase=%s, canaryWeight=%d%%",
                     namespace, name, phase, canaryWeight);
             return new RolloutStatusData(null, name, namespace, phase, currentStepIndex,

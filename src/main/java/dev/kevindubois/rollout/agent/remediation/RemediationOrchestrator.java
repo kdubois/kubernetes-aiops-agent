@@ -78,10 +78,17 @@ public class RemediationOrchestrator {
                     .get(CALL_TIMEOUT_MINUTES, TimeUnit.MINUTES);
             RemediationResponse response = mapper.readValue(responseJson, RemediationResponse.class);
             Log.infof("Remediation agent finished: %s %s", response.status(), response.artifactLink());
-            activityEvents.remediationCompleted(
-                    TextUtils.isValidGitHubArtifactUrl(response.artifactLink())
-                            ? response.artifactLink()
-                            : null);
+            if (response.artifactLink() != null && TextUtils.isValidGitHubArtifactUrl(response.artifactLink())) {
+                activityEvents.remediationCompleted(response.artifactLink());
+            } else if ("rejected".equals(response.status()) || "infra_error".equals(response.status())
+                    || "agent_error".equals(response.status())) {
+                // no artifact and nothing was created — report it as a failure,
+                // not as a completed remediation without an artifact
+                activityEvents.remediationFailed(
+                        response.status() + (response.message() != null ? ": " + response.message() : ""));
+            } else {
+                activityEvents.remediationCompleted(null);
+            }
         } catch (Exception e) {
             Log.error("A2A remediation failed", e);
             activityEvents.remediationFailed("A2A remediation failed: " + e.getMessage());
