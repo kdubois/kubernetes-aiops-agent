@@ -6,6 +6,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 public class RolloutStatus {
 
     private String phase;
+    private String message;
     private String stableRS;
     private String canaryRS;
     private Integer currentStepIndex;
@@ -13,6 +14,9 @@ public class RolloutStatus {
 
     public String getPhase() { return phase; }
     public void setPhase(String phase) { this.phase = phase; }
+
+    public String getMessage() { return message; }
+    public void setMessage(String message) { this.message = message; }
 
     public String getStableRS() { return stableRS; }
     public void setStableRS(String stableRS) { this.stableRS = stableRS; }

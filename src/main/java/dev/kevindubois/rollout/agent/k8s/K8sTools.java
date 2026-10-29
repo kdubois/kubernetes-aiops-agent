@@ -59,6 +59,7 @@ public class K8sTools {
             RolloutStatus status = rollout.getStatus();
             String name = rollout.getMetadata().getName();
             String phase = (status != null && status.getPhase() != null) ? status.getPhase() : "Unknown";
+            String statusMessage = (status != null && status.getMessage() != null) ? status.getMessage() : "";
             int canaryWeight = status != null ? getCanaryWeight(status) : 0;
             Integer currentStepIndex = status != null ? status.getCurrentStepIndex() : null;
 
@@ -68,7 +69,7 @@ public class K8sTools {
 
             Log.infof("Retrieved rollout status for %s/%s: phase=%s, canaryWeight=%d%%",
                     namespace, name, phase, canaryWeight);
-            return new RolloutStatusData(null, name, namespace, phase, currentStepIndex,
+            return new RolloutStatusData(null, name, namespace, phase, statusMessage, currentStepIndex,
                     canaryWeight, 100 - canaryWeight, stablePodCount, canaryPodCount);
 
         } catch (Exception e) {

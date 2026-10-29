@@ -228,7 +228,7 @@ class AnalysisPipelineTest {
         when(k8sTools.getCanaryDiagnostics(NAMESPACE, null, 200)).thenReturn(diagnostics);
         when(k8sTools.getCanaryMetrics(NAMESPACE)).thenReturn(metrics);
         when(k8sTools.getRolloutStatus(NAMESPACE, null)).thenReturn(new RolloutStatusData(
-                null, "demo-rollout", NAMESPACE, "Progressing", 2, 30, 70, 2, 3));
+                null, "demo-rollout", NAMESPACE, "Progressing", "progressing", 2, 30, 70, 2, 3));
     }
 
     // ── WireMock stubs ─────────────────────────────────────────────────

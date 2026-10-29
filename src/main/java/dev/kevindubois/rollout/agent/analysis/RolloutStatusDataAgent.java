@@ -35,7 +35,13 @@ public class RolloutStatusDataAgent {
         sb.append("=== ROLLOUT STATUS REPORT ===\n");
         sb.append("ROLLOUT: ").append(status.rolloutName())
                 .append(" (namespace ").append(status.namespace()).append(")\n");
-        sb.append("PHASE: ").append(status.phase()).append("\n");
+        sb.append("PHASE: ").append(status.phase());
+        if (status.isStepPause()) {
+            sb.append(" (normal canary step pause while measurements run)");
+        } else if (status.message() != null && !status.message().isBlank()) {
+            sb.append(" — ").append(status.message());
+        }
+        sb.append("\n");
         sb.append("STEP INDEX: ").append(status.currentStepIndex() != null ? status.currentStepIndex() : "N/A").append("\n");
         sb.append("TRAFFIC: canary ").append(status.canaryWeight())
                 .append("%, stable ").append(status.stableWeight()).append("%\n");

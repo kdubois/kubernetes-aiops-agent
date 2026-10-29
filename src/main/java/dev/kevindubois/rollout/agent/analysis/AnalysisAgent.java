@@ -19,7 +19,8 @@ public interface AnalysisAgent {
         ANALYSIS PRIORITY: Logs (errors/exceptions) > Metrics comparison
         Use rollout signals as context for the other evidence:
         - Phase Progressing with low canary weight = early canary, metrics come from few requests
-        - Phase Paused = the rollout is held for review (for example by the uncertainty gate), not a health problem; judge the evidence normally
+        - Phase Paused with a canary step pause = the rollout is between analysis measurements; this is normal and NOT a review hold — do not mention pausing in your analysis
+        - Phase Paused with a manual pause = the rollout is held for human review (uncertainty gate); mention it only if relevant
         - Phase Degraded or Aborted = the rollout controller already sees a problem
         - Phase Healthy with canary weight 0% = rollout finished, stable and canary converged
         - Canary weight tells you how much traffic the canary is actually serving
