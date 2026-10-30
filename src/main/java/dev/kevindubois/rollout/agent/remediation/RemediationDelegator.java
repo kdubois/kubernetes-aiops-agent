@@ -1,12 +1,12 @@
 package dev.kevindubois.rollout.agent.remediation;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import dev.kevindubois.rollout.agent.analysis.AnalysisResult;
 import dev.kevindubois.rollout.agent.observability.ActivityEvents;
 import dev.kevindubois.rollout.agent.remediation.a2a.RemediationA2AAgentProducer;
 import dev.kevindubois.rollout.agent.remediation.a2a.RemediationRequest;
 import dev.kevindubois.rollout.agent.remediation.a2a.RemediationResponse;
 import dev.kevindubois.rollout.agent.utils.TextUtils;
+import io.quarkus.arc.Unremovable;
 import io.quarkus.logging.Log;
 import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -18,20 +18,20 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Delegates remediation to the remote remediation agent over A2A after a
- * rollback decision. The coding agent, the sandbox isolation, the test-suite
+ * Executes the A2A call to the remote remediation agent on a background
+ * thread. The coding agent, the sandbox isolation, the test-suite
  * verification and the GitHub work all live in the remote agent — this side
- * only composes the request from the analysis result and reports the outcome
- * through the activity events when the sandbox run finishes.
+ * only sends the request and reports the outcome through the activity events
+ * when the sandbox run finishes.
  *
  * <p>Runs on its own virtual-thread executor with a call timeout: a sandbox
  * run takes minutes and must not occupy a Quarkus core thread, and a hung
  * A2A call must not block the executor forever.
  */
 @ApplicationScoped
-public class RemediationOrchestrator {
+@Unremovable
+public class RemediationDelegator {
 
-    private static final int MAX_CONTEXT_LENGTH = 4000;
     private static final int CALL_TIMEOUT_MINUTES = 35;
 
     @Inject
@@ -50,25 +50,17 @@ public class RemediationOrchestrator {
         executor.shutdown();
     }
 
-    public void triggerIfNeeded(AnalysisResult result, String prompt, String repoUrl, String baseBranch) {
-        if (result.promote() || repoUrl == null || repoUrl.isEmpty()) {
-            Log.debug("Skipping remediation - promote=true or no repoUrl configured");
-            return;
-        }
-
+    /**
+     * Sends the remediation request over A2A in the background and returns
+     * immediately, so the analysis sequence can answer Argo Rollouts without
+     * waiting for the sandbox run.
+     */
+    public String delegate(RemediationRequest request) {
         Log.info("Delegating remediation to the remediation agent over A2A");
         activityEvents.remediationTriggered();
 
-        RemediationRequest request = new RemediationRequest(
-                repoUrl,
-                baseBranch,
-                result.issueCategory() != null ? result.issueCategory().name() : null,
-                result.summary(),
-                result.rootCause(),
-                result.analysis(),
-                TextUtils.truncate(prompt, MAX_CONTEXT_LENGTH));
-
         CompletableFuture.runAsync(() -> invokeRemediationAgent(request), executor);
+        return "delegated";
     }
 
     private void invokeRemediationAgent(RemediationRequest request) {

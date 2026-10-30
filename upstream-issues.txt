@@ -1,0 +1,113 @@
+Upstream issues to file against langchain4j/langchain4j
+=======================================================
+
+All three were found with langchain4j-agentic 1.20.2-beta30 (pulled in by
+quarkus-langchain4j 1.14.2). Together they prevent composing a conditional,
+non-blocking A2A subagent into a declarative @SequenceAgent graph.
+
+-------------------------------------------------------
+Issue 1: @Agent(optional = true) is silently ignored on non-AI agents
+-------------------------------------------------------
+
+Module: langchain4j-agentic
+
+The @Agent annotation has an optional() attribute documented as "the agent's
+execution will be silently skipped when any of its arguments is missing in the
+agentic scope, instead of making the agentic system's execution fail". It
+works for AI agents (AgentExecutor.internalExecute catches
+MissingArgumentException and checks optional()), but not for non-AI agents:
+AgentUtil.nonAiAgentInvoker() builds a NonAiAgentInstance without ever reading
+annotation.optional(), and NonAiAgentInstance falls back to the interface
+default optional() = false.
+
+Repro: a class with a static method annotated
+@Agent(outputKey = "x", optional = true) whose parameters are not always
+present in the scope. When an argument is missing, the agent throws
+MissingArgumentException instead of being skipped, and the whole sequence
+fails. With @SequenceAgent there is no other way to make a trailing step
+conditional, so this blocks conditional composition of non-AI steps entirely.
+
+Affected code:
+- dev.langchain4j.agentic.internal.AgentUtil#nonAiAgentInvoker
+  (does not pass annotation.optional())
+- dev.langchain4j.agentic.internal.NonAiAgentInstance
+  (no optional field; interface default false)
+
+Expected: nonAiAgentToExecutor/nonAiAgentInvoker wire optional from the
+@Agent annotation into NonAiAgentInstance, or the attribute is removed from
+the annotation if non-AI agents are not meant to support it.
+
+-------------------------------------------------------
+Issue 2: @A2AClientAgent fetches the agent card eagerly at build time
+-------------------------------------------------------
+
+Module: langchain4j-agentic-a2a
+
+DefaultA2AClientBuilder fetches the agent card over HTTP in build() (the
+agentCard field is final, resolved by A2ACardResolver before the client is
+constructed). There is no lazy option. Because declarative composition
+resolves subagent instances when the parent graph is built, the card fetch
+happens at graph construction time, not at first invocation.
+
+Consequences: if the remote A2A agent is down or slow when the graph is
+built, constructing the parent agent fails, even though the A2A subagent
+would never be invoked (e.g. it is conditional / late in the sequence). In
+Quarkus (quarkus-langchain4j) the parent is a CDI synthetic bean, so the
+first call to the parent workflow fails with a CreationException wrapping
+A2AClientHTTPError — an unavailable optional remote agent takes down the
+whole workflow. This also makes the A2A agent unusable in tests without
+stubbing the card before the parent bean is created.
+
+Affected code:
+- dev.langchain4j.agentic.a2a.DefaultA2AClientBuilder
+  (card fetched in constructor/build path, stored in final field)
+
+Expected: the agent card is fetched lazily on first invocation, or the
+builder exposes a lazy() option so callers can defer the fetch.
+
+Note: the eager resolution of subagent beans during parent bean creation
+happens on the Quarkus side (quarkiverse/quarkus-langchain4j,
+AgenticRecorder/QuarkusSubAgentResolver). A companion issue could be filed
+in the quarkiverse/quarkus-langchain4j repo asking for lazy resolution of
+A2A subagent beans; the underlying fix belongs here.
+
+-------------------------------------------------------
+Issue 3: async = true subagent blocks the root call at the end
+-------------------------------------------------------
+
+Module: langchain4j-agentic
+
+An agent declared async = true returns an AsyncResponse and the sequence
+continues without waiting — but DefaultAgenticScope.rootCallEnded() calls
+state.replaceAll(this::readStateBlocking), which joins every pending
+DelayedResponse before the root invocation returns. So a fire-and-forget
+trailing agent is impossible: the root method blocks until the async agent
+finishes anyway.
+
+Repro: a @SequenceAgent whose last subagent is @Agent(async = true) and
+takes, say, 10 seconds. The root method still takes ~10 seconds to return.
+The async attribute only overlaps execution with the *following* agents in
+the sequence; if the async agent is last, the root call waits for it.
+
+Affected code:
+- dev.langchain4j.agentic.scope.DefaultAgenticScope#rootCallEnded
+  (state.replaceAll(this::readStateBlocking))
+
+Expected: either document that async agents must always be followed by other
+agents (otherwise async has no effect on the root call latency), or provide
+a fire-and-forget mode where the root can return while the async agent
+continues, with the scope kept alive until pending agents complete.
+
+-------------------------------------------------------
+Context (can be pasted into the issues)
+-------------------------------------------------------
+
+We are composing an autonomous analysis workflow as a declarative
+@SequenceAgent in Quarkus. The last step should delegate a fix to a remote
+A2A agent, but only when the analysis decides to roll back and a repository
+is configured. That requires: (1) a way to skip the step when its arguments
+are absent, (2) the A2A card fetch to not happen at graph build time, and
+(3) the root call to return immediately while the A2A call runs in the
+background (it takes minutes — a sandboxed coding agent). All three are
+currently impossible, so we fall back to an imperative background call
+inside the declarative step.

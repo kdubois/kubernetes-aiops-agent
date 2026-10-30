@@ -1,6 +1,7 @@
 package dev.kevindubois.rollout.agent.analysis;
 
 import dev.kevindubois.rollout.agent.observability.ActivityEventListener;
+import dev.kevindubois.rollout.agent.remediation.RemediationAgent;
 import dev.langchain4j.agentic.declarative.AgentListenerSupplier;
 import dev.langchain4j.agentic.declarative.SequenceAgent;
 import dev.langchain4j.agentic.observability.AgentListener;
@@ -13,6 +14,10 @@ import io.quarkus.arc.Arc;
  * 1. AnalysisDataAgent: Non-AI agents fetch diagnostics and metrics in parallel
  * 2. DataCombinerAgent: Non-AI agent combines the parallel reports into a single string
  * 3. AnalysisLoop: AI agents analyze the data and make promote/rollback decision
+ * 4. RemediationAgent: on a rollback with a repository configured, composes the
+ *    request and delegates the fix to the sandboxed remediation service over
+ *    A2A on a background thread — the decision returns to Argo Rollouts
+ *    immediately while it runs
  */
 public interface AnalysisOrchestratorAgent extends MonitoredAgent {
 
@@ -27,12 +32,15 @@ public interface AnalysisOrchestratorAgent extends MonitoredAgent {
         subAgents = {
             AnalysisDataAgent.class,
             DataCombinerAgent.class,
-            AnalysisLoop.class
+            AnalysisLoop.class,
+            RemediationAgent.class
         }
     )
     AnalysisResult execute(
         @MemoryId String memoryId,
         String message,
-        String namespace
+        String namespace,
+        String repoUrl,
+        String baseBranch
     );
 }
