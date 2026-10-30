@@ -41,7 +41,8 @@ src/main/java/dev/kevindubois/rollout/agent/
     ActivityEventListener.java      # Publishes agent activity events for the demo UI
     ActivityEventsResource.java     # REST endpoint: activity event stream
   remediation/
-    RemediationOrchestrator.java    # Delegates remediation to the remediation-agent over A2A after rollback
+    RemediationAgent.java           # Declarative remediation step in the analysis sequence (gate + compose)
+    RemediationDelegator.java       # Background A2A call to the remediation-agent, publishes outcome events
     a2a/
       RemediationA2AAgent.java         # Typed client interface for the remote A2A agent
       RemediationA2AAgentProducer.java # Lazy LangChain4j A2A client builder (agent card over HTTP)
@@ -132,11 +133,14 @@ The analysis request from the plugin triggers this sequence:
 1. `AnalysisDataAgent` — `DiagnosticsDataAgent`, `RolloutStatusDataAgent`, and `MetricsDataAgent` run concurrently using only Kubernetes tools (no LLM).
 2. `DataCombinerAgent` — merges the three reports into a single `diagnosticData` string.
 3. `AnalysisLoop` — `AnalysisAgent` → `ScoringAgent`; repeats until score is acceptable or 3 iterations are exhausted.
-4. Response returned synchronously to the plugin (`promote`, `confidence`, `analysis`, `rootCause`).
-5. If `pauseOnUncertainty` is enabled and the result promotes with confidence below `uncertaintyThreshold`, the rollout is paused for human review (`spec.paused` patch, namespaced Role required).
-6. If `promote=false` and `repoUrl` is set, `RemediationOrchestrator` runs asynchronously:
-   - Operational signals (OOM, memory leak, heap warnings) → GitHub issue (deterministic)
-   - Code bugs (NPE, wrong value, logic error) → GitHub PR via `GitHubPatchPRTool`
+4. `RemediationAgent` — declarative trailing step in the same sequence. On a rollback with `repoUrl` set it composes the request and hands it to `RemediationDelegator`, which calls the remediation-agent over A2A on a background thread. On a promote or without a repository it returns null and the sequence ends there.
+5. Response returned synchronously to the plugin (`promote`, `confidence`, `analysis`, `rootCause`) — the decision is not delayed by the sandbox run.
+6. If `pauseOnUncertainty` is enabled and the result promotes with confidence below `uncertaintyThreshold`, the rollout is paused for human review (`spec.paused` patch, namespaced Role required).
+7. When the sandbox run finishes, the delegator publishes the outcome through the activity events:
+   - Operational signals (OOM, memory leak, heap warnings) → GitHub issue
+   - Code bugs (NPE, wrong value, logic error) → GitHub PR
+
+Note: the A2A call is not a framework-level `@A2AClientAgent` subagent — in the current langchain4j-agentic version that annotation fetches the agent card eagerly at graph build time, `optional = true` is ignored on non-AI agents, and `async = true` subagents block the root call. See `upstream-issues.txt`.
 
 ## Debugging
 

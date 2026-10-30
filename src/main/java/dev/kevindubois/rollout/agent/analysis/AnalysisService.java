@@ -3,7 +3,6 @@ package dev.kevindubois.rollout.agent.analysis;
 import dev.kevindubois.rollout.agent.analysis.AnalysisResult;
 import dev.kevindubois.rollout.agent.k8s.K8sTools;
 import dev.kevindubois.rollout.agent.observability.ActivityEvents;
-import dev.kevindubois.rollout.agent.remediation.RemediationOrchestrator;
 import dev.kevindubois.rollout.agent.analysis.AnalysisOrchestratorAgent;
 import dev.langchain4j.exception.NonRetriableException;
 import dev.langchain4j.exception.RetriableException;
@@ -25,9 +24,6 @@ public class AnalysisService {
 
     @Inject
     AnalysisOrchestratorAgent analysisOrchestratorAgent;
-
-    @Inject
-    RemediationOrchestrator remediationOrchestrator;
 
     @Inject
     ActivityEvents activityEvents;
@@ -52,13 +48,15 @@ public class AnalysisService {
     @ExponentialBackoff(factor = 2, maxDelay = 60, maxDelayUnit = ChronoUnit.SECONDS)
     public AnalysisOutcome analyze(String memoryId, String prompt, String namespace, String rolloutName,
                                    String repoUrl, String baseBranch, PauseGate pauseGate) throws Exception {
-        AnalysisResult result = analysisOrchestratorAgent.execute(memoryId, prompt, namespace);
+        // null scope arguments fail the remediation step's argument resolution
+        // (optional agents are not supported in this version), so pass "" instead
+        AnalysisResult result = analysisOrchestratorAgent.execute(memoryId, prompt, namespace,
+                repoUrl != null ? repoUrl : "",
+                baseBranch != null && !baseBranch.isBlank() ? baseBranch : "main");
 
         activityEvents.analysisCompleted(result);
 
         String pausedRollout = pauseIfNeeded(pauseGate, result, namespace, rolloutName);
-
-        remediationOrchestrator.triggerIfNeeded(result, prompt, repoUrl, baseBranch);
 
         Log.info("Analysis pipeline completed successfully");
         return new AnalysisOutcome(result, pausedRollout);

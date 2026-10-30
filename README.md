@@ -57,8 +57,9 @@ cd ../argo-rollouts-quarkus-demo
 ### Remediation Capabilities
 
 After a rollback decision with a repository URL configured, the agent delegates the fix to the
-[remediation-agent](../remediation-agent) service over A2A — a LangChain4j A2A client agent
-invoked asynchronously, so the analysis response returns to Argo Rollouts immediately.
+[remediation-agent](../remediation-agent) service over A2A — a declarative remediation step in
+the analysis sequence that hands off to a background A2A call, so the analysis response returns
+to Argo Rollouts immediately.
 
 The remote remediation agent:
 
