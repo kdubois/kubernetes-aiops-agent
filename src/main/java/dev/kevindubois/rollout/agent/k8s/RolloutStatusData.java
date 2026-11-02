@@ -3,7 +3,8 @@ package dev.kevindubois.rollout.agent.k8s;
 /**
  * Typed Argo Rollouts resource status.
  * Either carries an error message, or the rollout's phase, status message,
- * current step, traffic split, and stable/canary pod counts.
+ * current step, traffic split, and stable/canary pod counts. The traffic
+ * weights are null when the controller does not publish live weights.
  */
 public record RolloutStatusData(
         String error,
@@ -12,13 +13,13 @@ public record RolloutStatusData(
         String phase,
         String message,
         Integer currentStepIndex,
-        int canaryWeight,
-        int stableWeight,
+        Integer canaryWeight,
+        Integer stableWeight,
         long stablePodCount,
         long canaryPodCount) {
 
     public static RolloutStatusData error(String message) {
-        return new RolloutStatusData(message, null, null, null, null, null, 0, 100, 0, 0);
+        return new RolloutStatusData(message, null, null, null, null, null, null, null, 0, 0);
     }
 
     public boolean hasError() {

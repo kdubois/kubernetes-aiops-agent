@@ -12,7 +12,7 @@ import io.quarkus.arc.Arc;
  * Main workflow orchestrating the complete Kubernetes rollout analysis.
  * 1. AnalysisDataAgent: Non-AI agents fetch diagnostics and metrics in parallel
  * 2. DataCombinerAgent: Non-AI agent combines the parallel reports into a single string
- * 3. AnalysisLoop: AI agents analyze the data and make promote/rollback decision
+ * 3. AnalysisAgent: AI agent analyzes the data and makes the promote/rollback decision
  * 4. RemediationAgent: on a rollback with a repository configured, composes the
  *    request and delegates the fix to the sandboxed remediation service over
  *    A2A on a background thread — the decision returns to Argo Rollouts
@@ -31,7 +31,7 @@ public interface AnalysisOrchestratorAgent extends MonitoredAgent {
         subAgents = {
             AnalysisDataAgent.class,
             DataCombinerAgent.class,
-            AnalysisLoop.class,
+            AnalysisAgent.class,
             RemediationAgent.class
         }
     )

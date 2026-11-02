@@ -1,6 +1,6 @@
 package dev.kevindubois.rollout.agent.observability;
 
-import dev.kevindubois.rollout.agent.analysis.ScoringResult;
+import dev.kevindubois.rollout.agent.analysis.AnalysisResult;
 import dev.langchain4j.agentic.observability.AgentInvocationError;
 import dev.langchain4j.agentic.observability.AgentListener;
 import dev.langchain4j.agentic.observability.AgentRequest;
@@ -31,9 +31,7 @@ public class ActivityEventListener implements AgentListener {
             case "RolloutStatusDataAgent" -> "Reading rollout status";
             case "MetricsDataAgent" -> "Collecting pod metrics";
             case "DataCombinerAgent" -> "Preparing diagnostic report";
-            case "AnalysisLoop" -> "Starting AI analysis loop";
             case "AnalysisAgent" -> "Analyzing rollout health";
-            case "ScoringAgent" -> "Scoring confidence";
             default -> null;
         };
 
@@ -47,16 +45,11 @@ public class ActivityEventListener implements AgentListener {
         String name = response.agentName();
         Object output = response.output();
 
-        if (output instanceof ScoringResult result) {
-            if ("ScoringAgent".equals(name)) {
+        if (output instanceof AnalysisResult result) {
+            if ("AnalysisAgent".equals(name)) {
                 activityEvents.publish("CONFIDENCE_SCORE",
-                        "Score: " + result.score() + "/100", result.reason());
-                if (result.needsRetry()) {
-                    activityEvents.publish("RETRY",
-                            "Retrying analysis", result.reason());
-                }
+                        "Score: " + result.confidence() + "/100", result.summary());
             }
-
         } else if (output instanceof String) {
             if ("AnalysisDataAgent".equals(name)) {
                 activityEvents.publish("ANALYSIS_SUMMARY", "Logs and metrics gathered");

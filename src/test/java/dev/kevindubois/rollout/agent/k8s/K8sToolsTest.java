@@ -179,7 +179,7 @@ class K8sToolsTest {
     }
 
     @Test
-    void testGetRolloutStatus_FallbackStepWeights() {
+    void testGetRolloutStatus_NoLiveWeightsReportsAbsence() {
         String namespace = "default";
         // No live weights reported: canaryWeight -1 makes the fixture omit them
         mockRollouts(namespace, K8sTestFixtures.createTestRollout(
@@ -189,8 +189,8 @@ class K8sToolsTest {
         RolloutStatusData result = k8sTools.getRolloutStatus(namespace, null, null, null);
 
         assertFalse(result.hasError());
-        assertEquals(60, result.canaryWeight());
-        assertEquals(40, result.stableWeight());
+        assertNull(result.canaryWeight(), "no live weight published → absence, not an invented percentage");
+        assertNull(result.stableWeight());
     }
 
     @Test

@@ -1,12 +1,12 @@
 # Kubernetes Agent Development Guide
 
-Quarkus-based autonomous AI agent that analyzes Kubernetes rollouts, decides promote/rollback, and creates GitHub PRs or issues for detected problems. This is an experimental project — prioritize simplicity over backwards compatibility.
+Quarkus-based autonomous AI agent that analyzes Kubernetes rollouts, decides promote/rollback, and delegates remediation to the sandboxed remediation-agent service over A2A. This is an experimental project — prioritize simplicity over backwards compatibility.
 
 Do not create summary or migration documents. If a change is made, update the relevant code and documentation in place.
 
 ## Overview
 
-**Stack:** Quarkus 3.x, LangChain4j declarative agents, Fabric8 Kubernetes client, JGit, GitHub REST API, A2A protocol
+**Stack:** Quarkus 3.x, LangChain4j declarative agents, Fabric8 Kubernetes client, A2A protocol
 
 **Principles:**
 1. Use declarative annotations (`@Agent`, `@LoopAgent`, `@SequenceAgent`, `@ParallelAgent`)
@@ -29,9 +29,7 @@ src/main/java/dev/kevindubois/rollout/agent/
     RolloutStatusDataAgent.java     # Non-AI: rollout phase, step, traffic weights
     MetricsDataAgent.java           # Non-AI: /q/metrics scraping
     DataCombinerAgent.java          # Non-AI: merges diagnostics, rollout status, and metrics into single report
-    AnalysisLoop.java               # AnalysisAgent → ScoringAgent, up to 3 iterations (@LoopAgent)
     AnalysisAgent.java              # AI: decide promote/rollback, write analysis + rootCause
-    ScoringAgent.java               # AI: quality-check AnalysisResult; request retry if needed
   api/
     RolloutSummaryResource.java     # REST endpoint: GET /a2a/rollout/summary
   k8s/
@@ -59,17 +57,16 @@ deployment/
 
 ## Prerequisites
 
-Java 25+, Maven 3.8+, kubectl/oc, an API key for any OpenAI-compatible endpoint, GitHub token with `repo` scope, Kubernetes cluster with Argo Rollouts + `rollouts-plugin-metric-ai`.
+Java 25+, Maven 3.8+, kubectl/oc, an API key for any OpenAI-compatible endpoint, Kubernetes cluster with Argo Rollouts + `rollouts-plugin-metric-ai`.
 
 ## Development
 
 ### Local Setup
 
-In local dev, credentials are read from environment variables via `application.properties` fallback (`github.token=${GITHUB_TOKEN:}`):
+In local dev, credentials are read from environment variables via `application.properties` fallback:
 
 ```bash
 export ANALYSIS_API_KEY="..."   # Any OpenAI-compatible API key
-export GITHUB_TOKEN="..."
 
 mvn quarkus:dev
 mvn quarkus:dev -Drun.mode=console   # Interactive console mode
@@ -132,7 +129,7 @@ The analysis request from the plugin triggers this sequence:
 
 1. `AnalysisDataAgent` — `DiagnosticsDataAgent`, `RolloutStatusDataAgent`, and `MetricsDataAgent` run concurrently using only Kubernetes tools (no LLM).
 2. `DataCombinerAgent` — merges the three reports into a single `diagnosticData` string.
-3. `AnalysisLoop` — `AnalysisAgent` → `ScoringAgent`; repeats until score is acceptable or 3 iterations are exhausted.
+3. `AnalysisAgent` — decides promote/rollback in a single pass and writes the analysis, root cause, and confidence.
 4. `RemediationAgent` — declarative trailing step in the same sequence. On a rollback with `repoUrl` set it composes the request and hands it to `RemediationDelegator`, which calls the remediation-agent over A2A on a background thread. On a promote or without a repository it returns null and the sequence ends there.
 5. Response returned synchronously to the plugin (`promote`, `confidence`, `analysis`, `rootCause`) — the decision is not delayed by the sandbox run.
 6. If `pauseOnUncertainty` is enabled and the result promotes with confidence below `uncertaintyThreshold`, the rollout is paused for human review (`spec.paused` patch, namespaced Role required).
@@ -185,5 +182,4 @@ curl http://localhost:8080/q/health
 ## Resources
 
 - [Quarkus](https://quarkus.io/guides/) | [Quarkus LangChain4j](https://docs.quarkiverse.io/quarkus-langchain4j/dev/) | [LangChain4j](https://docs.langchain4j.dev/)
-- [Argo Rollouts](https://argo-rollouts.readthedocs.io/) | [Kubernetes Client](https://quarkus.io/guides/kubernetes-client)
-- [JGit](https://www.eclipse.org/jgit/) | [Fabric8 Kubernetes Client](https://github.com/fabric8io/kubernetes-client)
+- [Argo Rollouts](https://argo-rollouts.readthedocs.io/) | [Kubernetes Client](https://quarkus.io/guides/kubernetes-client) | [Fabric8 Kubernetes Client](https://github.com/fabric8io/kubernetes-client)

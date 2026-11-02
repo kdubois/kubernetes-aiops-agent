@@ -34,7 +34,7 @@ import static org.mockito.Mockito.when;
 /**
  * End-to-end integration test for the analysis pipeline.
  * Exercises the full path from REST request through the multi-agent workflow
- * (K8s data gathering → LLM analysis → scoring → A2A remediation delegation)
+ * (K8s data gathering → LLM analysis → A2A remediation delegation)
  * using WireMock for the LLM and the remediation A2A agent and a mocked
  * K8sTools for cluster data.
  */
@@ -67,7 +67,7 @@ class AnalysisPipelineTest {
     @DisplayName("Healthy canary with good metrics → promote")
     void healthyCanary_shouldPromote() {
         stubK8s(healthyDiagnostics(), healthyMetrics());
-        stubLlm(PROMOTE_ANALYSIS, ACCEPT_SCORING);
+        stubLlm(PROMOTE_ANALYSIS);
 
         var response = postAnalyze(NAMESPACE, null);
 
@@ -75,13 +75,16 @@ class AnalysisPipelineTest {
         assertThat(response.confidence()).isGreaterThanOrEqualTo(80);
         assertThat(response.pausedRollout()).isNull();
         verify(k8sTools, never()).pauseRollout(any(), any());
+        // the request prompt reaches the model as operator notes
+        WireMockExtension.server.verify(postRequestedFor(urlPathEqualTo("/v1/chat/completions"))
+                .withRequestBody(containing("Analyze canary deployment health")));
     }
 
     @Test
     @DisplayName("Low-confidence promote with the pause gate → rollout paused, measurement stays successful")
     void lowConfidencePromoteWithPauseGate_shouldPauseRollout() {
         stubK8s(healthyDiagnostics(), healthyMetrics());
-        stubLlm(LOW_CONFIDENCE_PROMOTE, ACCEPT_SCORING);
+        stubLlm(LOW_CONFIDENCE_PROMOTE);
         when(k8sTools.pauseRollout(NAMESPACE, null)).thenReturn("quarkus-demo");
 
         var response = postAnalyzeWithPauseGate(NAMESPACE, 70);
@@ -96,7 +99,7 @@ class AnalysisPipelineTest {
     @DisplayName("Low-confidence promote without the pause gate → promote, no pause")
     void lowConfidencePromoteWithoutPauseGate_shouldNotPause() {
         stubK8s(healthyDiagnostics(), healthyMetrics());
-        stubLlm(LOW_CONFIDENCE_PROMOTE, ACCEPT_SCORING);
+        stubLlm(LOW_CONFIDENCE_PROMOTE);
 
         var response = postAnalyze(NAMESPACE, null);
 
@@ -109,7 +112,7 @@ class AnalysisPipelineTest {
     @DisplayName("NullPointerException in canary → rollback (CODE_BUG) + remediation delegated over A2A")
     void npeInCanary_shouldRollbackAndDelegateRemediation() {
         stubK8s(npeDiagnostics(), npeMetrics());
-        stubLlm(NPE_ANALYSIS, ACCEPT_SCORING);
+        stubLlm(NPE_ANALYSIS);
         stubRemediationAgent("""
                 {"status":"success","prLink":"https://github.com/test-owner/test-repo/pull/42",\
                 "issueLink":null,"branch":"fix/k8s-issue-ab12","filesChanged":2,\
@@ -134,7 +137,7 @@ class AnalysisPipelineTest {
     @DisplayName("OutOfMemoryError in canary → rollback (OPERATIONAL) + remediation delegated over A2A")
     void memoryLeak_shouldRollbackAndDelegateRemediation() {
         stubK8s(memoryLeakDiagnostics(), memoryLeakMetrics());
-        stubLlm(MEMORY_LEAK_ANALYSIS, ACCEPT_SCORING);
+        stubLlm(MEMORY_LEAK_ANALYSIS);
         stubRemediationAgent("""
                 {"status":"issue","prLink":null,\
                 "issueLink":"https://github.com/test-owner/test-repo/issues/1",\
@@ -176,10 +179,6 @@ class AnalysisPipelineTest {
                 .withRequestBody(containing("K8s SRE analysis"))
                 .willReturn(okJson(chatCompletion(PROMOTE_ANALYSIS))));
 
-        wm.stubFor(post(urlPathEqualTo("/v1/chat/completions"))
-                .withRequestBody(containing("scoring agent"))
-                .willReturn(okJson(chatCompletion(ACCEPT_SCORING))));
-
         var response = postAnalyze(NAMESPACE, null);
 
         assertThat(response.promote()).isTrue();
@@ -192,10 +191,10 @@ class AnalysisPipelineTest {
     void nonRetryableError_shouldNotTriggerOuterRetry() {
         stubK8s(healthyDiagnostics(), healthyMetrics());
 
-        // Stub the LLM to always return 400 — non-retryable error.
-        // The inner AnalysisLoop has maxIterations=3 so the LLM is called up to 3 times
-        // before the loop gives up. SmallRye @Retry must NOT add an outer retry on top of
-        // that — with maxRetries=3 an outer retry would multiply to 12 total LLM calls.
+        // Stub the LLM to always return 400 — non-retryable error, so the
+        // analysis fails on the single LLM call. SmallRye @Retry must NOT add an
+        // outer retry on top of that — with maxRetries=3 an outer retry would
+        // multiply to at least 2 LLM calls.
         WireMockExtension.server.stubFor(post(urlPathEqualTo("/v1/chat/completions"))
                 .withRequestBody(containing("K8s SRE analysis"))
                 .willReturn(aResponse()
@@ -215,11 +214,34 @@ class AnalysisPipelineTest {
                 .then()
                 .statusCode(500);
 
-        // Exactly one loop run (maxIterations=3 → at most 3 LLM calls), no outer retry.
-        // If SmallRye retried, we would see a multiple of that — at least 6 or more calls.
-        WireMockExtension.server.verify(lessThanOrExactly(3),
+        // Exactly one LLM call, no outer retry. If SmallRye retried, we would
+        // see a multiple of that.
+        WireMockExtension.server.verify(1,
                 postRequestedFor(urlPathEqualTo("/v1/chat/completions"))
                         .withRequestBody(containing("K8s SRE analysis")));
+    }
+
+    @Test
+    @DisplayName("Remediation agent times out → reported as a failed remediation, not a completed one")
+    void remediationTimeout_shouldReportFailedRemediation() {
+        stubK8s(npeDiagnostics(), npeMetrics());
+        stubLlm(NPE_ANALYSIS);
+        stubRemediationAgent("""
+                {"status":"timeout","prLink":null,\
+                "issueLink":null,"branch":null,"filesChanged":0,"testSummary":null,\
+                "sandbox":"remediation-ab12","model":null,\
+                "message":"Sandbox run exceeded the time limit"}""");
+
+        var response = postAnalyze(NAMESPACE, "https://github.com/test-owner/test-repo");
+
+        assertThat(response.promote()).isFalse();
+
+        await().atMost(15, TimeUnit.SECONDS).untilAsserted(() -> {
+            WireMockExtension.server.verify(
+                    postRequestedFor(urlPathEqualTo("/")));
+            verify(activityEvents).remediationFailed("timeout: Sandbox run exceeded the time limit");
+            verify(activityEvents, never()).remediationCompleted(any());
+        });
     }
 
     // ── K8s mock setup ─────────────────────────────────────────────────
@@ -234,16 +256,10 @@ class AnalysisPipelineTest {
 
     // ── WireMock stubs ─────────────────────────────────────────────────
 
-    private void stubLlm(String analysisJson, String scoringJson) {
-        var wm = WireMockExtension.server;
-
-        wm.stubFor(post(urlPathEqualTo("/v1/chat/completions"))
+    private void stubLlm(String analysisJson) {
+        WireMockExtension.server.stubFor(post(urlPathEqualTo("/v1/chat/completions"))
                 .withRequestBody(containing("K8s SRE analysis"))
                 .willReturn(okJson(chatCompletion(analysisJson))));
-
-        wm.stubFor(post(urlPathEqualTo("/v1/chat/completions"))
-                .withRequestBody(containing("scoring agent"))
-                .willReturn(okJson(chatCompletion(scoringJson))));
     }
 
     private void stubGitHubIssueCreation() {
@@ -482,9 +498,5 @@ class AnalysisPipelineTest {
             "summary":"OOM in canary - memory leak - rollback",\
             "issueCategory":"OPERATIONAL",\
             "suspectClasses":[]}""";
-
-    private static final String ACCEPT_SCORING = """
-            {"score":90,"needsRetry":false,"reason":"Analysis quality acceptable"}""";
-
 
 }

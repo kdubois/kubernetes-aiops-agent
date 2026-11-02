@@ -12,7 +12,7 @@ The Kubernetes Agent is an intelligent system that:
 - **Analyzes** logs, metrics, events, and rollout status
 - **Aggregates** metrics across every stable and canary pod — latency quantiles and heap take the worst pod, so a regression on any single pod is visible
 - **Identifies** root causes of issues
-- **Creates** GitHub pull requests with fixes
+- **Delegates** fixes to the sandboxed [remediation-agent](../remediation-agent) service, which creates GitHub pull requests or issues
 - **Integrates** with Argo Rollouts for canary analysis
 
 ## Testing
@@ -128,12 +128,9 @@ flowchart LR
 
     B --> C[DataCombinerAgent<br/>merge logs, rollout status, and metrics]:::combiner
     C --> D[AnalysisAgent<br/>AI evaluation]:::analysis
-    D --> E[ScoringAgent<br/>quality check]:::scoring
+    D -->|return decision| F([Return]):::plugin
 
-    E -->|retry| D
-    E -->|return decision| F([Return]):::plugin
-
-    E -->|async A2A delegation| G
+    D -->|rollback with repoUrl, async A2A| G
 
     subgraph G[RemediationAgent (A2A)]
         direction TB
@@ -152,7 +149,6 @@ flowchart LR
     classDef stable fill:#a5d6a7,stroke:#388e3c,stroke-width:3px,color:#000
     classDef combiner fill:#f8bbd0,stroke:#512da8,stroke-width:3px,color:#000
     classDef analysis fill:#80deea,stroke:#00838f,stroke-width:3px,color:#000
-    classDef scoring fill:#80cbc4,stroke:#00695c,stroke-width:3px,color:#000
     classDef decision fill:#f8bbd0,stroke:#6a1b9a,stroke-width:3px,color:#000
     classDef remediation fill:#e1bee7,stroke:#3949ab,stroke-width:3px,color:#000
 ```
@@ -178,7 +174,6 @@ Container images are tagged with:
 - Maven 3.8+
 - Kubernetes cluster
 - Google API Key (Gemini) or OpenAI API Key
-- GitHub Personal Access Token (with `repo` scope)
 
 ## Local Development
 
@@ -186,7 +181,6 @@ Container images are tagged with:
 
 ```bash
 export ANALYSIS_API_KEY="your-api-key"   # Any OpenAI-compatible API key
-export GITHUB_TOKEN="your-github-token"
 ```
 
 ### 2. Run locally
@@ -395,9 +389,6 @@ spec:
 | `ANALYSIS_BASE_URL` | No | Base URL for analysis model API (default: "https://api.openai.com/v1") |
 | `ANALYSIS_MODEL` | No | Analysis model name (default: "gpt-4o") |
 | `REMEDIATION_AGENT_URL` | No | URL of the remediation-agent A2A service (defaults to `http://remediation-agent:8080`) |
-| `GITHUB_TOKEN` | Yes | GitHub personal access token (needs `repo` scope) |
-| `GIT_USERNAME` | No | Git commit username (default: "kubernetes-agent") |
-| `GIT_EMAIL` | No | Git commit email (default: "agent@example.com") |
 
 ### Resource Limits
 
@@ -485,9 +476,7 @@ kubernetes-agent/
 │   │   ├── RolloutStatusDataAgent.java # Rollout phase, step, and traffic weights
 │   │   ├── MetricsDataAgent.java     # Metrics gathering
 │   │   ├── DataCombinerAgent.java    # Combine data sources
-│   │   ├── AnalysisLoop.java         # Analysis retry loop (@LoopAgent)
-│   │   ├── AnalysisAgent.java        # AI analysis and promote/rollback decision
-│   │   └── ScoringAgent.java         # Quality scoring
+│   │   └── AnalysisAgent.java        # AI analysis and promote/rollback decision
 │   ├── api/
 │   │   └── RolloutSummaryResource.java # Rollout summary REST endpoint
 │   ├── k8s/                          # Kubernetes tools and Rollout CR models

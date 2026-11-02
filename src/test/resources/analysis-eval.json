@@ -112,6 +112,17 @@
         "issueCategory": "NO_ISSUES",
         "minConfidence": 70
       }
+    },
+    {
+      "name": "no-live-traffic-weights",
+      "diagnosticReport": "=== LOG DIAGNOSTIC REPORT ===\nSTABLE POD: quarkus-demo-stable-7d9f6 - Running - Ready: 1/1\nSTABLE LOGS:\nINFO Application started (v1.0.0)\nINFO Processing requests normally\nCANARY POD: quarkus-demo-canary-9b2k4 - Running - Ready: 1/1\nCANARY LOGS:\nINFO Application started (v1.1.0)\nINFO Processing requests normally\n=== END ===",
+      "rolloutReport": "=== ROLLOUT STATUS REPORT ===\nROLLOUT: quarkus-demo (namespace quarkus-demo)\nPHASE: Progressing\nSTEP INDEX: 2\nTRAFFIC: canary not reported, stable not reported\nPODS: stable 7, canary 3\n=== END ===",
+      "metricsReport": "=== METRICS REPORT ===\nSTABLE METRICS: totalRequests=10000, successRate=99.50%, errorRate=0.50%, p95=45.0ms, p99=120.0ms\nCANARY METRICS: totalRequests=2000, successRate=99.30%, errorRate=0.70%, p95=47.0ms, p99=124.0ms\n=== END ===",
+      "expected": {
+        "promote": true,
+        "issueCategory": "NO_ISSUES",
+        "minConfidence": 60
+      }
     }
   ]
 }
