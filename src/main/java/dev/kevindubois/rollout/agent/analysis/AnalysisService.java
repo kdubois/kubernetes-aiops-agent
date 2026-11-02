@@ -1,9 +1,8 @@
 package dev.kevindubois.rollout.agent.analysis;
 
-import dev.kevindubois.rollout.agent.analysis.AnalysisResult;
 import dev.kevindubois.rollout.agent.k8s.K8sTools;
 import dev.kevindubois.rollout.agent.observability.ActivityEvents;
-import dev.kevindubois.rollout.agent.analysis.AnalysisOrchestratorAgent;
+import dev.langchain4j.agentic.scope.ResultWithAgenticScope;
 import dev.langchain4j.exception.NonRetriableException;
 import dev.langchain4j.exception.RetriableException;
 import io.quarkus.logging.Log;
@@ -13,6 +12,7 @@ import jakarta.inject.Inject;
 import org.eclipse.microprofile.faulttolerance.Retry;
 
 import java.time.temporal.ChronoUnit;
+import java.util.Optional;
 
 /**
  * Single entry point for rollout analysis used by both the REST endpoint and A2A executor.
@@ -31,8 +31,16 @@ public class AnalysisService {
     @Inject
     K8sTools k8sTools;
 
+    @Inject
+    AnalysisGrader analysisGrader;
+
     /**
-     * Execute the full analysis pipeline: workflow + uncertainty gate + events + remediation trigger.
+     * Execute the full analysis pipeline: workflow + grader second opinion +
+     * uncertainty gate + events + remediation trigger.
+     *
+     * <p>The response confidence stays the self-reported value from the
+     * analysis model; the grader-combined effective confidence only drives
+     * the pause gate and the activity events.
      *
      * @param prompt         assembled prompt including context, forwarded to the analysis model as operator notes
      * @param namespace      Kubernetes namespace to analyze
@@ -52,7 +60,7 @@ public class AnalysisService {
             throws Exception {
         // null scope arguments fail the sub-agents' argument resolution
         // (optional agents are not supported in this version), so pass "" instead
-        AnalysisResult result = analysisOrchestratorAgent.execute(
+        ResultWithAgenticScope<AnalysisResult> workflow = analysisOrchestratorAgent.execute(
                 prompt != null ? prompt : "",
                 namespace,
                 stableSelector != null && !stableSelector.isBlank() ? stableSelector : "role=stable",
@@ -60,12 +68,33 @@ public class AnalysisService {
                 repoUrl != null ? repoUrl : "",
                 baseBranch != null && !baseBranch.isBlank() ? baseBranch : "main");
 
-        activityEvents.analysisCompleted(result);
+        AnalysisResult result = workflow.result();
+        String diagnosticData = workflow.agenticScope().readState("diagnosticData", "");
 
-        String pausedRollout = pauseIfNeeded(pauseGate, result, namespace, rolloutName);
+        int effectiveConfidence = effectiveConfidence(result, diagnosticData);
+        activityEvents.confidenceScored(result.confidence(), effectiveConfidence, result.summary());
+        activityEvents.analysisCompleted(result, effectiveConfidence);
+
+        String pausedRollout = pauseIfNeeded(pauseGate, result, effectiveConfidence, namespace, rolloutName);
 
         Log.info("Analysis pipeline completed successfully");
         return new AnalysisOutcome(result, pausedRollout);
+    }
+
+    /**
+     * Combines the self-reported confidence with the grader second opinion:
+     * the conservative minimum of the two. When the grader is unavailable
+     * (no key, call failure, timeout) the self-reported confidence stands.
+     */
+    private int effectiveConfidence(AnalysisResult result, String diagnosticData) {
+        Optional<Double> probability = analysisGrader.grade(result, diagnosticData);
+        if (probability.isEmpty()) {
+            return result.confidence();
+        }
+        int effective = (int) Math.min(result.confidence(), Math.round(probability.get() * 100));
+        Log.infof("Analysis grader: self-reported confidence %d, grader probability %.2f, effective confidence %d",
+                result.confidence(), probability.get(), effective);
+        return effective;
     }
 
     /**
@@ -74,19 +103,20 @@ public class AnalysisService {
      * An already-paused rollout is not re-patched; a rollout a human unpaused is
      * paused again while the analysis is still below the threshold.
      */
-    private String pauseIfNeeded(PauseGate pauseGate, AnalysisResult result, String namespace, String rolloutName) {
+    private String pauseIfNeeded(PauseGate pauseGate, AnalysisResult result, int effectiveConfidence,
+                                 String namespace, String rolloutName) {
         if (pauseGate == null) {
             pauseGate = PauseGate.DISABLED;
         }
-        if (!pauseGate.shouldPause(result)) {
+        if (!pauseGate.shouldPause(result, effectiveConfidence)) {
             return null;
         }
-        Log.infof("Uncertainty gate: confidence %d below threshold %d, pausing rollout for review",
-                result.confidence(), pauseGate.threshold());
+        Log.infof("Uncertainty gate: effective confidence %d below threshold %d, pausing rollout for review",
+                effectiveConfidence, pauseGate.threshold());
         String rollout = k8sTools.pauseRollout(namespace, rolloutName);
         if (rollout == null) {
             Log.warnf("Uncertainty gate requested a pause but no rollout was paused in namespace %s", namespace);
-            activityEvents.pauseFailed("namespace=" + namespace + ", confidence=" + result.confidence());
+            activityEvents.pauseFailed("namespace=" + namespace + ", confidence=" + effectiveConfidence);
         }
         return rollout;
     }

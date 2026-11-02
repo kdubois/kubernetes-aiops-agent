@@ -41,8 +41,12 @@ public record PauseGate(boolean enabled, int threshold) {
     /**
      * Whether the rollout should be paused for this result. Only a promote decision
      * can pause: a rollback already aborts the rollout, so there is nothing to hold.
+     *
+     * @param confidence the confidence that drives the gate — the effective
+     *                   confidence when a grader second opinion is available,
+     *                   otherwise the self-reported one
      */
-    public boolean shouldPause(AnalysisResult result) {
-        return enabled && result.promote() && result.confidence() < threshold;
+    public boolean shouldPause(AnalysisResult result, int confidence) {
+        return enabled && result.promote() && confidence < threshold;
     }
 }

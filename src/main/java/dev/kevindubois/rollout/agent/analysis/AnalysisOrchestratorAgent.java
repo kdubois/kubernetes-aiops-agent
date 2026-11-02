@@ -6,6 +6,7 @@ import dev.langchain4j.agentic.declarative.AgentListenerSupplier;
 import dev.langchain4j.agentic.declarative.SequenceAgent;
 import dev.langchain4j.agentic.observability.AgentListener;
 import dev.langchain4j.agentic.observability.MonitoredAgent;
+import dev.langchain4j.agentic.scope.ResultWithAgenticScope;
 import io.quarkus.arc.Arc;
 
 /**
@@ -17,6 +18,10 @@ import io.quarkus.arc.Arc;
  *    request and delegates the fix to the sandboxed remediation service over
  *    A2A on a background thread — the decision returns to Argo Rollouts
  *    immediately while it runs
+ *
+ * The result carries the agentic scope so the caller can read intermediate
+ * workflow state — notably the combined "diagnosticData" the analysis grader
+ * grades the conclusion against.
  */
 public interface AnalysisOrchestratorAgent extends MonitoredAgent {
 
@@ -35,7 +40,7 @@ public interface AnalysisOrchestratorAgent extends MonitoredAgent {
             RemediationAgent.class
         }
     )
-    AnalysisResult execute(
+    ResultWithAgenticScope<AnalysisResult> execute(
         String message,
         String namespace,
         String stableSelector,

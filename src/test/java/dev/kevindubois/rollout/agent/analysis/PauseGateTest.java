@@ -20,7 +20,7 @@ class PauseGateTest {
     void disabledWhenMapIsNull() {
         PauseGate gate = PauseGate.fromMap(null);
         assertFalse(gate.enabled());
-        assertFalse(gate.shouldPause(result(true, 10)));
+        assertFalse(gate.shouldPause(result(true, 10), 10));
     }
 
     @Test
@@ -55,9 +55,19 @@ class PauseGateTest {
     void pausesOnlyLowConfidencePromote() {
         PauseGate gate = new PauseGate(true, 70);
 
-        assertTrue(gate.shouldPause(result(true, 69)), "promote below the threshold pauses");
-        assertFalse(gate.shouldPause(result(true, 70)), "confidence equal to the threshold does not pause");
-        assertFalse(gate.shouldPause(result(true, 95)), "high confidence does not pause");
-        assertFalse(gate.shouldPause(result(false, 40)), "a rollback aborts the rollout, nothing to pause");
+        assertTrue(gate.shouldPause(result(true, 69), 69), "promote below the threshold pauses");
+        assertFalse(gate.shouldPause(result(true, 70), 70), "confidence equal to the threshold does not pause");
+        assertFalse(gate.shouldPause(result(true, 95), 95), "high confidence does not pause");
+        assertFalse(gate.shouldPause(result(false, 40), 40), "a rollback aborts the rollout, nothing to pause");
+    }
+
+    @Test
+    void gateUsesTheGivenConfidenceNotTheSelfReportedOne() {
+        PauseGate gate = new PauseGate(true, 70);
+
+        // a grader second opinion lowered the effective confidence below the threshold
+        assertTrue(gate.shouldPause(result(true, 90), 50), "effective confidence below the threshold pauses");
+        // the grader confirmed the self-reported confidence: no pause
+        assertFalse(gate.shouldPause(result(true, 60), 85), "effective confidence above the threshold does not pause");
     }
 }

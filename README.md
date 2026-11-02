@@ -99,6 +99,14 @@ The rollout named in the request context (`rolloutName`, which the plugin sends)
 
 Pausing requires patch permission on rollouts in the target namespace, granted by a namespaced Role (see the `progressive-delivery` repo); the agent is read-only everywhere else.
 
+### Analysis grader (decision-model second opinion)
+
+The confidence the analysis LLM reports about itself is not always calibrated. After the analysis pass, the Jev decision model (TypeSafe) grades the conclusion: one yes/no question — is this analysis conclusion fully supported by the diagnostic data? — asked over a condensed form of the diagnostic data plus the conclusion (decision, confidence, summary, root cause). The gate then uses the conservative combination: effective confidence = min(self-reported, grader probability × 100). A confident analysis the grader doubts pauses the rollout; a doubted-but-actually-fine analysis promotes as before when the grader agrees.
+
+The grader degrades gracefully: without `TYPESAFE_API_KEY`, on a call failure, or on a timeout it disables itself and the gate falls back to the self-reported confidence — the grader never fails the measurement. The response contract is unchanged: `confidence` stays the self-reported value; the `CONFIDENCE_SCORE` activity event and the pause gate reflect the effective confidence, with both values logged next to each other.
+
+The grader is a single decision call with a threshold (grade → combine → gate), shaped like langchain4j-agentic's Confidence Cascade pattern, so a future tiered-model design (cheap analysis first, a stronger model when uncertain) can adopt the cascade planner directly.
+
 ## Architecture
 
 ```mermaid
@@ -388,6 +396,7 @@ spec:
 | `ANALYSIS_API_KEY` | Yes | API key for the analysis model (any OpenAI-compatible endpoint) |
 | `ANALYSIS_BASE_URL` | No | Base URL for analysis model API (default: "https://api.openai.com/v1") |
 | `ANALYSIS_MODEL` | No | Analysis model name (default: "gpt-4o") |
+| `TYPESAFE_API_KEY` | No | TypeSafe API key for the Jev analysis grader; without it the grader disables itself and the pause gate uses the self-reported confidence |
 | `REMEDIATION_AGENT_URL` | No | URL of the remediation-agent A2A service (defaults to `http://remediation-agent:8080`) |
 
 ### Resource Limits

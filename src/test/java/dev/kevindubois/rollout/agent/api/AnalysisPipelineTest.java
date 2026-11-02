@@ -3,6 +3,7 @@ package dev.kevindubois.rollout.agent.api;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.tomakehurst.wiremock.stubbing.Scenario;
+import dev.kevindubois.rollout.agent.analysis.AnalysisGrader;
 import dev.kevindubois.rollout.agent.k8s.K8sTools;
 import dev.kevindubois.rollout.agent.observability.ActivityEvents;
 import dev.kevindubois.rollout.agent.k8s.RolloutStatusData;
@@ -19,6 +20,7 @@ import org.junit.jupiter.api.Test;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
@@ -26,6 +28,7 @@ import static io.restassured.RestAssured.given;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -54,6 +57,9 @@ class AnalysisPipelineTest {
 
     @InjectMock
     ActivityEvents activityEvents;
+
+    @InjectMock
+    AnalysisGrader analysisGrader;
 
     @BeforeEach
     void setUp() {
@@ -105,6 +111,59 @@ class AnalysisPipelineTest {
         assertThat(response.promote()).isTrue();
         assertThat(response.pausedRollout()).isNull();
         verify(k8sTools, never()).pauseRollout(any(), any());
+    }
+
+    @Test
+    @DisplayName("Grader agrees with a confident promote → effective confidence stays high, no pause")
+    void graderAgrees_shouldNotPause() {
+        stubK8s(healthyDiagnostics(), healthyMetrics());
+        stubLlm(CONFIDENT_PROMOTE);
+        when(analysisGrader.grade(any(), any())).thenReturn(Optional.of(0.95));
+
+        var response = postAnalyzeWithPauseGate(NAMESPACE, 70);
+
+        assertThat(response.promote()).isTrue();
+        assertThat(response.confidence()).isEqualTo(80);
+        assertThat(response.pausedRollout()).isNull();
+        verify(k8sTools, never()).pauseRollout(any(), any());
+        // the UI-facing confidence event reflects the effective confidence
+        verify(activityEvents).confidenceScored(80, 80, "Canary healthy - promote");
+    }
+
+    @Test
+    @DisplayName("Grader doubts a confident promote → effective confidence drops below the threshold, rollout paused")
+    void graderDoubts_shouldPauseBelowSelfReportedConfidence() {
+        stubK8s(healthyDiagnostics(), healthyMetrics());
+        stubLlm(CONFIDENT_PROMOTE);
+        when(analysisGrader.grade(any(), any())).thenReturn(Optional.of(0.5));
+        when(k8sTools.pauseRollout(NAMESPACE, null)).thenReturn("quarkus-demo");
+
+        var response = postAnalyzeWithPauseGate(NAMESPACE, 70);
+
+        assertThat(response.promote()).isTrue();
+        // the response contract keeps the self-reported confidence
+        assertThat(response.confidence()).isEqualTo(80);
+        assertThat(response.pausedRollout()).isEqualTo("quarkus-demo");
+        verify(k8sTools).pauseRollout(NAMESPACE, null);
+        // the gate drove on the effective confidence, not the self-reported one
+        verify(activityEvents).confidenceScored(80, 50, "Canary healthy - promote");
+        verify(activityEvents).analysisCompleted(any(), eq(50));
+    }
+
+    @Test
+    @DisplayName("Grader unavailable → falls back to the self-reported confidence, no pause")
+    void graderUnavailable_fallsBackToSelfReportedConfidence() {
+        stubK8s(healthyDiagnostics(), healthyMetrics());
+        stubLlm(CONFIDENT_PROMOTE);
+        when(analysisGrader.grade(any(), any())).thenReturn(Optional.empty());
+
+        var response = postAnalyzeWithPauseGate(NAMESPACE, 70);
+
+        assertThat(response.promote()).isTrue();
+        assertThat(response.confidence()).isEqualTo(80);
+        assertThat(response.pausedRollout()).isNull();
+        verify(k8sTools, never()).pauseRollout(any(), any());
+        verify(activityEvents).confidenceScored(80, 80, "Canary healthy - promote");
     }
 
     @Test
@@ -477,6 +536,15 @@ class AnalysisPipelineTest {
             "rootCause":"No clear issues, insufficient signal for a confident decision",\
             "remediation":"Promote canary but monitor closely",\
             "summary":"Canary acceptable - promote with low confidence",\
+            "issueCategory":"NO_ISSUES",\
+            "suspectClasses":[]}""";
+
+    private static final String CONFIDENT_PROMOTE = """
+            {"promote":true,"confidence":80,\
+            "analysis":"Canary metrics within threshold. Error rates comparable, latency stable.",\
+            "rootCause":"No issues detected",\
+            "remediation":"Promote canary to stable",\
+            "summary":"Canary healthy - promote",\
             "issueCategory":"NO_ISSUES",\
             "suspectClasses":[]}""";
 

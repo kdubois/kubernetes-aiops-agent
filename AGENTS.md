@@ -30,6 +30,7 @@ src/main/java/dev/kevindubois/rollout/agent/
     MetricsDataAgent.java           # Non-AI: /q/metrics scraping
     DataCombinerAgent.java          # Non-AI: merges diagnostics, rollout status, and metrics into single report
     AnalysisAgent.java              # AI: decide promote/rollback, write analysis + rootCause
+    AnalysisGrader.java             # Decision model (Jev): grades the conclusion, second opinion for the pause gate
   api/
     KubernetesAgentResource.java    # REST endpoint: POST /analyze
     KubernetesAgentRequest.java     # REST request DTO (userId, prompt, context)
@@ -60,7 +61,7 @@ deployment/
 
 ## Prerequisites
 
-Java 25+, Maven 3.8+, kubectl/oc, an API key for any OpenAI-compatible endpoint, Kubernetes cluster with Argo Rollouts + `rollouts-plugin-metric-ai`.
+Java 25+, Maven 3.8+, kubectl/oc, an API key for any OpenAI-compatible endpoint, Kubernetes cluster with Argo Rollouts + `rollouts-plugin-metric-ai`. Optionally a `TYPESAFE_API_KEY` for the Jev analysis grader (without it the pause gate uses the self-reported confidence).
 
 ## Development
 
@@ -133,10 +134,11 @@ The analysis request from the plugin triggers this sequence:
 1. `AnalysisDataAgent` — `DiagnosticsDataAgent`, `RolloutStatusDataAgent`, and `MetricsDataAgent` run concurrently using only Kubernetes tools (no LLM).
 2. `DataCombinerAgent` — merges the three reports into a single `diagnosticData` string.
 3. `AnalysisAgent` — decides promote/rollback in a single pass and writes the analysis, root cause, and confidence.
-4. `RemediationAgent` — declarative trailing step in the same sequence. On a rollback with `repoUrl` set it composes the request and hands it to `RemediationDelegator`, which calls the remediation-agent over A2A on a background thread. On a promote or without a repository it returns null and the sequence ends there.
-5. Response returned synchronously to the plugin (`promote`, `confidence`, `analysis`, `rootCause`) — the decision is not delayed by the sandbox run.
-6. If `pauseOnUncertainty` is enabled and the result promotes with confidence below `uncertaintyThreshold`, the rollout is paused for human review (`spec.paused` patch, namespaced Role required).
-7. When the sandbox run finishes, the delegator publishes the outcome through the activity events:
+4. `AnalysisGrader` — after the workflow, the Jev decision model grades whether the conclusion is supported by the diagnostic data; the pause gate uses the conservative combination (effective confidence = min(self-reported, grader probability × 100)). Without `TYPESAFE_API_KEY` the grader disables itself and the self-reported confidence stands.
+5. `RemediationAgent` — declarative trailing step in the same sequence. On a rollback with `repoUrl` set it composes the request and hands it to `RemediationDelegator`, which calls the remediation-agent over A2A on a background thread. On a promote or without a repository it returns null and the sequence ends there.
+6. Response returned synchronously to the plugin (`promote`, `confidence`, `analysis`, `rootCause`) — the decision is not delayed by the sandbox run. The response `confidence` stays the self-reported value; the effective confidence drives only the gate and the activity events.
+7. If `pauseOnUncertainty` is enabled and the result promotes with confidence below `uncertaintyThreshold`, the rollout is paused for human review (`spec.paused` patch, namespaced Role required).
+8. When the sandbox run finishes, the delegator publishes the outcome through the activity events:
    - Operational signals (OOM, memory leak, heap warnings) → GitHub issue
    - Code bugs (NPE, wrong value, logic error) → GitHub PR
 
