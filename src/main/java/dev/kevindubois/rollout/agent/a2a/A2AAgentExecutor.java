@@ -56,11 +56,14 @@ public class A2AAgentExecutor {
                     String baseBranch = extractMetadataValue(context.getMessage(), "baseBranch", "main");
                     String namespace = extractMetadataValue(context.getMessage(), "namespace", "default");
                     String rolloutName = extractMetadataValue(context.getMessage(), "rolloutName");
+                    String stableSelector = extractMetadataValue(context.getMessage(), "stableSelector", "role=stable");
+                    String canarySelector = extractMetadataValue(context.getMessage(), "canarySelector", "role=canary");
                     PauseGate pauseGate = PauseGate.fromMap(
                             context.getMessage() != null ? context.getMessage().getMetadata() : null);
 
                     AnalysisOutcome outcome = analysisService.analyze(
-                            messageContent, namespace, rolloutName, repoUrl, baseBranch, pauseGate);
+                            messageContent, namespace, stableSelector, canarySelector,
+                            rolloutName, repoUrl, baseBranch, pauseGate);
 
                     String response = formatAnalysisResult(outcome);
                     updater.addArtifact(List.of(new TextPart(response, null)), null, null, null);

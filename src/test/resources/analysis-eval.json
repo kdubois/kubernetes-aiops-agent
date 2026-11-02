@@ -1,5 +1,5 @@
 {
-  "description": "Labelled diagnostic scenarios for evaluating the AnalysisAgent. Each case carries the three report sections exactly as the data agents format them, plus the expected decision. Used by AnalysisEvalTest (opt-in, calls the live model) and AnalysisEvalSetTest (structure validation, always runs).",
+  "description": "Labelled diagnostic scenarios for evaluating the AnalysisAgent. Each case carries the three report sections exactly as the data agents format them, plus the expected decision; cases may also set operatorNotes, forwarded to the agent as the request message. Used by AnalysisEvalTest (opt-in, calls the live model) and AnalysisEvalSetTest (structure validation, always runs).",
   "cases": [
     {
       "name": "healthy-canary",
@@ -99,6 +99,18 @@
       "expected": {
         "promote": false,
         "minConfidence": 60
+      }
+    },
+    {
+      "name": "operator-notes-healthy-context",
+      "diagnosticReport": "=== LOG DIAGNOSTIC REPORT ===\nSTABLE POD: quarkus-demo-stable-7d9f6 - Running - Ready: 1/1\nSTABLE LOGS:\nINFO Application started (v1.0.0)\nINFO Processing requests normally\nCANARY POD: quarkus-demo-canary-9b2k4 - Running - Ready: 1/1\nCANARY LOGS:\nINFO Application started (v1.1.0)\nINFO Processing requests normally\n=== END ===",
+      "rolloutReport": "=== ROLLOUT STATUS REPORT ===\nROLLOUT: quarkus-demo (namespace quarkus-demo)\nPHASE: Progressing\nSTEP INDEX: 2\nTRAFFIC: canary 30%, stable 70%\nPODS: stable 7, canary 3\n=== END ===",
+      "metricsReport": "=== METRICS REPORT ===\nSTABLE METRICS: totalRequests=10000, successRate=99.50%, errorRate=0.50%, p95=45.0ms, p99=120.0ms\nCANARY METRICS: totalRequests=2000, successRate=99.30%, errorRate=0.70%, p95=47.0ms, p99=124.0ms\n=== END ===",
+      "operatorNotes": "Analyze canary deployment health\n\nContext:\n- namespace: quarkus-demo\n- rolloutName: quarkus-demo\n- repoUrl: https://github.com/example/quarkus-demo\nThe load generator runs the baseline scenario; expect lower canary request volume at this step.",
+      "expected": {
+        "promote": true,
+        "issueCategory": "NO_ISSUES",
+        "minConfidence": 70
       }
     }
   ]

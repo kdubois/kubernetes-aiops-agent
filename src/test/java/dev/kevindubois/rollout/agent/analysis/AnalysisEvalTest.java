@@ -61,7 +61,7 @@ class AnalysisEvalTest {
 
         for (AnalysisEvalCases.EvalCase evalCase : cases) {
             String name = evalCase.name();
-            AnalysisResult result = agent.analyze(AnalysisEvalCases.diagnosticData(evalCase));
+            AnalysisResult result = agent.analyze(AnalysisEvalCases.diagnosticData(evalCase), evalCase.notes());
             assertNotNull(result, name + ": the agent returned no result");
 
             AnalysisEvalCases.Expected expected = evalCase.expected();

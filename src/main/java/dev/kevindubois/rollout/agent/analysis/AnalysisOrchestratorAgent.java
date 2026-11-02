@@ -38,6 +38,8 @@ public interface AnalysisOrchestratorAgent extends MonitoredAgent {
     AnalysisResult execute(
         String message,
         String namespace,
+        String stableSelector,
+        String canarySelector,
         String repoUrl,
         String baseBranch
     );

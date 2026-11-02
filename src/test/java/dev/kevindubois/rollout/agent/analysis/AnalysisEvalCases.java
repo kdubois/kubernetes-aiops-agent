@@ -18,7 +18,12 @@ final class AnalysisEvalCases {
     }
 
     record EvalCase(String name, String diagnosticReport, String rolloutReport, String metricsReport,
-            Expected expected) {
+            String operatorNotes, Expected expected) {
+
+        /** Operator notes to forward with the request; empty when the case has none. */
+        String notes() {
+            return operatorNotes != null ? operatorNotes : "";
+        }
     }
 
     record EvalFile(String description, List<EvalCase> cases) {
