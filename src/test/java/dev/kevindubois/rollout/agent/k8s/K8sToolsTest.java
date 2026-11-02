@@ -75,7 +75,7 @@ class K8sToolsTest {
         when(canaryPodResource.tailingLines(anyInt())).thenReturn(canaryPodResource);
         when(canaryPodResource.getLog(anyBoolean())).thenReturn("Canary logs");
 
-        PodDataResult result = k8sTools.getCanaryDiagnostics(namespace, "app", 200);
+        PodDataResult result = k8sTools.getCanaryDiagnostics(namespace, "app", 200, null, null);
 
         assertNotNull(result);
         assertFalse(result.hasError());
@@ -111,7 +111,7 @@ class K8sToolsTest {
         when(canaryPodResource.tailingLines(anyInt())).thenReturn(canaryPodResource);
         when(canaryPodResource.getLog(anyBoolean())).thenReturn("Canary logs");
 
-        PodDataResult result = k8sTools.getCanaryDiagnostics(namespace, "app", 200);
+        PodDataResult result = k8sTools.getCanaryDiagnostics(namespace, "app", 200, null, null);
 
         assertNotNull(result);
         assertNotNull(result.stable());
@@ -144,7 +144,7 @@ class K8sToolsTest {
         when(stablePodResource.tailingLines(anyInt())).thenReturn(stablePodResource);
         when(stablePodResource.getLog(anyBoolean())).thenReturn("Stable logs");
 
-        PodDataResult result = k8sTools.getCanaryDiagnostics(namespace, "app", 200);
+        PodDataResult result = k8sTools.getCanaryDiagnostics(namespace, "app", 200, null, null);
 
         assertNotNull(result);
         assertNotNull(result.canary());
@@ -153,7 +153,7 @@ class K8sToolsTest {
 
     @Test
     void testGetCanaryDiagnostics_EmptyNamespace() {
-        PodDataResult result = k8sTools.getCanaryDiagnostics("", "app", 200);
+        PodDataResult result = k8sTools.getCanaryDiagnostics("", "app", 200, null, null);
         assertNotNull(result);
         assertTrue(result.hasError());
         assertTrue(result.error().contains("required"));
@@ -166,7 +166,7 @@ class K8sToolsTest {
                 "demo-rollout", namespace, "Progressing", 2, 30));
         mockPods(namespace, 2, 3);
 
-        RolloutStatusData result = k8sTools.getRolloutStatus(namespace, null);
+        RolloutStatusData result = k8sTools.getRolloutStatus(namespace, null, null, null);
 
         assertFalse(result.hasError());
         assertEquals("demo-rollout", result.rolloutName());
@@ -186,7 +186,7 @@ class K8sToolsTest {
                 "demo-rollout", namespace, "Progressing", 4, -1));
         mockPods(namespace, 1, 1);
 
-        RolloutStatusData result = k8sTools.getRolloutStatus(namespace, null);
+        RolloutStatusData result = k8sTools.getRolloutStatus(namespace, null, null, null);
 
         assertFalse(result.hasError());
         assertEquals(60, result.canaryWeight());
@@ -200,7 +200,7 @@ class K8sToolsTest {
                 "demo-rollout", namespace, "Degraded", 2, 60));
         mockPods(namespace, 1, 1);
 
-        RolloutStatusData result = k8sTools.getRolloutStatus(namespace, null);
+        RolloutStatusData result = k8sTools.getRolloutStatus(namespace, null, null, null);
 
         assertFalse(result.hasError());
         assertEquals(0, result.canaryWeight());
@@ -212,7 +212,7 @@ class K8sToolsTest {
         mockRollouts(namespace, null);
         mockPods(namespace, 0, 0);
 
-        RolloutStatusData result = k8sTools.getRolloutStatus(namespace, null);
+        RolloutStatusData result = k8sTools.getRolloutStatus(namespace, null, null, null);
 
         assertTrue(result.hasError());
         assertTrue(result.error().contains("No Rollout found"));
@@ -220,7 +220,7 @@ class K8sToolsTest {
 
     @Test
     void testGetRolloutStatus_EmptyNamespace() {
-        RolloutStatusData result = k8sTools.getRolloutStatus("", null);
+        RolloutStatusData result = k8sTools.getRolloutStatus("", null, null, null);
         assertNotNull(result);
         assertTrue(result.hasError());
         assertTrue(result.error().contains("required"));
@@ -333,7 +333,7 @@ class K8sToolsTest {
         when(namedResource.get()).thenReturn(rollout);
         mockPods(namespace, 1, 1);
 
-        RolloutStatusData result = k8sTools.getRolloutStatus(namespace, "demo-rollout");
+        RolloutStatusData result = k8sTools.getRolloutStatus(namespace, "demo-rollout", null, null);
 
         assertFalse(result.hasError());
         assertEquals("demo-rollout", result.rolloutName());
@@ -347,7 +347,7 @@ class K8sToolsTest {
         when(rolloutNsOpFor(namespace).withName("missing-rollout")).thenReturn(namedResource);
         when(namedResource.get()).thenReturn(null);
 
-        RolloutStatusData result = k8sTools.getRolloutStatus(namespace, "missing-rollout");
+        RolloutStatusData result = k8sTools.getRolloutStatus(namespace, "missing-rollout", null, null);
 
         assertTrue(result.hasError());
         assertTrue(result.error().contains("missing-rollout"));
@@ -363,7 +363,7 @@ class K8sToolsTest {
         mockRollouts(namespace, rollout);
         mockPods(namespace, 2, 2);
 
-        RolloutStatusData result = k8sTools.getRolloutStatus(namespace, null);
+        RolloutStatusData result = k8sTools.getRolloutStatus(namespace, null, null, null);
 
         assertFalse(result.hasError());
         assertEquals("Healthy", result.phase());
@@ -411,6 +411,58 @@ class K8sToolsTest {
     }
 
     @Test
+    void testGetCanaryDiagnostics_CustomSelectors() {
+        String namespace = "default";
+        Pod stablePod = K8sTestFixtures.createTestPod("stable-pod", namespace);
+        Pod canaryPod = K8sTestFixtures.createTestPod("canary-pod", namespace);
+
+        PodList stablePodList = new PodList();
+        stablePodList.setItems(List.of(stablePod));
+        PodList canaryPodList = new PodList();
+        canaryPodList.setItems(List.of(canaryPod));
+
+        FilterWatchListDeletable<Pod, PodList, PodResource> stableLabelOp = mock(FilterWatchListDeletable.class);
+        FilterWatchListDeletable<Pod, PodList, PodResource> canaryLabelOp = mock(FilterWatchListDeletable.class);
+
+        when(nsOp.withLabels(Map.of("app", "demo", "tier", "backend"))).thenReturn(stableLabelOp);
+        when(stableLabelOp.list()).thenReturn(stablePodList);
+        when(nsOp.withLabels(Map.of("app", "demo", "tier", "frontend"))).thenReturn(canaryLabelOp);
+        when(canaryLabelOp.list()).thenReturn(canaryPodList);
+
+        PodResource stablePodResource = mock(PodResource.class);
+        PodResource canaryPodResource = mock(PodResource.class);
+        when(nsOp.withName("stable-pod")).thenReturn(stablePodResource);
+        when(stablePodResource.get()).thenReturn(stablePod);
+        when(stablePodResource.tailingLines(anyInt())).thenReturn(stablePodResource);
+        when(stablePodResource.getLog(anyBoolean())).thenReturn("Stable logs");
+        when(nsOp.withName("canary-pod")).thenReturn(canaryPodResource);
+        when(canaryPodResource.get()).thenReturn(canaryPod);
+        when(canaryPodResource.tailingLines(anyInt())).thenReturn(canaryPodResource);
+        when(canaryPodResource.getLog(anyBoolean())).thenReturn("Canary logs");
+
+        PodDataResult result = k8sTools.getCanaryDiagnostics(namespace, null, 200,
+                "app=demo,tier=backend", "app=demo,tier=frontend");
+
+        assertNotNull(result);
+        assertFalse(result.hasError());
+        assertEquals("stable-pod", result.stable().get("podName"));
+        assertEquals("canary-pod", result.canary().get("podName"));
+        verify(nsOp).withLabels(Map.of("app", "demo", "tier", "backend"));
+        verify(nsOp).withLabels(Map.of("app", "demo", "tier", "frontend"));
+    }
+
+    @Test
+    void testParseLabels() {
+        assertEquals(Map.of("role", "canary"), K8sTools.parseLabels("role=canary"));
+        assertEquals(Map.of("app", "demo", "tier", "backend"), K8sTools.parseLabels("app=demo,tier=backend"));
+        assertEquals(Map.of("app", "demo", "tier", "backend"), K8sTools.parseLabels(" app=demo , tier=backend "));
+        assertEquals(Map.of(), K8sTools.parseLabels(null));
+        assertEquals(Map.of(), K8sTools.parseLabels("  "));
+        // malformed segments are skipped, valid ones survive
+        assertEquals(Map.of("role", "canary"), K8sTools.parseLabels("novalue,=missing,role=canary,empty="));
+    }
+
+    @Test
     void testGetCanaryDiagnostics_DefaultTailLines() {
         String namespace = "default";
         Pod stablePod = K8sTestFixtures.createTestPod("stable-pod", namespace);
@@ -436,7 +488,7 @@ class K8sToolsTest {
         when(stablePodResource.tailingLines(anyInt())).thenReturn(stablePodResource);
         when(stablePodResource.getLog(anyBoolean())).thenReturn("Stable logs");
 
-        PodDataResult result = k8sTools.getCanaryDiagnostics(namespace, "app", null);
+        PodDataResult result = k8sTools.getCanaryDiagnostics(namespace, "app", null, null, null);
 
         assertNotNull(result);
         assertFalse(result.hasError());

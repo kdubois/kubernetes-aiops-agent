@@ -25,7 +25,8 @@ public class RolloutSummaryResource {
         String effectiveRolloutName = (rolloutName == null || rolloutName.isBlank()) ? "quarkus-demo" : rolloutName;
 
         try {
-            RolloutStatusData status = k8sTools.getRolloutStatus(effectiveNamespace, effectiveRolloutName);
+            // no selectors on this path — K8sTools falls back to the role= defaults
+            RolloutStatusData status = k8sTools.getRolloutStatus(effectiveNamespace, effectiveRolloutName, null, null);
 
             if (status.hasError()) {
                 return RolloutSummary.error(effectiveNamespace, effectiveRolloutName, status.error());

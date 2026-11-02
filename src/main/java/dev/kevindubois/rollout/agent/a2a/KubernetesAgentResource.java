@@ -40,15 +40,17 @@ public class KubernetesAgentResource {
 
         try {
             Map<String, Object> context = request.context();
-            String repoUrl = context != null ? (String) context.get("repoUrl") : null;
-            String baseBranch = context != null ? (String) context.get("baseBranch") : "main";
-            String namespace = context != null ? (String) context.get("namespace") : "default";
-            String rolloutName = context != null ? (String) context.get("rolloutName") : null;
+            String repoUrl = contextValue(context, "repoUrl", null);
+            String baseBranch = contextValue(context, "baseBranch", "main");
+            String namespace = contextValue(context, "namespace", "default");
+            String rolloutName = contextValue(context, "rolloutName", null);
+            String stableSelector = contextValue(context, "stableSelector", "role=stable");
+            String canarySelector = contextValue(context, "canarySelector", "role=canary");
             PauseGate pauseGate = PauseGate.fromMap(context);
             String prompt = buildPrompt(request);
 
             AnalysisOutcome outcome = analysisService.analyze(
-                    prompt, namespace, rolloutName, repoUrl, baseBranch, pauseGate);
+                    prompt, namespace, stableSelector, canarySelector, rolloutName, repoUrl, baseBranch, pauseGate);
             AnalysisResult result = outcome.result();
 
             KubernetesAgentResponse response = new KubernetesAgentResponse(
@@ -108,5 +110,13 @@ public class KubernetesAgentResource {
         }
 
         return prompt.toString();
+    }
+
+    private static String contextValue(Map<String, Object> context, String key, String defaultValue) {
+        if (context == null) {
+            return defaultValue;
+        }
+        Object value = context.get(key);
+        return value != null ? value.toString() : defaultValue;
     }
 }

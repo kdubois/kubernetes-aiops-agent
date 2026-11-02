@@ -225,9 +225,10 @@ class AnalysisPipelineTest {
     // ── K8s mock setup ─────────────────────────────────────────────────
 
     private void stubK8s(PodDataResult diagnostics, PodDataResult metrics) {
-        when(k8sTools.getCanaryDiagnostics(NAMESPACE, null, 200)).thenReturn(diagnostics);
-        when(k8sTools.getCanaryMetrics(NAMESPACE)).thenReturn(metrics);
-        when(k8sTools.getRolloutStatus(NAMESPACE, null)).thenReturn(new RolloutStatusData(
+        // the REST endpoint defaults absent selectors to role=stable / role=canary
+        when(k8sTools.getCanaryDiagnostics(NAMESPACE, null, 200, "role=stable", "role=canary")).thenReturn(diagnostics);
+        when(k8sTools.getCanaryMetrics(NAMESPACE, "role=stable", "role=canary")).thenReturn(metrics);
+        when(k8sTools.getRolloutStatus(NAMESPACE, null, "role=stable", "role=canary")).thenReturn(new RolloutStatusData(
                 null, "demo-rollout", NAMESPACE, "Progressing", "progressing", 2, 30, 70, 2, 3));
     }
 

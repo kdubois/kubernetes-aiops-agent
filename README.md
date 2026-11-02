@@ -326,12 +326,13 @@ The agent exposes a REST API for other systems to use:
 ```json
 {
 	"userId": "argo-rollouts",
-	"prompt": "Analyze canary deployment issue. Namespace: rollouts-test-system, Pod: canary-demo-xyz",
+	"prompt": "Analyze canary deployment health",
 	"context": {
-		"namespace": "rollouts-test-system",
-		"podName": "canary-demo-xyz",
-		"stableLogs": "...",
-		"canaryLogs": "..."
+		"namespace": "quarkus-demo",
+		"rolloutName": "quarkus-demo",
+		"repoUrl": "https://github.com/example/quarkus-demo",
+		"stableSelector": "role=stable",
+		"canarySelector": "role=canary"
 	}
 }
 ```

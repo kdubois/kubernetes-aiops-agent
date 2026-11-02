@@ -16,6 +16,10 @@ public interface AnalysisAgent {
         2. ROLLOUT STATUS REPORT: Rollout phase, current step, canary traffic weight, and pod counts
         3. METRICS REPORT: Application metrics from /q/metrics endpoints (error rates, latency, success rates)
 
+        You may also receive OPERATOR NOTES: context and instructions sent with the request.
+        They may be empty. Weigh them as supplementary signal — the diagnostic data
+        and the thresholds below always take precedence.
+
         ANALYSIS PRIORITY: Logs (errors/exceptions) > Metrics comparison
         Use rollout signals as context for the other evidence:
         - Phase Progressing with low canary weight = early canary, metrics come from few requests
@@ -90,7 +94,10 @@ public interface AnalysisAgent {
         Analyze the following Kubernetes diagnostic data:
 
         {{diagnosticData}}
+
+        Operator notes from the request (may be empty):
+        {{message}}
         """)
     @Agent(outputKey = "analysisResult", description = "Analyzes Kubernetes diagnostic data and application metrics")
-    AnalysisResult analyze(String diagnosticData);
+    AnalysisResult analyze(String diagnosticData, String message);
 }

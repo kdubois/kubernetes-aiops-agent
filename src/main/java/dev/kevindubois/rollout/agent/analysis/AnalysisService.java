@@ -34,22 +34,29 @@ public class AnalysisService {
     /**
      * Execute the full analysis pipeline: workflow + uncertainty gate + events + remediation trigger.
      *
-     * @param prompt      assembled prompt including context
-     * @param namespace   Kubernetes namespace to analyze
-     * @param rolloutName rollout to pause when the gate fires (nullable — first rollout in the namespace)
-     * @param repoUrl     repository URL for remediation (nullable)
-     * @param baseBranch  target branch for PRs (defaults to "main")
-     * @param pauseGate   opt-in promotion pause gate (nullable — treated as disabled)
+     * @param prompt         assembled prompt including context, forwarded to the analysis model as operator notes
+     * @param namespace      Kubernetes namespace to analyze
+     * @param stableSelector label selector for stable pods (e.g. "role=stable")
+     * @param canarySelector label selector for canary pods (e.g. "role=canary")
+     * @param rolloutName    rollout to pause when the gate fires (nullable — first rollout in the namespace)
+     * @param repoUrl        repository URL for remediation (nullable)
+     * @param baseBranch     target branch for PRs (defaults to "main")
+     * @param pauseGate      opt-in promotion pause gate (nullable — treated as disabled)
      * @return the analysis result and the rollout paused by the gate, if any
      */
     @Retry(maxRetries = 3, delay = 1, delayUnit = ChronoUnit.SECONDS,
            retryOn = RetriableException.class, abortOn = NonRetriableException.class)
     @ExponentialBackoff(factor = 2, maxDelay = 60, maxDelayUnit = ChronoUnit.SECONDS)
-    public AnalysisOutcome analyze(String prompt, String namespace, String rolloutName,
-                                   String repoUrl, String baseBranch, PauseGate pauseGate) throws Exception {
-        // null scope arguments fail the remediation step's argument resolution
+    public AnalysisOutcome analyze(String prompt, String namespace, String stableSelector, String canarySelector,
+                                   String rolloutName, String repoUrl, String baseBranch, PauseGate pauseGate)
+            throws Exception {
+        // null scope arguments fail the sub-agents' argument resolution
         // (optional agents are not supported in this version), so pass "" instead
-        AnalysisResult result = analysisOrchestratorAgent.execute(prompt, namespace,
+        AnalysisResult result = analysisOrchestratorAgent.execute(
+                prompt != null ? prompt : "",
+                namespace,
+                stableSelector != null && !stableSelector.isBlank() ? stableSelector : "role=stable",
+                canarySelector != null && !canarySelector.isBlank() ? canarySelector : "role=canary",
                 repoUrl != null ? repoUrl : "",
                 baseBranch != null && !baseBranch.isBlank() ? baseBranch : "main");
 

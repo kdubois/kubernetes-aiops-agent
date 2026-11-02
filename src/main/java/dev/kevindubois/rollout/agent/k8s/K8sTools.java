@@ -38,9 +38,11 @@ public class K8sTools {
     /**
      * Fetches the Argo Rollouts resource status for a namespace: phase, current step,
      * traffic split, and stable/canary pod counts. When no rollout name is given,
-     * the first rollout in the namespace is used.
+     * the first rollout in the namespace is used. Pods are matched with the given
+     * label selectors; null or blank selectors fall back to role=stable / role=canary.
      */
-    public RolloutStatusData getRolloutStatus(String namespace, String rolloutName) {
+    public RolloutStatusData getRolloutStatus(String namespace, String rolloutName,
+                                              String stableSelector, String canarySelector) {
         Log.info("=== Executing: getRolloutStatus ===");
 
         if (namespace == null || namespace.isEmpty()) {
@@ -63,7 +65,7 @@ public class K8sTools {
             int canaryWeight = status != null ? getCanaryWeight(status) : 0;
             Integer currentStepIndex = status != null ? status.getCurrentStepIndex() : null;
 
-            List<Pod>[] pods = fetchPodsPairInParallel(namespace);
+            List<Pod>[] pods = fetchPodsPairInParallel(namespace, stableSelector, canarySelector);
             long stablePodCount = countActivePods(pods[0]);
             long canaryPodCount = countActivePods(pods[1]);
 
@@ -176,7 +178,7 @@ public class K8sTools {
         return 0;
     }
 
-    public PodDataResult getCanaryMetrics(String namespace) {
+    public PodDataResult getCanaryMetrics(String namespace, String stableSelector, String canarySelector) {
         Log.info("=== Executing: getCanaryMetrics ===");
 
         if (namespace == null || namespace.isEmpty()) {
@@ -186,7 +188,7 @@ public class K8sTools {
         Log.infof("Getting canary metrics for namespace: %s", namespace);
 
         try {
-            List<Pod>[] pods = fetchPodsPairInParallel(namespace);
+            List<Pod>[] pods = fetchPodsPairInParallel(namespace, stableSelector, canarySelector);
             List<Pod> stablePods = pods[0];
             List<Pod> canaryPods = pods[1];
 
@@ -329,7 +331,8 @@ public class K8sTools {
         return value instanceof Number number ? number.doubleValue() : 0;
     }
 
-    public PodDataResult getCanaryDiagnostics(String namespace, String containerName, Integer tailLines) {
+    public PodDataResult getCanaryDiagnostics(String namespace, String containerName, Integer tailLines,
+                                              String stableSelector, String canarySelector) {
         Log.info("=== Executing: getCanaryDiagnostics ===");
 
         if (namespace == null || namespace.isEmpty()) {
@@ -341,7 +344,7 @@ public class K8sTools {
                 namespace, containerName, lines);
 
         try {
-            List<Pod>[] pods = fetchPodsPairInParallel(namespace);
+            List<Pod>[] pods = fetchPodsPairInParallel(namespace, stableSelector, canarySelector);
             List<Pod> stablePods = pods[0];
             List<Pod> canaryPods = pods[1];
 
@@ -374,20 +377,52 @@ public class K8sTools {
     }
 
     @SuppressWarnings("unchecked")
-    private List<Pod>[] fetchPodsPairInParallel(String namespace) throws InterruptedException {
+    private List<Pod>[] fetchPodsPairInParallel(String namespace, String stableSelector, String canarySelector)
+            throws InterruptedException {
+        Map<String, String> stableLabels = selectorLabels(stableSelector, "role=stable");
+        Map<String, String> canaryLabels = selectorLabels(canarySelector, "role=canary");
+
         var stable = new ArrayList<Pod>();
         var canary = new ArrayList<Pod>();
 
         Thread t1 = Thread.ofVirtual().start(() ->
                 stable.addAll(k8sClient.pods().inNamespace(namespace)
-                        .withLabels(Map.of("role", "stable")).list().getItems()));
+                        .withLabels(stableLabels).list().getItems()));
         Thread t2 = Thread.ofVirtual().start(() ->
                 canary.addAll(k8sClient.pods().inNamespace(namespace)
-                        .withLabels(Map.of("role", "canary")).list().getItems()));
+                        .withLabels(canaryLabels).list().getItems()));
         t1.join();
         t2.join();
 
         return new List[]{stable, canary};
+    }
+
+    /**
+     * Resolves a label selector string to the label map used for pod lookup,
+     * falling back to the default selector when the input is absent or parses
+     * to nothing. Selectors are "key=value" pairs, comma-separated for
+     * multiple labels (e.g. "app=demo,role=canary"). Malformed segments are
+     * skipped; a selector that parses but matches no pods yields an explicit
+     * "No pods found" error from the callers.
+     */
+    private static Map<String, String> selectorLabels(String selector, String defaultSelector) {
+        Map<String, String> labels = parseLabels(
+                selector != null && !selector.isBlank() ? selector : defaultSelector);
+        return labels.isEmpty() ? parseLabels(defaultSelector) : labels;
+    }
+
+    static Map<String, String> parseLabels(String selector) {
+        if (selector == null || selector.isBlank()) {
+            return Map.of();
+        }
+        var labels = new LinkedHashMap<String, String>();
+        for (String segment : selector.split(",")) {
+            int eq = segment.indexOf('=');
+            if (eq > 0 && eq < segment.length() - 1) {
+                labels.put(segment.substring(0, eq).trim(), segment.substring(eq + 1).trim());
+            }
+        }
+        return labels;
     }
 
     private Map<String, Object> buildPodDiagnostics(List<Pod> pods, String namespace, String containerName, int lines) {

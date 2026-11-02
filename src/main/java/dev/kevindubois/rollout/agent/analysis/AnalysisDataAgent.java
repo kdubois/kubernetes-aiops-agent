@@ -17,5 +17,5 @@ public interface AnalysisDataAgent {
             MetricsDataAgent.class
         }
     )
-    String fetchData(String message, String namespace);
+    String fetchData(String message, String namespace, String stableSelector, String canarySelector);
 }

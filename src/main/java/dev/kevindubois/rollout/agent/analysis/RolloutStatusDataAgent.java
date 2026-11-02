@@ -13,12 +13,12 @@ import io.quarkus.logging.Log;
 public class RolloutStatusDataAgent {
 
     @Agent(description = "Fetches rollout phase, step, and traffic weights", outputKey = "rolloutReport")
-    public static String gatherRolloutStatus(String message, String namespace) {
+    public static String gatherRolloutStatus(String message, String namespace, String stableSelector, String canarySelector) {
         Log.info("RolloutStatusDataAgent: fetching rollout status (non-AI agent)");
 
         K8sTools k8sTools = Arc.container().instance(K8sTools.class).get();
 
-        RolloutStatusData status = k8sTools.getRolloutStatus(namespace, null);
+        RolloutStatusData status = k8sTools.getRolloutStatus(namespace, null, stableSelector, canarySelector);
 
         String report = formatReport(status);
         Log.infof("RolloutStatusDataAgent: report generated (%d chars)", report.length());

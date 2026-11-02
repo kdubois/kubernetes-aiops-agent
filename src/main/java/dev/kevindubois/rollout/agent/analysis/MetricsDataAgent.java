@@ -15,12 +15,12 @@ import java.util.Map;
 public class MetricsDataAgent {
 
     @Agent(description = "Fetches application metrics for stable and canary pods", outputKey = "metricsReport")
-    public static String gatherMetrics(String message, String namespace) {
+    public static String gatherMetrics(String message, String namespace, String stableSelector, String canarySelector) {
         Log.info("MetricsDataAgent: fetching application metrics (non-AI agent)");
 
         K8sTools k8sTools = Arc.container().instance(K8sTools.class).get();
 
-        PodDataResult metrics = k8sTools.getCanaryMetrics(namespace);
+        PodDataResult metrics = k8sTools.getCanaryMetrics(namespace, stableSelector, canarySelector);
 
         String report = formatReport(metrics);
         Log.infof("MetricsDataAgent: report generated (%d chars)", report.length());
