@@ -46,20 +46,19 @@ public class KubernetesAgentResource {
             String rolloutName = context != null ? (String) context.get("rolloutName") : null;
             PauseGate pauseGate = PauseGate.fromMap(context);
             String prompt = buildPrompt(request);
-            String memoryId = request.getEffectiveMemoryId();
 
             AnalysisOutcome outcome = analysisService.analyze(
-                    memoryId, prompt, namespace, rolloutName, repoUrl, baseBranch, pauseGate);
+                    prompt, namespace, rolloutName, repoUrl, baseBranch, pauseGate);
             AnalysisResult result = outcome.result();
 
             KubernetesAgentResponse response = new KubernetesAgentResponse(
                     result.analysis(),
                     result.rootCause(),
                     result.remediation(),
-                    null,
                     result.promote(),
                     result.confidence(),
-                    outcome.pausedRollout()
+                    outcome.pausedRollout(),
+                    null
             );
 
             return Response.ok(response).build();
@@ -86,11 +85,11 @@ public class KubernetesAgentResource {
         }
     }
 
-    private Response errorResponse(Status status, String analysis, String rootCause) {
+    private Response errorResponse(Status status, String error, String rootCause) {
         KubernetesAgentResponse body = new KubernetesAgentResponse(
-                analysis, rootCause,
+                error, rootCause,
                 "Unable to provide remediation due to API error. Please try again.",
-                null, true, 0, null);
+                false, 0, null, error);
         return Response.status(status).entity(body).build();
     }
 

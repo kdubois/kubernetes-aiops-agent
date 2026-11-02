@@ -6,7 +6,6 @@ import dev.langchain4j.agentic.declarative.AgentListenerSupplier;
 import dev.langchain4j.agentic.declarative.SequenceAgent;
 import dev.langchain4j.agentic.observability.AgentListener;
 import dev.langchain4j.agentic.observability.MonitoredAgent;
-import dev.langchain4j.service.MemoryId;
 import io.quarkus.arc.Arc;
 
 /**
@@ -37,7 +36,6 @@ public interface AnalysisOrchestratorAgent extends MonitoredAgent {
         }
     )
     AnalysisResult execute(
-        @MemoryId String memoryId,
         String message,
         String namespace,
         String repoUrl,

@@ -52,7 +52,6 @@ public class A2AAgentExecutor {
 
                 try {
                     String messageContent = extractMessageContent(context.getMessage());
-                    String memoryId = extractMemoryId(context);
                     String repoUrl = extractMetadataValue(context.getMessage(), "repoUrl");
                     String baseBranch = extractMetadataValue(context.getMessage(), "baseBranch", "main");
                     String namespace = extractMetadataValue(context.getMessage(), "namespace", "default");
@@ -61,7 +60,7 @@ public class A2AAgentExecutor {
                             context.getMessage() != null ? context.getMessage().getMetadata() : null);
 
                     AnalysisOutcome outcome = analysisService.analyze(
-                            memoryId, messageContent, namespace, rolloutName, repoUrl, baseBranch, pauseGate);
+                            messageContent, namespace, rolloutName, repoUrl, baseBranch, pauseGate);
 
                     String response = formatAnalysisResult(outcome);
                     updater.addArtifact(List.of(new TextPart(response, null)), null, null, null);
@@ -85,27 +84,6 @@ public class A2AAgentExecutor {
                     throw new TaskNotCancelableError();
                 }
                 new TaskUpdater(context, eventQueue).cancel();
-            }
-
-            private String extractMemoryId(RequestContext context) {
-                Message message = context.getMessage();
-                if (message.getMetadata() != null) {
-                    Object memoryId = message.getMetadata().get("memoryId");
-                    if (memoryId != null) return memoryId.toString();
-
-                    Object userId = message.getMetadata().get("userId");
-                    if (userId != null) return userId.toString();
-
-                    Object sessionId = message.getMetadata().get("sessionId");
-                    if (sessionId != null) return sessionId.toString();
-                }
-
-                if (context.getTask() != null) {
-                    Log.warn("Using task ID as memory ID - conversation history will not persist");
-                    return context.getTask().getId();
-                }
-
-                return "default";
             }
 
             private String extractMetadataValue(Message message, String key) {

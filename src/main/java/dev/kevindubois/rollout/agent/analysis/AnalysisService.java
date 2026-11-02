@@ -34,7 +34,6 @@ public class AnalysisService {
     /**
      * Execute the full analysis pipeline: workflow + uncertainty gate + events + remediation trigger.
      *
-     * @param memoryId    conversation/session ID for the agent memory
      * @param prompt      assembled prompt including context
      * @param namespace   Kubernetes namespace to analyze
      * @param rolloutName rollout to pause when the gate fires (nullable — first rollout in the namespace)
@@ -46,11 +45,11 @@ public class AnalysisService {
     @Retry(maxRetries = 3, delay = 1, delayUnit = ChronoUnit.SECONDS,
            retryOn = RetriableException.class, abortOn = NonRetriableException.class)
     @ExponentialBackoff(factor = 2, maxDelay = 60, maxDelayUnit = ChronoUnit.SECONDS)
-    public AnalysisOutcome analyze(String memoryId, String prompt, String namespace, String rolloutName,
+    public AnalysisOutcome analyze(String prompt, String namespace, String rolloutName,
                                    String repoUrl, String baseBranch, PauseGate pauseGate) throws Exception {
         // null scope arguments fail the remediation step's argument resolution
         // (optional agents are not supported in this version), so pass "" instead
-        AnalysisResult result = analysisOrchestratorAgent.execute(memoryId, prompt, namespace,
+        AnalysisResult result = analysisOrchestratorAgent.execute(prompt, namespace,
                 repoUrl != null ? repoUrl : "",
                 baseBranch != null && !baseBranch.isBlank() ? baseBranch : "main");
 

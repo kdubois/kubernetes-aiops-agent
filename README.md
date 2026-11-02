@@ -342,11 +342,15 @@ The agent exposes a REST API for other systems to use:
 	"analysis": "Detailed analysis text...",
 	"rootCause": "Identified root cause",
 	"remediation": "Suggested fixes",
-	"prLink": "https://github.com/owner/repo/pull/123",
 	"promote": false,
-	"confidence": 85
+	"confidence": 85,
+	"pausedRollout": null,
+	"error": null
 }
 ```
+
+On failure the endpoint returns HTTP 500 (or 504 on timeout) with `promote: false`,
+`confidence: 0`, and a short `error` message.
 
 ## Integration with Argo Rollouts
 

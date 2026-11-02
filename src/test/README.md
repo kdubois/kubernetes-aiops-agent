@@ -22,9 +22,7 @@ This directory contains **unit tests only** for the Kubernetes AI Agent.
 
 ### Test Fixtures
 
-- `GitHubTestFixtures.java` - Mock GitHub data for testing
 - `K8sTestFixtures.java` - Mock Kubernetes resources for testing
-- `MockHelpers.java` - Helper methods for creating mocks
 
 ## Running Tests
 
