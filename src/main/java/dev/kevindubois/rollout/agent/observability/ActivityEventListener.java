@@ -1,6 +1,5 @@
 package dev.kevindubois.rollout.agent.observability;
 
-import dev.kevindubois.rollout.agent.analysis.AnalysisResult;
 import dev.langchain4j.agentic.observability.AgentInvocationError;
 import dev.langchain4j.agentic.observability.AgentListener;
 import dev.langchain4j.agentic.observability.AgentRequest;
@@ -45,16 +44,12 @@ public class ActivityEventListener implements AgentListener {
         String name = response.agentName();
         Object output = response.output();
 
-        if (output instanceof AnalysisResult result) {
-            if ("AnalysisAgent".equals(name)) {
-                activityEvents.publish("CONFIDENCE_SCORE",
-                        "Score: " + result.confidence() + "/100", result.summary());
-            }
-        } else if (output instanceof String) {
-            if ("AnalysisDataAgent".equals(name)) {
-                activityEvents.publish("ANALYSIS_SUMMARY", "Logs and metrics gathered");
-            }
+        if (output instanceof String && "AnalysisDataAgent".equals(name)) {
+            activityEvents.publish("ANALYSIS_SUMMARY", "Logs and metrics gathered");
         }
+        // The CONFIDENCE_SCORE event is published by AnalysisService after the
+        // grader second opinion, so it reflects the effective confidence that
+        // drove the pause gate rather than the self-reported one.
     }
 
     @Override

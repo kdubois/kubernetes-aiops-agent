@@ -23,7 +23,17 @@ public class ActivityEvents {
         store.publish("ERROR", "Analysis failed", message);
     }
 
-    public void analysisCompleted(AnalysisResult result) {
+    /**
+     * Publishes the confidence that drove the pause gate (the effective one —
+     * the grader-combined value when the second opinion is available), with
+     * the self-reported value kept visible in the details.
+     */
+    public void confidenceScored(int selfReported, int effective, String summary) {
+        store.publish("CONFIDENCE_SCORE", "Score: " + effective + "/100",
+                (summary != null ? summary : "") + " (self-reported: " + selfReported + ")");
+    }
+
+    public void analysisCompleted(AnalysisResult result, int effectiveConfidence) {
         if (result.summary() != null && !result.summary().isBlank()) {
             store.publish("ANALYSIS_SUMMARY", "Analysis summary", result.summary());
         }
@@ -31,7 +41,7 @@ public class ActivityEvents {
                 "Root cause: " + (result.rootCause() != null ? result.rootCause() : "No issues"));
         store.publish("DECISION",
                 result.promote() ? "PROMOTE recommended" : "ROLLBACK recommended",
-                "confidence: " + result.confidence() + "%");
+                "confidence: " + effectiveConfidence + "%");
     }
 
     public void remediationTriggered() {
