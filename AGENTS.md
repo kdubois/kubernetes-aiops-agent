@@ -19,8 +19,8 @@ Do not create summary or migration documents. If a change is made, update the re
 ```
 src/main/java/dev/kevindubois/rollout/agent/
   a2a/
-    KubernetesAgentResource.java    # REST endpoint: POST /a2a/analyze
     A2AAgentExecutor.java           # A2A protocol executor
+    KubernetesAgentCard.java        # A2A agent card (JSON-RPC discovery)
   analysis/
     AnalysisOrchestratorAgent.java  # Top-level orchestrator (@SequenceAgent)
     AnalysisService.java            # Shared analysis entry point (REST + A2A)
@@ -31,7 +31,10 @@ src/main/java/dev/kevindubois/rollout/agent/
     DataCombinerAgent.java          # Non-AI: merges diagnostics, rollout status, and metrics into single report
     AnalysisAgent.java              # AI: decide promote/rollback, write analysis + rootCause
   api/
-    RolloutSummaryResource.java     # REST endpoint: GET /a2a/rollout/summary
+    KubernetesAgentResource.java    # REST endpoint: POST /analyze
+    KubernetesAgentRequest.java     # REST request DTO (userId, prompt, context)
+    KubernetesAgentResponse.java    # REST response DTO (promote, confidence, analysis, ...)
+    RolloutSummaryResource.java     # REST endpoint: GET /rollout/summary
   k8s/
     K8sTools.java                   # getCanaryDiagnostics, getCanaryMetrics, getRolloutStatus (structured concurrency)
     RolloutStatusData.java          # Record: rollout phase, step, weights, pod counts

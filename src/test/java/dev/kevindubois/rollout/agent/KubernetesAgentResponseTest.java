@@ -1,6 +1,6 @@
 package dev.kevindubois.rollout.agent;
-import dev.kevindubois.rollout.agent.a2a.KubernetesAgentRequest;
-import dev.kevindubois.rollout.agent.a2a.KubernetesAgentResponse;
+import dev.kevindubois.rollout.agent.api.KubernetesAgentRequest;
+import dev.kevindubois.rollout.agent.api.KubernetesAgentResponse;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashMap;

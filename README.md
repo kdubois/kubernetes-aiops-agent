@@ -86,7 +86,7 @@ composes the request from the analysis result and reports the outcome through th
 - **Delete**: Remove problematic lines (used sparingly)
 - **Validation**: Warns about potentially destructive changes (deleting return statements, closing braces, etc.)
 
-### A2A Communication
+### REST API
 
 - **REST API**: Expose analysis capabilities via HTTP
 - **Integration**: Works with `rollouts-plugin-metric-ai` for canary analysis
@@ -310,11 +310,11 @@ Recommendation:
 3. Review memory usage patterns in logs
 ```
 
-### A2A Integration
+### REST API
 
 The agent exposes a REST API for other systems to use:
 
-**Endpoint**: `POST /a2a/analyze`
+**Endpoint**: `POST /analyze`
 
 **Request**:
 ```json
@@ -465,8 +465,7 @@ kubectl logs deployment/kubernetes-agent -n openshift-gitops | grep -i "git\|git
 ```
 kubernetes-agent/
 ├── src/main/java/dev/kevindubois/rollout/agent/
-│   ├── a2a/                          # A2A REST API
-│   │   ├── KubernetesAgentResource.java
+│   ├── a2a/                          # A2A protocol (agent card, JSON-RPC executor)
 │   │   └── A2AAgentExecutor.java
 │   ├── analysis/                     # Analysis pipeline
 │   │   ├── AnalysisOrchestratorAgent.java # Main workflow (@SequenceAgent)
@@ -477,7 +476,8 @@ kubernetes-agent/
 │   │   ├── MetricsDataAgent.java     # Metrics gathering
 │   │   ├── DataCombinerAgent.java    # Combine data sources
 │   │   └── AnalysisAgent.java        # AI analysis and promote/rollback decision
-│   ├── api/
+│   ├── api/                          # REST API
+│   │   ├── KubernetesAgentResource.java # Analysis endpoint (POST /analyze)
 │   │   └── RolloutSummaryResource.java # Rollout summary REST endpoint
 │   ├── k8s/                          # Kubernetes tools and Rollout CR models
 │   │   └── K8sTools.java             # K8s data gathering tools

@@ -10,7 +10,7 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 
-@Path("/a2a/rollout")
+@Path("/rollout")
 public class RolloutSummaryResource {
 
     @Inject
