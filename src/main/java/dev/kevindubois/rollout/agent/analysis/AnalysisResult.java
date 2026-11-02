@@ -12,11 +12,4 @@ public record AnalysisResult(
     IssueCategory issueCategory,
     List<String> suspectClasses
 ) {
-    public boolean isOperational() {
-        return issueCategory == IssueCategory.OPERATIONAL;
-    }
-
-    public boolean isCodeBug() {
-        return issueCategory == IssueCategory.CODE_BUG;
-    }
 }

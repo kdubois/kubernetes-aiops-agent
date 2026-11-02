@@ -71,22 +71,22 @@ class KubernetesAgentResponseTest {
             "Analysis",
             "Root cause",
             "Remediation",
-            null,
             true,
-            80
-        , null
+            80,
+            null,
+            null
         );
         assertTrue(responseTrue.promote());
-        
+
         // Test promote = false
         KubernetesAgentResponse responseFalse = new KubernetesAgentResponse(
             "Analysis",
             "Root cause",
             "Remediation",
-            null,
             false,
-            50
-        , null
+            50,
+            null,
+            null
         );
         assertFalse(responseFalse.promote());
     }
@@ -98,19 +98,19 @@ class KubernetesAgentResponseTest {
             "Pod is crashing due to database connection failure",
             "Database service is not accessible",
             "Update connection string to use service name",
-            "https://github.com/test-org/test-repo/pull/123",
             false,
-            85
-        , null
+            85,
+            null,
+            null
         );
         
         // Then
         assertEquals("Pod is crashing due to database connection failure", response.analysis());
         assertEquals("Database service is not accessible", response.rootCause());
         assertEquals("Update connection string to use service name", response.remediation());
-        assertEquals("https://github.com/test-org/test-repo/pull/123", response.prLink());
         assertFalse(response.promote());
         assertEquals(85, response.confidence());
+        assertNull(response.error());
     }
     
     @Test
@@ -120,16 +120,17 @@ class KubernetesAgentResponseTest {
             "Error: Analysis failed",
             "Analysis failed",
             "Unable to provide remediation",
+            false,
+            0,
             null,
-            true,
-            0
-        , null
+            "Analysis failed"
         );
         
         // Then
         assertTrue(response.analysis().contains("Error"));
-        assertTrue(response.promote());
+        assertFalse(response.promote());
         assertEquals(0, response.confidence());
+        assertEquals("Analysis failed", response.error());
     }
     
     @Test
@@ -173,36 +174,5 @@ class KubernetesAgentResponseTest {
         Object[] events = (Object[]) request.context().get("events");
         assertNotNull(events);
         assertEquals(2, events.length);
-    }
-    
-    @Test
-    void testKubernetesAgentResponse_BuilderMethods() {
-        // Given
-        KubernetesAgentResponse response = new KubernetesAgentResponse("Initial analysis", "Initial root cause", "Initial remediation", null, false, 50, null);
-        
-        // When
-        KubernetesAgentResponse updatedResponse = response
-            .withAnalysis("Updated analysis")
-            .withRootCause("Updated root cause")
-            .withRemediation("Updated remediation")
-            .withPrLink("https://github.com/test-org/test-repo/pull/456")
-            .withPromote(true)
-            .withConfidence(95);
-        
-        // Then
-        assertEquals("Updated analysis", updatedResponse.analysis());
-        assertEquals("Updated root cause", updatedResponse.rootCause());
-        assertEquals("Updated remediation", updatedResponse.remediation());
-        assertEquals("https://github.com/test-org/test-repo/pull/456", updatedResponse.prLink());
-        assertTrue(updatedResponse.promote());
-        assertEquals(95, updatedResponse.confidence());
-        
-        // Original response should be unchanged (immutability)
-        assertEquals("Initial analysis", response.analysis());
-        assertEquals("Initial root cause", response.rootCause());
-        assertEquals("Initial remediation", response.remediation());
-        assertNull(response.prLink());
-        assertFalse(response.promote());
-        assertEquals(50, response.confidence());
     }
 }
