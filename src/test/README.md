@@ -16,9 +16,12 @@ This directory contains **unit tests only** for the Kubernetes AI Agent.
 | Test File | Purpose | Speed |
 |-----------|---------|-------|
 | `KubernetesAgentResponseTest.java` | Tests request/response data models | Fast |
-| `RetryHelperTest.java` | Tests retry logic for transient errors | Fast |
+| `AnalysisPipelineTest.java` | End-to-end analysis pipeline with WireMock LLM and A2A stubs | Fast |
 | `K8sToolsTest.java` | Tests canary diagnostics and metrics tools | Fast |
-| `GitHubPatchPRToolValidationTest.java` | Tests patch validation rules | Fast |
+| `MetricsAggregationTest.java` | Tests per-pod metrics aggregation | Fast |
+| `PauseGateTest.java` | Tests the uncertainty pause gate | Fast |
+| `TextUtilsTest.java` | Tests shared text utilities | Fast |
+| `AnalysisEvalSetTest.java` | Validates the evaluation set structure | Fast |
 
 ### Test Fixtures
 
@@ -47,7 +50,6 @@ For manual end-to-end testing, use the console runner:
 
 ```bash
 export ANALYSIS_API_KEY="sk-..."
-export GITHUB_TOKEN="ghp_..."  # Optional, for PR creation
 
 ./run-console.sh
 ```

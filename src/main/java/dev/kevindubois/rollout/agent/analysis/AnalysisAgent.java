@@ -28,6 +28,7 @@ public interface AnalysisAgent {
         - Phase Degraded or Aborted = the rollout controller already sees a problem
         - Phase Healthy with canary weight 0% = rollout finished, stable and canary converged
         - Canary weight tells you how much traffic the canary is actually serving
+        - Traffic weights "not reported" = the controller published no live weights; rely on logs and metrics
 
         CRITICAL RULE - ERROR LOCATION MATTERS:
         - If STABLE has critical errors but CANARY does NOT → PROMOTE (canary fixes the issue)

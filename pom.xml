@@ -114,19 +114,6 @@
             <artifactId>quarkus-kubernetes-client</artifactId>
         </dependency>
 
-        <!-- JGit for Git operations -->
-        <dependency>
-            <groupId>org.eclipse.jgit</groupId>
-            <artifactId>org.eclipse.jgit</artifactId>
-            <version>7.8.0.202609011348-r</version>
-        </dependency>
-
-        <!-- For GitHub REST Client -->
-        <dependency>
-            <groupId>io.quarkus</groupId>
-            <artifactId>quarkus-rest-client-jackson</artifactId>
-        </dependency>
-
         <!-- Testing -->
         <dependency>
             <groupId>io.quarkus</groupId>

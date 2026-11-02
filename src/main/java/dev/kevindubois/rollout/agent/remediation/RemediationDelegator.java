@@ -12,6 +12,7 @@ import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -33,6 +34,9 @@ import java.util.concurrent.TimeUnit;
 public class RemediationDelegator {
 
     private static final int CALL_TIMEOUT_MINUTES = 35;
+
+    /** Terminal statuses from the remediation agent that created nothing — reported as failures. */
+    private static final Set<String> FAILED_STATUSES = Set.of("rejected", "infra_error", "agent_error", "timeout");
 
     @Inject
     RemediationA2AAgentProducer remediationAgentProducer;
@@ -72,8 +76,7 @@ public class RemediationDelegator {
             Log.infof("Remediation agent finished: %s %s", response.status(), response.artifactLink());
             if (response.artifactLink() != null && TextUtils.isValidGitHubArtifactUrl(response.artifactLink())) {
                 activityEvents.remediationCompleted(response.artifactLink());
-            } else if ("rejected".equals(response.status()) || "infra_error".equals(response.status())
-                    || "agent_error".equals(response.status())) {
+            } else if (FAILED_STATUSES.contains(response.status())) {
                 // no artifact and nothing was created — report it as a failure,
                 // not as a completed remediation without an artifact
                 activityEvents.remediationFailed(

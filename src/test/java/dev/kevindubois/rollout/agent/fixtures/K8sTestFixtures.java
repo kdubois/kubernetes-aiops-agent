@@ -291,7 +291,7 @@ public class K8sTestFixtures {
 
     /**
      * Creates a test Argo Rollouts resource with the given phase, step index, and canary weight.
-     * A negative canaryWeight omits the live weights so the step-index fallback applies.
+     * A negative canaryWeight omits the live weights (the absence case).
      */
     public static Rollout createTestRollout(String name, String namespace, String phase,
                                             Integer currentStepIndex, int canaryWeight) {

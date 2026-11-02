@@ -42,8 +42,7 @@ public class RolloutSummaryResource {
                     status.canaryPodCount(),
                     true,
                     null
-            );
-        } catch (Exception e) {
+            );        } catch (Exception e) {
             Log.error("Failed to fetch rollout summary", e);
             return RolloutSummary.error(effectiveNamespace, effectiveRolloutName, e.getMessage());
         }
@@ -53,15 +52,15 @@ public class RolloutSummaryResource {
             String namespace,
             String name,
             String phase,
-            int canaryWeight,
-            int stableWeight,
+            Integer canaryWeight,
+            Integer stableWeight,
             long stablePodCount,
             long canaryPodCount,
             boolean available,
             String error
     ) {
         public static RolloutSummary error(String namespace, String name, String error) {
-            return new RolloutSummary(namespace, name, "Error", 0, 100, 0, 0, false, error);
+            return new RolloutSummary(namespace, name, "Error", null, null, 0, 0, false, error);
         }
     }
 }

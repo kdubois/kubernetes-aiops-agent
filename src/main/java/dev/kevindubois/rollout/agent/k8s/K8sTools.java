@@ -22,13 +22,6 @@ import java.util.*;
 @Unremovable
 public class K8sTools {
 
-    /**
-     * Canary weight per step index, used as a fallback when the controller
-     * does not report live traffic weights. Matches the demo rollout's steps:
-     * 10% (steps 0-3), 60% (steps 4-5), 100% (steps 6-7).
-     */
-    private static final int[] STEP_WEIGHTS = {10, 10, 10, 10, 60, 60, 100, 100};
-
     @Inject
     KubernetesClient k8sClient;
 
@@ -62,17 +55,18 @@ public class K8sTools {
             String name = rollout.getMetadata().getName();
             String phase = (status != null && status.getPhase() != null) ? status.getPhase() : "Unknown";
             String statusMessage = (status != null && status.getMessage() != null) ? status.getMessage() : "";
-            int canaryWeight = status != null ? getCanaryWeight(status) : 0;
+            Integer canaryWeight = getCanaryWeight(status);
             Integer currentStepIndex = status != null ? status.getCurrentStepIndex() : null;
 
             List<Pod>[] pods = fetchPodsPairInParallel(namespace, stableSelector, canarySelector);
             long stablePodCount = countActivePods(pods[0]);
             long canaryPodCount = countActivePods(pods[1]);
 
-            Log.infof("Retrieved rollout status for %s/%s: phase=%s, canaryWeight=%d%%",
-                    namespace, name, phase, canaryWeight);
+            Log.infof("Retrieved rollout status for %s/%s: phase=%s, canaryWeight=%s",
+                    namespace, name, phase, canaryWeight != null ? canaryWeight + "%" : "not reported");
             return new RolloutStatusData(null, name, namespace, phase, statusMessage, currentStepIndex,
-                    canaryWeight, 100 - canaryWeight, stablePodCount, canaryPodCount);
+                    canaryWeight, canaryWeight != null ? 100 - canaryWeight : null,
+                    stablePodCount, canaryPodCount);
 
         } catch (Exception e) {
             Log.error("Error getting rollout status", e);
@@ -147,7 +141,15 @@ public class K8sTools {
                 .count();
     }
 
-    private int getCanaryWeight(RolloutStatus status) {
+    /**
+     * Live canary traffic weight from the rollout status. Returns 0 for phases
+     * where the canary serves no traffic (Degraded, Aborted, or a finished
+     * rollout whose replica sets converged), the published weight when the
+     * controller reports one, and null when no live weight is available — the
+     * step index alone does not determine the weight, so absence is reported
+     * rather than a percentage invented from a table.
+     */
+    private Integer getCanaryWeight(RolloutStatus status) {
         String phase = status.getPhase() != null ? status.getPhase() : "Unknown";
 
         if ("Degraded".equals(phase) || "Aborted".equals(phase)) {
@@ -161,7 +163,6 @@ public class K8sTools {
             return 0;
         }
 
-        // Prefer the live traffic weight reported by the controller.
         if (status.getCanary() != null) {
             CanaryWeights weights = status.getCanary().getWeights();
             if (weights != null && weights.getCanary() != null) {
@@ -169,13 +170,7 @@ public class K8sTools {
             }
         }
 
-        // Fall back to the step-index table when live weights are unavailable.
-        Integer stepIndex = status.getCurrentStepIndex();
-        if (stepIndex != null && stepIndex >= 0 && stepIndex < STEP_WEIGHTS.length) {
-            return STEP_WEIGHTS[stepIndex];
-        }
-
-        return 0;
+        return null;
     }
 
     public PodDataResult getCanaryMetrics(String namespace, String stableSelector, String canarySelector) {

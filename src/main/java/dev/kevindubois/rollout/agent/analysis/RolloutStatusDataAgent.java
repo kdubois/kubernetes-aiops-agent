@@ -43,11 +43,15 @@ public class RolloutStatusDataAgent {
         }
         sb.append("\n");
         sb.append("STEP INDEX: ").append(status.currentStepIndex() != null ? status.currentStepIndex() : "N/A").append("\n");
-        sb.append("TRAFFIC: canary ").append(status.canaryWeight())
-                .append("%, stable ").append(status.stableWeight()).append("%\n");
+        sb.append("TRAFFIC: canary ").append(formatWeight(status.canaryWeight()))
+                .append(", stable ").append(formatWeight(status.stableWeight())).append("\n");
         sb.append("PODS: stable ").append(status.stablePodCount())
                 .append(", canary ").append(status.canaryPodCount()).append("\n");
         sb.append("=== END ===");
         return sb.toString();
+    }
+
+    private static String formatWeight(Integer weight) {
+        return weight != null ? weight + "%" : "not reported";
     }
 }
