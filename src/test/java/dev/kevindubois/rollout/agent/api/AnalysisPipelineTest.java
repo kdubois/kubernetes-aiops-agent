@@ -1,4 +1,4 @@
-package dev.kevindubois.rollout.agent.a2a;
+package dev.kevindubois.rollout.agent.api;
 
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -6,7 +6,6 @@ import com.github.tomakehurst.wiremock.stubbing.Scenario;
 import dev.kevindubois.rollout.agent.k8s.K8sTools;
 import dev.kevindubois.rollout.agent.observability.ActivityEvents;
 import dev.kevindubois.rollout.agent.k8s.RolloutStatusData;
-import dev.kevindubois.rollout.agent.a2a.KubernetesAgentResponse;
 import dev.kevindubois.rollout.agent.k8s.PodDataResult;
 import io.quarkus.test.InjectMock;
 import io.quarkus.test.common.QuarkusTestResource;
@@ -210,7 +209,7 @@ class AnalysisPipelineTest {
                         "prompt", "Analyze canary deployment health",
                         "context", Map.of("namespace", NAMESPACE)))
                 .when()
-                .post("/a2a/analyze")
+                .post("/analyze")
                 .then()
                 .statusCode(500);
 
@@ -335,7 +334,7 @@ class AnalysisPipelineTest {
                         "prompt", "Analyze canary deployment health",
                         "context", context))
                 .when()
-                .post("/a2a/analyze")
+                .post("/analyze")
                 .then()
                 .statusCode(200)
                 .extract()

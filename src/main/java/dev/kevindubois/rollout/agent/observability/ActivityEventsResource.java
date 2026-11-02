@@ -11,7 +11,7 @@ import org.jboss.resteasy.reactive.RestStreamElementType;
 
 import java.util.List;
 
-@Path("/a2a/events")
+@Path("/events")
 public class ActivityEventsResource {
 
     @Inject

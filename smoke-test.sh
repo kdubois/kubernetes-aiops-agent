@@ -97,7 +97,7 @@ EOF
 RESPONSE=$(_curl -X POST \
     -H "Content-Type: application/json" \
     -d "$PAYLOAD" \
-    "$BASE_URL/a2a/analyze")
+    "$BASE_URL/analyze")
 
 if [[ -z "$RESPONSE" ]]; then
     fail "empty response"

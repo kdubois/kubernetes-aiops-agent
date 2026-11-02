@@ -1,4 +1,4 @@
-package dev.kevindubois.rollout.agent.a2a;
+package dev.kevindubois.rollout.agent.api;
 
 import io.quarkus.logging.Log;
 import jakarta.inject.Inject;
@@ -21,7 +21,7 @@ import dev.langchain4j.service.output.OutputParsingException;
  * REST endpoint for rollout analysis. Delegates to AnalysisService for the
  * actual pipeline execution and maps the result to the plugin JSON contract.
  */
-@Path("/a2a")
+@Path("/analyze")
 public class KubernetesAgentResource {
 
     @Inject
@@ -31,7 +31,6 @@ public class KubernetesAgentResource {
     ActivityEvents activityEvents;
 
     @POST
-    @Path("/analyze")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response analyze(KubernetesAgentRequest request) {

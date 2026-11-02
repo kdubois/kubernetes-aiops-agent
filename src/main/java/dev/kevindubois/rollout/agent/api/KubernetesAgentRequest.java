@@ -1,4 +1,4 @@
-package dev.kevindubois.rollout.agent.a2a;
+package dev.kevindubois.rollout.agent.api;
 
 import java.util.Map;
 
