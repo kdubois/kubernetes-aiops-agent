@@ -78,9 +78,11 @@ public class AnalysisService {
         String metricsReport = workflow.agenticScope().readState("metricsReport", "");
 
         // second opinion, and the escalation tier: a clearly disputed conclusion
-        // is re-analyzed once with the strong model before the gate decides
+        // is re-analyzed once with the strong model before the gate decides.
+        // enabled() first: it initializes the tier (and logs its state) on the
+        // first analysis instead of only when a dispute actually occurs
         Optional<Double> grade = analysisGrader.grade(result, diagnosticReport, rolloutReport, metricsReport);
-        if (clearlyDisputed(grade) && analysisEscalation.enabled()) {
+        if (analysisEscalation.enabled() && clearlyDisputed(grade)) {
             AnalysisResult escalated = analysisEscalation.escalate(diagnosticData, prompt);
             if (escalated != null) {
                 Log.infof("Grader disputed the analysis (probability %.2f); escalating to the strong model",
