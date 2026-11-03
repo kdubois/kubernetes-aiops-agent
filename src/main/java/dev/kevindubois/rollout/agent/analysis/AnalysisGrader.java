@@ -135,10 +135,18 @@ public class AnalysisGrader {
     private static final Pattern SIGNAL_LINE =
             Pattern.compile("(?i)error|warn|exception|outofmemory|heap|gc |crash|fail|leak|killed");
 
+    /** Section headers of the diagnostics report: which side a log line came from. */
+    private static final Pattern SECTION_HEADER =
+            Pattern.compile("(?i)^(STABLE|CANARY) (POD|LOGS|METRICS)");
+
     /**
      * Signal-focused excerpt of the log diagnostics: every line that mentions
      * errors, warnings or resource pressure, capped at the diagnostics budget,
-     * with a match count so the grader can judge how quiet the logs are.
+     * with the stable/canary section headers carried along — error location
+     * decides the verdict (errors in stable justify a promote, the same errors
+     * in canary justify a rollback), so signal lines without their section are
+     * ambiguous — and a match count so the grader can judge how quiet the logs
+     * are.
      */
     private String diagnosticsExcerpt(String diagnosticReport) {
         if (diagnosticReport == null || diagnosticReport.isBlank()) {
@@ -148,11 +156,12 @@ public class AnalysisGrader {
         StringBuilder excerpt = new StringBuilder();
         int matched = 0;
         for (String line : lines) {
-            if (SIGNAL_LINE.matcher(line).find()) {
+            boolean signal = SIGNAL_LINE.matcher(line).find();
+            if (signal) {
                 matched++;
-                if (excerpt.length() < MAX_DIAGNOSTIC_LENGTH) {
-                    excerpt.append(line.stripTrailing()).append('\n');
-                }
+            }
+            if ((signal || SECTION_HEADER.matcher(line).find()) && excerpt.length() < MAX_DIAGNOSTIC_LENGTH) {
+                excerpt.append(line.stripTrailing()).append('\n');
             }
         }
         return matched + " of " + lines.length + " diagnostic lines mention errors, warnings or resource pressure:\n"

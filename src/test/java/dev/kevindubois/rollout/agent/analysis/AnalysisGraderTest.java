@@ -113,17 +113,17 @@ class AnalysisGraderTest {
         // pods before canary pods, so the canary evidence was truncated away
         stubProbability(0.5);
 
-        String stableHalf = "stable pod log line\n".repeat(2_000);
-        String canaryHalf = "canary pod log: WARN heap pressure rising\n".repeat(100);
+        String stableHalf = "STABLE LOGS:\n" + "INFO request ok\n".repeat(2_000);
+        String canaryHalf = "CANARY LOGS:\n" + "WARN heap pressure rising in canary\n".repeat(100);
         new AnalysisGrader(model, true).grade(result(85), stableHalf + canaryHalf, "rollout", "metrics");
 
         ArgumentCaptor<DecisionRequest> captor = ArgumentCaptor.forClass(DecisionRequest.class);
         org.mockito.Mockito.verify(model).decide(captor.capture());
         String state = ((TextInput) captor.getValue().input()).text();
-        // the canary signal deep in the report reaches the grader
-        assertThat(state).contains("canary pod log: WARN heap pressure rising");
-        // the quiet stable bulk does not
-        assertThat(state).doesNotContain("stable pod log line");
+        // the canary signal deep in the report reaches the grader, with its section
+        assertThat(state).contains("CANARY LOGS:").contains("WARN heap pressure rising in canary");
+        // the quiet stable bulk does not, but its section header does
+        assertThat(state).contains("STABLE LOGS:").doesNotContain("INFO request ok");
     }
 
     @Test
