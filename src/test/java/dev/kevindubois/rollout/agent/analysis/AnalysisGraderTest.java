@@ -49,7 +49,10 @@ class AnalysisGraderTest {
     void asksOneYesNoQuestionOverCondensedState() {
         stubProbability(0.5);
 
-        new AnalysisGrader(model, true).grade(result(85), "diagnostics", "rollout-status", "metrics");
+        new AnalysisGrader(model, true).grade(result(85),
+                "pod quarkus-demo-stable-1 Running\nINFO request ok\n",
+                "rollout-status",
+                "metrics");
 
         ArgumentCaptor<DecisionRequest> captor = ArgumentCaptor.forClass(DecisionRequest.class);
         org.mockito.Mockito.verify(model).decide(captor.capture());
@@ -60,7 +63,6 @@ class AnalysisGraderTest {
         assertThat(state)
                 .contains("metrics")
                 .contains("rollout-status")
-                .contains("diagnostics")
                 .contains("PROMOTE")
                 .contains("85/100")
                 .contains("summary")
@@ -71,7 +73,9 @@ class AnalysisGraderTest {
     void truncatesDiagnosticDataBeforeTheConclusion() {
         stubProbability(0.5);
 
-        new AnalysisGrader(model, true).grade(result(85), "x".repeat(50_000), "y".repeat(50_000), "z".repeat(50_000));
+        new AnalysisGrader(model, true).grade(result(85),
+                ("ERROR something failed\n" + "quiet\n").repeat(5_000),
+                "y".repeat(50_000), "z".repeat(50_000));
 
         ArgumentCaptor<DecisionRequest> captor = ArgumentCaptor.forClass(DecisionRequest.class);
         org.mockito.Mockito.verify(model).decide(captor.capture());
@@ -80,6 +84,9 @@ class AnalysisGraderTest {
         assertThat(state.length()).isLessThan(7000);
         // the conclusion survives the truncation
         assertThat(state).contains("PROMOTE").contains("85/100");
+        // the signal lines survive; the quiet lines do not
+        assertThat(state).contains("ERROR something failed");
+        assertThat(state).doesNotContain("quiet");
     }
 
     @Test
@@ -98,6 +105,25 @@ class AnalysisGraderTest {
         assertThat(state).contains("error rate: canary 0.5% vs stable 1.0%; p95 47ms vs 48ms");
         // every overflowing section is cut to its budget
         assertThat(state.length()).isLessThan(7000);
+    }
+
+    @Test
+    void canaryEvidenceIsNotCutByPosition() {
+        // regression: the log excerpt was positional and the report lists stable
+        // pods before canary pods, so the canary evidence was truncated away
+        stubProbability(0.5);
+
+        String stableHalf = "stable pod log line\n".repeat(2_000);
+        String canaryHalf = "canary pod log: WARN heap pressure rising\n".repeat(100);
+        new AnalysisGrader(model, true).grade(result(85), stableHalf + canaryHalf, "rollout", "metrics");
+
+        ArgumentCaptor<DecisionRequest> captor = ArgumentCaptor.forClass(DecisionRequest.class);
+        org.mockito.Mockito.verify(model).decide(captor.capture());
+        String state = ((TextInput) captor.getValue().input()).text();
+        // the canary signal deep in the report reaches the grader
+        assertThat(state).contains("canary pod log: WARN heap pressure rising");
+        // the quiet stable bulk does not
+        assertThat(state).doesNotContain("stable pod log line");
     }
 
     @Test
