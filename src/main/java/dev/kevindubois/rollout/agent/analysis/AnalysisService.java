@@ -34,6 +34,9 @@ public class AnalysisService {
     @Inject
     AnalysisGrader analysisGrader;
 
+    @Inject
+    AnalysisEscalation analysisEscalation;
+
     /**
      * Execute the full analysis pipeline: workflow + grader second opinion +
      * uncertainty gate + events + remediation trigger.
@@ -69,11 +72,26 @@ public class AnalysisService {
                 baseBranch != null && !baseBranch.isBlank() ? baseBranch : "main");
 
         AnalysisResult result = workflow.result();
+        String diagnosticData = workflow.agenticScope().readState("diagnosticData", "");
         String diagnosticReport = workflow.agenticScope().readState("diagnosticReport", "");
         String rolloutReport = workflow.agenticScope().readState("rolloutReport", "");
         String metricsReport = workflow.agenticScope().readState("metricsReport", "");
 
-        int effectiveConfidence = effectiveConfidence(result, diagnosticReport, rolloutReport, metricsReport);
+        // second opinion, and the escalation tier: a clearly disputed conclusion
+        // is re-analyzed once with the strong model before the gate decides
+        Optional<Double> grade = analysisGrader.grade(result, diagnosticReport, rolloutReport, metricsReport);
+        if (clearlyDisputed(grade) && analysisEscalation.enabled()) {
+            AnalysisResult escalated = analysisEscalation.escalate(diagnosticData, prompt);
+            if (escalated != null) {
+                Log.infof("Grader disputed the analysis (probability %.2f); escalating to the strong model",
+                        grade.get());
+                activityEvents.analysisEscalated(grade.get(), result, escalated);
+                result = escalated;
+                grade = analysisGrader.grade(result, diagnosticReport, rolloutReport, metricsReport);
+            }
+        }
+
+        int effectiveConfidence = effectiveConfidence(result, grade);
         activityEvents.confidenceScored(result.confidence(), effectiveConfidence, result.summary());
         activityEvents.analysisCompleted(result, effectiveConfidence);
 
@@ -94,9 +112,11 @@ public class AnalysisService {
      */
     static final double CLEARLY_UNSUPPORTED = 0.30;
 
-    private int effectiveConfidence(AnalysisResult result, String diagnosticReport, String rolloutReport,
-            String metricsReport) {
-        Optional<Double> probability = analysisGrader.grade(result, diagnosticReport, rolloutReport, metricsReport);
+    private static boolean clearlyDisputed(Optional<Double> probability) {
+        return probability.isPresent() && probability.get() < CLEARLY_UNSUPPORTED;
+    }
+
+    private int effectiveConfidence(AnalysisResult result, Optional<Double> probability) {
         if (probability.isEmpty()) {
             return result.confidence();
         }

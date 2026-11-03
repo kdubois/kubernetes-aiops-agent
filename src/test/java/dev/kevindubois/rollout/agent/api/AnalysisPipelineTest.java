@@ -3,6 +3,9 @@ package dev.kevindubois.rollout.agent.api;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.tomakehurst.wiremock.stubbing.Scenario;
+import dev.kevindubois.rollout.agent.analysis.AnalysisEscalation;
+import dev.kevindubois.rollout.agent.analysis.AnalysisResult;
+import dev.kevindubois.rollout.agent.analysis.IssueCategory;
 import dev.kevindubois.rollout.agent.analysis.AnalysisGrader;
 import dev.kevindubois.rollout.agent.k8s.K8sTools;
 import dev.kevindubois.rollout.agent.observability.ActivityEvents;
@@ -60,6 +63,9 @@ class AnalysisPipelineTest {
 
     @InjectMock
     AnalysisGrader analysisGrader;
+
+    @InjectMock
+    AnalysisEscalation analysisEscalation;
 
     @BeforeEach
     void setUp() {
@@ -165,6 +171,44 @@ class AnalysisPipelineTest {
         // the gate drove on the grader's confidence, not the self-reported one
         verify(activityEvents).confidenceScored(80, 20, "Canary healthy - promote");
         verify(activityEvents).analysisCompleted(any(), eq(20));
+    }
+
+    @Test
+    @DisplayName("Grader disputes a promote, escalation flips it to a rollback → the escalated decision wins")
+    void escalationFlipsDisputedPromote() {
+        stubK8s(healthyDiagnostics(), healthyMetrics());
+        stubLlm(CONFIDENT_PROMOTE);
+        when(analysisGrader.grade(any(), any(), any(), any())).thenReturn(Optional.of(0.05));
+        when(analysisEscalation.enabled()).thenReturn(true);
+        AnalysisResult escalated = new AnalysisResult(false, 97, "escalated analysis",
+                "Canary introduces a defect", "Rollback", "Strong model found a defect the cheap model missed",
+                IssueCategory.CODE_BUG, List.of("MetricsResource"));
+        when(analysisEscalation.escalate(any(), any())).thenReturn(escalated);
+
+        var response = postAnalyze(NAMESPACE, null, null);
+
+        assertThat(response.promote()).isFalse();
+        assertThat(response.confidence()).isEqualTo(97);
+        assertThat(response.rootCause()).isEqualTo("Canary introduces a defect");
+        verify(activityEvents).analysisEscalated(eq(0.05), any(), eq(escalated));
+        verify(k8sTools, never()).pauseRollout(any(), any());
+    }
+
+    @Test
+    @DisplayName("Grader disputes, escalation fails → the disputed conclusion stands and gates as before")
+    void escalationFailureKeepsDisputedConclusion() {
+        stubK8s(healthyDiagnostics(), healthyMetrics());
+        stubLlm(CONFIDENT_PROMOTE);
+        when(analysisGrader.grade(any(), any(), any(), any())).thenReturn(Optional.of(0.2));
+        when(analysisEscalation.enabled()).thenReturn(true);
+        when(analysisEscalation.escalate(any(), any())).thenReturn(null);
+        when(k8sTools.pauseRollout(NAMESPACE, null)).thenReturn("quarkus-demo");
+
+        var response = postAnalyzeWithPauseGate(NAMESPACE, 70);
+
+        assertThat(response.promote()).isTrue();
+        assertThat(response.pausedRollout()).isEqualTo("quarkus-demo");
+        verify(k8sTools).pauseRollout(NAMESPACE, null);
     }
 
     @Test
