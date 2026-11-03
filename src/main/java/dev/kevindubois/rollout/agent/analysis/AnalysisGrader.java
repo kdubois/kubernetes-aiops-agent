@@ -12,6 +12,8 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.Config;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Pattern;
 
@@ -135,36 +137,64 @@ public class AnalysisGrader {
     private static final Pattern SIGNAL_LINE =
             Pattern.compile("(?i)error|warn|exception|outofmemory|heap|gc |crash|fail|leak|killed");
 
+    /** JVM startup flags match the signal words but carry no log signal. */
+    private static final Pattern NOISE_LINE =
+            Pattern.compile("-XX:|INFO exec");
+
     /** Section headers of the diagnostics report: which side a log line came from. */
     private static final Pattern SECTION_HEADER =
             Pattern.compile("(?i)^(STABLE|CANARY) (POD|LOGS|METRICS)");
 
     /**
-     * Signal-focused excerpt of the log diagnostics: every line that mentions
-     * errors, warnings or resource pressure, capped at the diagnostics budget,
-     * with the stable/canary section headers carried along — error location
-     * decides the verdict (errors in stable justify a promote, the same errors
-     * in canary justify a rollback), so signal lines without their section are
-     * ambiguous — and a match count so the grader can judge how quiet the logs
-     * are.
+     * Signal-focused excerpt of the log diagnostics: the error, warning and
+     * resource-pressure lines with the stable/canary section headers carried
+     * along — error location decides the verdict (errors in stable justify a
+     * promote, the same errors in canary justify a rollback), so signal lines
+     * without their section are ambiguous. Repeated patterns are collapsed to
+     * one line with an occurrence count: a demo app logging a benign warning
+     * on every request produces dozens of near-identical lines, and the flood
+     * reads as an incident while the distinct patterns are the actual signal.
+     * JVM startup flags are excluded — they mention heaps, GC and OOM without
+     * being log output.
      */
     private String diagnosticsExcerpt(String diagnosticReport) {
         if (diagnosticReport == null || diagnosticReport.isBlank()) {
             return "(no log diagnostics)";
         }
         String[] lines = diagnosticReport.split("\n");
-        StringBuilder excerpt = new StringBuilder();
-        int matched = 0;
+        LinkedHashMap<String, LinkedHashMap<String, Long>> bySection = new LinkedHashMap<>();
+        long matched = 0;
+        String section = "";
         for (String line : lines) {
-            boolean signal = SIGNAL_LINE.matcher(line).find();
-            if (signal) {
-                matched++;
+            if (SECTION_HEADER.matcher(line).find()) {
+                section = line.stripTrailing();
+                bySection.putIfAbsent(section, new LinkedHashMap<>());
             }
-            if ((signal || SECTION_HEADER.matcher(line).find()) && excerpt.length() < MAX_DIAGNOSTIC_LENGTH) {
-                excerpt.append(line.stripTrailing()).append('\n');
+            if (SIGNAL_LINE.matcher(line).find() && !NOISE_LINE.matcher(line).find()) {
+                matched++;
+                bySection.computeIfAbsent(section, k -> new LinkedHashMap<>())
+                        .merge(line.stripTrailing().replaceAll("\\d+", "#"), 1L, Long::sum);
             }
         }
-        return matched + " of " + lines.length + " diagnostic lines mention errors, warnings or resource pressure:\n"
-                + excerpt;
+        if (bySection.isEmpty()) {
+            return "no sectioned log diagnostics in " + lines.length + " lines";
+        }
+        long distinct = bySection.values().stream().mapToLong(Map::size).sum();
+        StringBuilder excerpt = new StringBuilder();
+        for (var sec : bySection.entrySet()) {
+            if (excerpt.length() >= MAX_DIAGNOSTIC_LENGTH) {
+                break;
+            }
+            excerpt.append(sec.getKey()).append('\n');
+            if (sec.getValue().isEmpty()) {
+                excerpt.append("  (no error, warning or resource-pressure lines)\n");
+            } else {
+                for (var pattern : sec.getValue().entrySet()) {
+                    excerpt.append("  ").append(pattern.getValue()).append("x ").append(pattern.getKey()).append('\n');
+                }
+            }
+        }
+        return distinct + " distinct error/warning patterns ("
+                + matched + " matching lines of " + lines.length + "):\n" + excerpt;
     }
 }
