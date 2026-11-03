@@ -93,8 +93,10 @@ public class AnalysisGrader {
             return Optional.empty();
         }
         try {
+            String graderState = state(result, diagnosticReport, rolloutReport, metricsReport);
+            Log.infof("Grader state:%n%s", graderState);
             DecisionResponse response = decisionModel.decide(DecisionRequest.builder()
-                    .input(state(result, diagnosticReport, rolloutReport, metricsReport))
+                    .input(graderState)
                     .question(QUESTION_ID, YesNoQuestion.from(QUESTION))
                     .build());
             YesNoAnswer answer = response.yesNo(QUESTION_ID);
