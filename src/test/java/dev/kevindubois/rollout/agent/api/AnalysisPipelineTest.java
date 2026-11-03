@@ -118,7 +118,7 @@ class AnalysisPipelineTest {
     void graderAgrees_shouldNotPause() {
         stubK8s(healthyDiagnostics(), healthyMetrics());
         stubLlm(CONFIDENT_PROMOTE);
-        when(analysisGrader.grade(any(), any())).thenReturn(Optional.of(0.95));
+        when(analysisGrader.grade(any(), any(), any(), any())).thenReturn(Optional.of(0.95));
 
         var response = postAnalyzeWithPauseGate(NAMESPACE, 70);
 
@@ -135,7 +135,7 @@ class AnalysisPipelineTest {
     void graderDoubts_shouldPauseBelowSelfReportedConfidence() {
         stubK8s(healthyDiagnostics(), healthyMetrics());
         stubLlm(CONFIDENT_PROMOTE);
-        when(analysisGrader.grade(any(), any())).thenReturn(Optional.of(0.5));
+        when(analysisGrader.grade(any(), any(), any(), any())).thenReturn(Optional.of(0.5));
         when(k8sTools.pauseRollout(NAMESPACE, null)).thenReturn("quarkus-demo");
 
         var response = postAnalyzeWithPauseGate(NAMESPACE, 70);
@@ -155,7 +155,7 @@ class AnalysisPipelineTest {
     void graderUnavailable_fallsBackToSelfReportedConfidence() {
         stubK8s(healthyDiagnostics(), healthyMetrics());
         stubLlm(CONFIDENT_PROMOTE);
-        when(analysisGrader.grade(any(), any())).thenReturn(Optional.empty());
+        when(analysisGrader.grade(any(), any(), any(), any())).thenReturn(Optional.empty());
 
         var response = postAnalyzeWithPauseGate(NAMESPACE, 70);
 

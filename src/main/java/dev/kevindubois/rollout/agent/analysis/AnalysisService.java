@@ -69,9 +69,11 @@ public class AnalysisService {
                 baseBranch != null && !baseBranch.isBlank() ? baseBranch : "main");
 
         AnalysisResult result = workflow.result();
-        String diagnosticData = workflow.agenticScope().readState("diagnosticData", "");
+        String diagnosticReport = workflow.agenticScope().readState("diagnosticReport", "");
+        String rolloutReport = workflow.agenticScope().readState("rolloutReport", "");
+        String metricsReport = workflow.agenticScope().readState("metricsReport", "");
 
-        int effectiveConfidence = effectiveConfidence(result, diagnosticData);
+        int effectiveConfidence = effectiveConfidence(result, diagnosticReport, rolloutReport, metricsReport);
         activityEvents.confidenceScored(result.confidence(), effectiveConfidence, result.summary());
         activityEvents.analysisCompleted(result, effectiveConfidence);
 
@@ -86,8 +88,9 @@ public class AnalysisService {
      * the conservative minimum of the two. When the grader is unavailable
      * (no key, call failure, timeout) the self-reported confidence stands.
      */
-    private int effectiveConfidence(AnalysisResult result, String diagnosticData) {
-        Optional<Double> probability = analysisGrader.grade(result, diagnosticData);
+    private int effectiveConfidence(AnalysisResult result, String diagnosticReport, String rolloutReport,
+            String metricsReport) {
+        Optional<Double> probability = analysisGrader.grade(result, diagnosticReport, rolloutReport, metricsReport);
         if (probability.isEmpty()) {
             return result.confidence();
         }
