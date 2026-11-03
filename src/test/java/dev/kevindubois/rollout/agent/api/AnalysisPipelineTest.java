@@ -131,11 +131,28 @@ class AnalysisPipelineTest {
     }
 
     @Test
-    @DisplayName("Grader doubts a confident promote → effective confidence drops below the threshold, rollout paused")
-    void graderDoubts_shouldPauseBelowSelfReportedConfidence() {
+    @DisplayName("Grader neutral on a confident promote → the self-reported confidence stands, no pause")
+    void graderNeutral_shouldNotPause() {
         stubK8s(healthyDiagnostics(), healthyMetrics());
         stubLlm(CONFIDENT_PROMOTE);
         when(analysisGrader.grade(any(), any(), any(), any())).thenReturn(Optional.of(0.5));
+
+        var response = postAnalyzeWithPauseGate(NAMESPACE, 70);
+
+        assertThat(response.promote()).isTrue();
+        assertThat(response.confidence()).isEqualTo(80);
+        assertThat(response.pausedRollout()).isNull();
+        verify(k8sTools, never()).pauseRollout(any(), any());
+        // the neutral band does not lower the effective confidence
+        verify(activityEvents).confidenceScored(80, 80, "Canary healthy - promote");
+    }
+
+    @Test
+    @DisplayName("Grader clearly disputes a confident promote → effective confidence drops, rollout paused")
+    void graderClearlyDisputes_shouldPause() {
+        stubK8s(healthyDiagnostics(), healthyMetrics());
+        stubLlm(CONFIDENT_PROMOTE);
+        when(analysisGrader.grade(any(), any(), any(), any())).thenReturn(Optional.of(0.2));
         when(k8sTools.pauseRollout(NAMESPACE, null)).thenReturn("quarkus-demo");
 
         var response = postAnalyzeWithPauseGate(NAMESPACE, 70);
@@ -145,9 +162,9 @@ class AnalysisPipelineTest {
         assertThat(response.confidence()).isEqualTo(80);
         assertThat(response.pausedRollout()).isEqualTo("quarkus-demo");
         verify(k8sTools).pauseRollout(NAMESPACE, null);
-        // the gate drove on the effective confidence, not the self-reported one
-        verify(activityEvents).confidenceScored(80, 50, "Canary healthy - promote");
-        verify(activityEvents).analysisCompleted(any(), eq(50));
+        // the gate drove on the grader's confidence, not the self-reported one
+        verify(activityEvents).confidenceScored(80, 20, "Canary healthy - promote");
+        verify(activityEvents).analysisCompleted(any(), eq(20));
     }
 
     @Test

@@ -84,19 +84,29 @@ public class AnalysisService {
     }
 
     /**
-     * Combines the self-reported confidence with the grader second opinion:
-     * the conservative minimum of the two. When the grader is unavailable
-     * (no key, call failure, timeout) the self-reported confidence stands.
+     * Combines the self-reported confidence with the grader second opinion.
+     * The grader is a veto with a margin, not a second confidence scale: a
+     * decision-model probability is a judgment with a wide neutral band, so
+     * only a clearly negative grade (below {@link #CLEARLY_UNSUPPORTED})
+     * lowers the effective confidence. In the neutral band the self-reported
+     * confidence stands. When the grader is unavailable (no key, call
+     * failure, timeout) the self-reported confidence stands as well.
      */
+    static final double CLEARLY_UNSUPPORTED = 0.30;
+
     private int effectiveConfidence(AnalysisResult result, String diagnosticReport, String rolloutReport,
             String metricsReport) {
         Optional<Double> probability = analysisGrader.grade(result, diagnosticReport, rolloutReport, metricsReport);
         if (probability.isEmpty()) {
             return result.confidence();
         }
-        int effective = (int) Math.min(result.confidence(), Math.round(probability.get() * 100));
-        Log.infof("Analysis grader: self-reported confidence %d, grader probability %.2f, effective confidence %d",
-                result.confidence(), probability.get(), effective);
+        Log.infof("Analysis grader: self-reported confidence %d, grader probability %.2f",
+                result.confidence(), probability.get());
+        if (probability.get() >= CLEARLY_UNSUPPORTED) {
+            return result.confidence();
+        }
+        int effective = (int) Math.round(probability.get() * 100);
+        Log.infof("Grader clearly disputes the conclusion; effective confidence %d", effective);
         return effective;
     }
 
