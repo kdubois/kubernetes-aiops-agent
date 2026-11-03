@@ -13,6 +13,7 @@ import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.Config;
 
 import java.util.Optional;
+import java.util.regex.Pattern;
 
 /**
  * Independent second opinion on a completed analysis. Asks the Jev decision
@@ -109,10 +110,11 @@ public class AnalysisGrader {
     /**
      * Condensed grader state: the metrics and rollout reports first — they are
      * the quantitative basis of every conclusion and are small enough to keep
-     * whole — then an excerpt of the log diagnostics, then the conclusion.
-     * Evidence-first ordering matters: truncating the combined workflow report
-     * from the front once cut the metrics out entirely, and the grader
-     * correctly doubted every conclusion whose evidence it never saw.
+     * whole — then the error, warning and resource-pressure lines from the log
+     * diagnostics, then the conclusion. The log excerpt is filtered by signal,
+     * not position: the report lists stable pods before canary pods, so a
+     * positional excerpt kept the benign stable half and cut the canary
+     * evidence the conclusion rests on.
      */
     private String state(AnalysisResult result, String diagnosticReport, String rolloutReport,
             String metricsReport) {
@@ -121,11 +123,39 @@ public class AnalysisGrader {
                 + "\n\nRollout status:\n"
                 + TextUtils.truncate(rolloutReport, MAX_ROLLOUT_LENGTH)
                 + "\n\nLog diagnostics:\n"
-                + TextUtils.truncate(diagnosticReport, MAX_DIAGNOSTIC_LENGTH)
+                + diagnosticsExcerpt(diagnosticReport)
                 + "\n\nAnalysis conclusion:\n"
                 + "- decision: " + (result.promote() ? "PROMOTE" : "ROLLBACK") + "\n"
                 + "- confidence: " + result.confidence() + "/100\n"
                 + "- summary: " + TextUtils.truncate(result.summary(), MAX_SUMMARY_LENGTH) + "\n"
                 + "- root cause: " + TextUtils.truncate(result.rootCause(), MAX_ROOT_CAUSE_LENGTH);
+    }
+
+    /** Lines worth grading: errors, warnings, and resource-pressure signals. */
+    private static final Pattern SIGNAL_LINE =
+            Pattern.compile("(?i)error|warn|exception|outofmemory|heap|gc |crash|fail|leak|killed");
+
+    /**
+     * Signal-focused excerpt of the log diagnostics: every line that mentions
+     * errors, warnings or resource pressure, capped at the diagnostics budget,
+     * with a match count so the grader can judge how quiet the logs are.
+     */
+    private String diagnosticsExcerpt(String diagnosticReport) {
+        if (diagnosticReport == null || diagnosticReport.isBlank()) {
+            return "(no log diagnostics)";
+        }
+        String[] lines = diagnosticReport.split("\n");
+        StringBuilder excerpt = new StringBuilder();
+        int matched = 0;
+        for (String line : lines) {
+            if (SIGNAL_LINE.matcher(line).find()) {
+                matched++;
+                if (excerpt.length() < MAX_DIAGNOSTIC_LENGTH) {
+                    excerpt.append(line.stripTrailing()).append('\n');
+                }
+            }
+        }
+        return matched + " of " + lines.length + " diagnostic lines mention errors, warnings or resource pressure:\n"
+                + excerpt;
     }
 }
