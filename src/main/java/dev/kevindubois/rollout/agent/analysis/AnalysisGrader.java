@@ -16,7 +16,7 @@ import java.util.Optional;
 
 /**
  * Independent second opinion on a completed analysis. Asks the Jev decision
- * model one yes/no question — is the analysis conclusion fully supported by
+ * model one yes/no question — does the diagnostic data support the analysis
  * the diagnostic data? — and returns the yes-probability. The pause gate
  * combines it conservatively with the analysis LLM's self-reported confidence:
  * effective confidence = min(self-reported, probability × 100).
@@ -37,7 +37,7 @@ public class AnalysisGrader {
 
     private static final String QUESTION_ID = "conclusion_supported";
     private static final String QUESTION =
-            "Is this analysis conclusion fully supported by the diagnostic data?";
+            "Does the diagnostic data support this analysis conclusion?";
 
     /**
      * Budgets inside the grader state. The metrics and rollout reports are the
@@ -120,7 +120,7 @@ public class AnalysisGrader {
                 + TextUtils.truncate(metricsReport, MAX_METRICS_LENGTH)
                 + "\n\nRollout status:\n"
                 + TextUtils.truncate(rolloutReport, MAX_ROLLOUT_LENGTH)
-                + "\n\nLog diagnostics (excerpt):\n"
+                + "\n\nLog diagnostics:\n"
                 + TextUtils.truncate(diagnosticReport, MAX_DIAGNOSTIC_LENGTH)
                 + "\n\nAnalysis conclusion:\n"
                 + "- decision: " + (result.promote() ? "PROMOTE" : "ROLLBACK") + "\n"
