@@ -40,7 +40,7 @@ class AnalysisGraderTest {
     void returnsYesProbability() {
         stubProbability(0.92);
 
-        Optional<Double> probability = new AnalysisGrader(model, true).grade(result(90), "diagnostics");
+        Optional<Double> probability = new AnalysisGrader(model, true).grade(result(90), "diagnostics", "rollout-status", "metrics");
 
         assertThat(probability).hasValue(0.92);
     }
@@ -49,7 +49,7 @@ class AnalysisGraderTest {
     void asksOneYesNoQuestionOverCondensedState() {
         stubProbability(0.5);
 
-        new AnalysisGrader(model, true).grade(result(85), "diagnostics");
+        new AnalysisGrader(model, true).grade(result(85), "diagnostics", "rollout-status", "metrics");
 
         ArgumentCaptor<DecisionRequest> captor = ArgumentCaptor.forClass(DecisionRequest.class);
         org.mockito.Mockito.verify(model).decide(captor.capture());
@@ -58,6 +58,8 @@ class AnalysisGraderTest {
         assertThat(request.questions().get(QUESTION_ID)).isInstanceOf(YesNoQuestion.class);
         String state = ((TextInput) request.input()).text();
         assertThat(state)
+                .contains("metrics")
+                .contains("rollout-status")
                 .contains("diagnostics")
                 .contains("PROMOTE")
                 .contains("85/100")
@@ -69,15 +71,33 @@ class AnalysisGraderTest {
     void truncatesDiagnosticDataBeforeTheConclusion() {
         stubProbability(0.5);
 
-        new AnalysisGrader(model, true).grade(result(85), "x".repeat(50_000));
+        new AnalysisGrader(model, true).grade(result(85), "x".repeat(50_000), "y".repeat(50_000), "z".repeat(50_000));
 
         ArgumentCaptor<DecisionRequest> captor = ArgumentCaptor.forClass(DecisionRequest.class);
         org.mockito.Mockito.verify(model).decide(captor.capture());
         String state = ((TextInput) captor.getValue().input()).text();
-        // diagnostic budget + conclusion, well under the decision model input limits
-        assertThat(state.length()).isLessThan(4000);
+        // metrics + rollout + diagnostic budgets + conclusion, under the decision model input limits
+        assertThat(state.length()).isLessThan(7000);
         // the conclusion survives the truncation
         assertThat(state).contains("PROMOTE").contains("85/100");
+    }
+
+    @Test
+    void metricsSurviveWhenDiagnosticsOverflowTheBudget() {
+        // regression: the metrics report used to be truncated away with the combined
+        // diagnostic data, and the grader doubted every conclusion it could not see
+        // the quantitative evidence for
+        stubProbability(0.5);
+
+        new AnalysisGrader(model, true).grade(result(85), "x".repeat(50_000), "y".repeat(50_000),
+                "error rate: canary 0.5% vs stable 1.0%; p95 47ms vs 48ms");
+
+        ArgumentCaptor<DecisionRequest> captor = ArgumentCaptor.forClass(DecisionRequest.class);
+        org.mockito.Mockito.verify(model).decide(captor.capture());
+        String state = ((TextInput) captor.getValue().input()).text();
+        assertThat(state).contains("error rate: canary 0.5% vs stable 1.0%; p95 47ms vs 48ms");
+        // every overflowing section is cut to its budget
+        assertThat(state.length()).isLessThan(7000);
     }
 
     @Test
@@ -87,19 +107,19 @@ class AnalysisGraderTest {
                 .answers(Map.of("other", YesNoAnswer.from(0.5)))
                 .build());
 
-        assertThat(new AnalysisGrader(model, true).grade(result(90), "diagnostics")).isEmpty();
+        assertThat(new AnalysisGrader(model, true).grade(result(90), "diagnostics", "rollout-status", "metrics")).isEmpty();
     }
 
     @Test
     void callFailureFallsBackToEmpty() {
         when(model.decide(any(DecisionRequest.class))).thenThrow(new RuntimeException("timeout"));
 
-        assertThat(new AnalysisGrader(model, true).grade(result(90), "diagnostics")).isEmpty();
+        assertThat(new AnalysisGrader(model, true).grade(result(90), "diagnostics", "rollout-status", "metrics")).isEmpty();
     }
 
     @Test
     void disabledGraderNeverCallsTheModel() {
-        assertThat(new AnalysisGrader(model, false).grade(result(90), "diagnostics")).isEmpty();
+        assertThat(new AnalysisGrader(model, false).grade(result(90), "diagnostics", "rollout-status", "metrics")).isEmpty();
         verifyNoInteractions(model);
     }
 }

@@ -39,7 +39,14 @@ public class AnalysisGrader {
     private static final String QUESTION =
             "Is this analysis conclusion fully supported by the diagnostic data?";
 
-    /** Diagnostic-data budget inside the grader state; the conclusion follows it. */
+    /**
+     * Budgets inside the grader state. The metrics and rollout reports are the
+     * quantitative basis of every conclusion and are small, so they are kept
+     * whole; the log diagnostics are an excerpt; the conclusion always
+     * survives at the end.
+     */
+    private static final int MAX_METRICS_LENGTH = 2000;
+    private static final int MAX_ROLLOUT_LENGTH = 1000;
     private static final int MAX_DIAGNOSTIC_LENGTH = 3000;
     private static final int MAX_SUMMARY_LENGTH = 200;
     private static final int MAX_ROOT_CAUSE_LENGTH = 500;
@@ -68,20 +75,23 @@ public class AnalysisGrader {
     }
 
     /**
-     * Grades a completed analysis against the diagnostic data it was based on.
+     * Grades a completed analysis against the evidence it was based on.
      *
-     * @param result         the analysis conclusion to grade
-     * @param diagnosticData the combined diagnostic report from the workflow
+     * @param result           the analysis conclusion to grade
+     * @param diagnosticReport pod and log diagnostics from the workflow
+     * @param rolloutReport    rollout phase, step, and traffic weights
+     * @param metricsReport    application metrics (error rates, latency)
      * @return the yes-probability in [0, 1] that the conclusion is supported
-     *         by the data, or empty when the grader is disabled or failed
+     *         by the evidence, or empty when the grader is disabled or failed
      */
-    public Optional<Double> grade(AnalysisResult result, String diagnosticData) {
+    public Optional<Double> grade(AnalysisResult result, String diagnosticReport, String rolloutReport,
+            String metricsReport) {
         if (!enabled) {
             return Optional.empty();
         }
         try {
             DecisionResponse response = decisionModel.decide(DecisionRequest.builder()
-                    .input(state(result, diagnosticData))
+                    .input(state(result, diagnosticReport, rolloutReport, metricsReport))
                     .question(QUESTION_ID, YesNoQuestion.from(QUESTION))
                     .build());
             YesNoAnswer answer = response.yesNo(QUESTION_ID);
@@ -97,13 +107,21 @@ public class AnalysisGrader {
     }
 
     /**
-     * Condensed grader state: truncated diagnostic data followed by the
-     * analysis conclusion. Kept well under the decision model's input limits —
-     * the diagnostic data is truncated first so the conclusion always survives.
+     * Condensed grader state: the metrics and rollout reports first — they are
+     * the quantitative basis of every conclusion and are small enough to keep
+     * whole — then an excerpt of the log diagnostics, then the conclusion.
+     * Evidence-first ordering matters: truncating the combined workflow report
+     * from the front once cut the metrics out entirely, and the grader
+     * correctly doubted every conclusion whose evidence it never saw.
      */
-    private String state(AnalysisResult result, String diagnosticData) {
-        return "Diagnostic data:\n"
-                + TextUtils.truncate(diagnosticData, MAX_DIAGNOSTIC_LENGTH)
+    private String state(AnalysisResult result, String diagnosticReport, String rolloutReport,
+            String metricsReport) {
+        return "Metrics:\n"
+                + TextUtils.truncate(metricsReport, MAX_METRICS_LENGTH)
+                + "\n\nRollout status:\n"
+                + TextUtils.truncate(rolloutReport, MAX_ROLLOUT_LENGTH)
+                + "\n\nLog diagnostics (excerpt):\n"
+                + TextUtils.truncate(diagnosticReport, MAX_DIAGNOSTIC_LENGTH)
                 + "\n\nAnalysis conclusion:\n"
                 + "- decision: " + (result.promote() ? "PROMOTE" : "ROLLBACK") + "\n"
                 + "- confidence: " + result.confidence() + "/100\n"
