@@ -55,6 +55,9 @@ class GraderEvalTest {
     @Inject
     AnalysisGrader grader;
 
+    @Inject
+    AnalysisEscalation escalation;
+
     /**
      * Cases whose evidence is designed to be thin. The grader may legitimately
      * dispute a correct conclusion built on insufficient evidence — that is
@@ -76,6 +79,7 @@ class GraderEvalTest {
         int wrongPromotes = 0;
         int vetoFired = 0;
         int separated = 0;
+        int escalated = 0;
 
         for (AnalysisEvalCases.EvalCase c : cases) {
             AnalysisResult real = agent.analyze(AnalysisEvalCases.diagnosticData(c), c.notes());
@@ -83,6 +87,26 @@ class GraderEvalTest {
 
             Optional<Double> pCorrect = grader.grade(real,
                     c.diagnosticReport(), c.rolloutReport(), c.metricsReport());
+
+            // the escalation tier: a clearly disputed conclusion is re-analyzed
+            // with the strong model over the same data, then re-graded — this
+            // mirrors AnalysisService's flow
+            String escalationNote = "";
+            if (pCorrect.isPresent() && pCorrect.get() < AnalysisService.CLEARLY_UNSUPPORTED
+                    && escalation.enabled()) {
+                AnalysisResult strong = escalation.escalate(AnalysisEvalCases.diagnosticData(c), c.notes());
+                if (strong != null) {
+                    escalated++;
+                    Optional<Double> pStrong = grader.grade(strong,
+                            c.diagnosticReport(), c.rolloutReport(), c.metricsReport());
+                    escalationNote = String.format(Locale.ROOT,
+                            "escalated: %.2f -> %.2f, %s -> %s", pCorrect.get(),
+                            pStrong.orElse(-1.0), verdict(real), verdict(strong));
+                    real = strong;
+                    pCorrect = pStrong;
+                }
+            }
+
             Optional<Double> pInverted = grader.grade(inverted(real),
                     c.diagnosticReport(), c.rolloutReport(), c.metricsReport());
 
@@ -110,8 +134,8 @@ class GraderEvalTest {
             } else if (thin) {
                 note = "thin evidence: veto acceptable";
             }
-            rows.add(String.format(Locale.ROOT, "| %s | %s | %.2f | %.2f | %s |",
-                    c.name(), verdict(real), pCorrect.get(), pInverted.get(), note));
+            rows.add(String.format(Locale.ROOT, "| %s | %s | %.2f | %.2f | %s%s |",
+                    c.name(), verdict(real), pCorrect.get(), pInverted.get(), note, escalationNote));
         }
 
         Path report = Path.of("target", "grader-eval-report.md");
@@ -130,10 +154,11 @@ class GraderEvalTest {
                 - Gate safety (P(correct) >= veto bar): %d/%d
                 - Veto fires on wrong promotes: %d/%d
                 - Discrimination (P(correct) > P(inverted)): %d/%d (informational)
+                - Escalations to the strong model: %d
                 """.formatted(LocalDate.now(), AnalysisService.CLEARLY_UNSUPPORTED,
-                String.join("\n", rows), vetoSafe, graded, vetoFired, wrongPromotes, separated, graded));
-        Log.infof("Analysis grader evaluation: gate safety %d/%d, veto on wrong promotes %d/%d, discrimination %d/%d. Report written to %s",
-                vetoSafe, graded, vetoFired, wrongPromotes, separated, graded, report);
+                String.join("\n", rows), vetoSafe, graded, vetoFired, wrongPromotes, separated, graded, escalated));
+        Log.infof("Analysis grader evaluation: gate safety %d/%d, veto on wrong promotes %d/%d, discrimination %d/%d, escalations %d. Report written to %s",
+                vetoSafe, graded, vetoFired, wrongPromotes, separated, graded, escalated, report);
 
         assertThat(graded).as("the grader graded every case").isEqualTo(cases.size());
         assertThat(vetoSafe).as("a correct conclusion does not trip the veto").isEqualTo(graded);

@@ -30,7 +30,7 @@ See the [Demo Script](../argo-rollouts-quarkus-demo/DEMO_SCRIPT.md) for detailed
 The labelled evaluation set in [`src/test/resources/analysis-eval.json`](src/test/resources/analysis-eval.json) measures how often the analysis agrees with the expected decision for known scenarios: the four demo outcomes plus edge cases (bug in stable only, same errors in both, early canary with thin metrics, crash-looping canary). It calls the configured chat model once per case and writes a report to `target/analysis-eval-report.md`:
 
 ```bash
-ANALYSIS_API_KEY=... ANALYSIS_BASE_URL=... ANALYSIS_MODEL=... \
+ANALYSIS_API_KEY (cheap analysis tier), ANALYSIS_STRONG_MODEL/ANALYSIS_STRONG_BASE_URL/ANALYSIS_STRONG_API_KEY (escalation tier, optional)=... ANALYSIS_BASE_URL=... ANALYSIS_MODEL=... \
   mvn test -Dtest=AnalysisEvalTest -Danalysis.eval=true
 ```
 

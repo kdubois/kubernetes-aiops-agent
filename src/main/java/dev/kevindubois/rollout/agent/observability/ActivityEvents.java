@@ -33,6 +33,18 @@ public class ActivityEvents {
                 (summary != null ? summary : "") + " (self-reported: " + selfReported + ")");
     }
 
+    /**
+     * The grader disputed the default model's conclusion and the strong-model
+     * escalation tier re-analyzed it.
+     */
+    public void analysisEscalated(double disputedProbability, AnalysisResult disputed, AnalysisResult escalated) {
+        store.publish("MODEL_ESCALATION", "Analysis escalated to the strong model",
+                String.format("grader disputed at %.2f (%s, confidence %d); re-analyzed: %s, confidence %d",
+                        disputedProbability,
+                        disputed.promote() ? "promote" : "rollback", disputed.confidence(),
+                        escalated.promote() ? "promote" : "rollback", escalated.confidence()));
+    }
+
     public void analysisCompleted(AnalysisResult result, int effectiveConfidence) {
         if (result.summary() != null && !result.summary().isBlank()) {
             store.publish("ANALYSIS_SUMMARY", "Analysis summary", result.summary());
