@@ -2,6 +2,8 @@ package dev.kevindubois.rollout.agent.observability;
 
 import dev.kevindubois.rollout.agent.analysis.AnalysisResult;
 import jakarta.enterprise.context.ApplicationScoped;
+
+import java.util.Optional;
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
@@ -16,17 +18,23 @@ public class ActivityEvents {
     @Inject
     ActivityEventStore store;
 
-    /**
-     * Descriptive model labels for the escalation event. The reference
-     * deployment runs the cheap tier on Qwen and the strong tier on DeepSeek.
-     */
+    /** The model name configured for the analysis tier (e.g. rits/zai-org/glm-5-3). */
     @Inject
-    @ConfigProperty(name = "analysis.escalation.tier1-label", defaultValue = "Qwen")
-    String tier1Label;
+    @ConfigProperty(name = "quarkus.langchain4j.openai.chat-model.model-name", defaultValue = "analysis model")
+    String analysisModelName;
 
+    /** The model name configured for the second-opinion tier. */
     @Inject
-    @ConfigProperty(name = "analysis.escalation.tier2-label", defaultValue = "DeepSeek")
-    String tier2Label;
+    @ConfigProperty(name = "analysis.escalation.model")
+    Optional<String> secondOpinionModelName;
+
+    private String shortModelName(String modelName) {
+        if (modelName == null || modelName.isBlank()) {
+            return "model";
+        }
+        String name = modelName.contains("/") ? modelName.substring(modelName.lastIndexOf('/') + 1) : modelName;
+        return name.isEmpty() ? modelName : name;
+    }
 
     public void requestStarted(String detail, int measurement, int totalMeasurements) {
         store.publish("ANALYSIS_START",
@@ -87,11 +95,11 @@ public class ActivityEvents {
      * escalation tier re-analyzed it, with both tiers' decisions visible.
      */
     public void analysisEscalated(double disputedProbability, AnalysisResult disputed, AnalysisResult escalated) {
-        store.publish("MODEL_ESCALATION", "Escalated to the strong model for a second opinion",
+        store.publish("MODEL_ESCALATION", "Escalated for a second opinion",
                 String.format("%s said %s (%d/100), quality check disputed at %d/100 — %s re-analyzed: %s (%d/100)",
-                        tier1Label, disputed.promote() ? "continue" : "rollback", disputed.confidence(),
+                        shortModelName(analysisModelName), disputed.promote() ? "continue" : "rollback", disputed.confidence(),
                         (int) Math.round(disputedProbability * 100),
-                        tier2Label, escalated.promote() ? "continue" : "rollback", escalated.confidence()));
+                        shortModelName(secondOpinionModelName.orElse("second-opinion model")), escalated.promote() ? "continue" : "rollback", escalated.confidence()));
     }
 
     /**
