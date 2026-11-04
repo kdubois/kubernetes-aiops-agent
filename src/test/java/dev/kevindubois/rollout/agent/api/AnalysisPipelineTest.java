@@ -104,6 +104,9 @@ class AnalysisPipelineTest {
         assertThat(response.confidence()).isEqualTo(55);
         assertThat(response.pausedRollout()).isEqualTo("quarkus-demo");
         verify(k8sTools).pauseRollout(NAMESPACE, null);
+        // no grader second opinion: the gate fired on the self-reported confidence
+        // alone, marked by the negative grader probability
+        verify(activityEvents).pauseGateTriggered(55, -1.0, 55, 70);
     }
 
     @Test
@@ -133,7 +136,8 @@ class AnalysisPipelineTest {
         assertThat(response.pausedRollout()).isNull();
         verify(k8sTools, never()).pauseRollout(any(), any());
         // the UI-facing confidence event reflects the effective confidence
-        verify(activityEvents).confidenceScored(80, 80, "Canary healthy - promote");
+        verify(activityEvents).confidenceScored(80, 80, "Canary healthy - promote", 0.95);
+        verify(activityEvents).graderScored(0.95, "supported", 80);
     }
 
     @Test
@@ -141,7 +145,7 @@ class AnalysisPipelineTest {
     void graderNeutral_shouldNotPause() {
         stubK8s(healthyDiagnostics(), healthyMetrics());
         stubLlm(CONFIDENT_PROMOTE);
-        when(analysisGrader.grade(any(), any(), any(), any())).thenReturn(Optional.of(0.5));
+        when(analysisGrader.grade(any(), any(), any(), any())).thenReturn(Optional.of(0.45));
 
         var response = postAnalyzeWithPauseGate(NAMESPACE, 70);
 
@@ -150,7 +154,8 @@ class AnalysisPipelineTest {
         assertThat(response.pausedRollout()).isNull();
         verify(k8sTools, never()).pauseRollout(any(), any());
         // the neutral band does not lower the effective confidence
-        verify(activityEvents).confidenceScored(80, 80, "Canary healthy - promote");
+        verify(activityEvents).confidenceScored(80, 80, "Canary healthy - promote", 0.45);
+        verify(activityEvents).graderScored(0.45, "neutral", 80);
     }
 
     @Test
@@ -169,8 +174,10 @@ class AnalysisPipelineTest {
         assertThat(response.pausedRollout()).isEqualTo("quarkus-demo");
         verify(k8sTools).pauseRollout(NAMESPACE, null);
         // the gate drove on the grader's confidence, not the self-reported one
-        verify(activityEvents).confidenceScored(80, 20, "Canary healthy - promote");
+        verify(activityEvents).graderScored(0.2, "disputed", 80);
+        verify(activityEvents).confidenceScored(80, 20, "Canary healthy - promote", 0.2);
         verify(activityEvents).analysisCompleted(any(), eq(20));
+        verify(activityEvents).pauseGateTriggered(80, 0.2, 20, 70);
     }
 
     @Test
@@ -224,7 +231,7 @@ class AnalysisPipelineTest {
         assertThat(response.confidence()).isEqualTo(80);
         assertThat(response.pausedRollout()).isNull();
         verify(k8sTools, never()).pauseRollout(any(), any());
-        verify(activityEvents).confidenceScored(80, 80, "Canary healthy - promote");
+        verify(activityEvents).confidenceScored(80, 80, "Canary healthy - promote", null);
     }
 
     @Test

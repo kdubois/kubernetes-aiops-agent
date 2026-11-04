@@ -94,10 +94,10 @@ public class AnalysisService {
         }
 
         int effectiveConfidence = effectiveConfidence(result, grade);
-        activityEvents.confidenceScored(result.confidence(), effectiveConfidence, result.summary());
+        activityEvents.confidenceScored(result.confidence(), effectiveConfidence, result.summary(), grade.orElse(null));
         activityEvents.analysisCompleted(result, effectiveConfidence);
 
-        String pausedRollout = pauseIfNeeded(pauseGate, result, effectiveConfidence, namespace, rolloutName);
+        String pausedRollout = pauseIfNeeded(pauseGate, result, grade, effectiveConfidence, namespace, rolloutName);
 
         Log.info("Analysis pipeline completed successfully");
         return new AnalysisOutcome(result, pausedRollout);
@@ -122,12 +122,16 @@ public class AnalysisService {
         if (probability.isEmpty()) {
             return result.confidence();
         }
+        double graderProbability = probability.get();
         Log.infof("Analysis grader: self-reported confidence %d, grader probability %.2f",
-                result.confidence(), probability.get());
-        if (probability.get() >= CLEARLY_UNSUPPORTED) {
+                result.confidence(), graderProbability);
+        if (graderProbability >= CLEARLY_UNSUPPORTED) {
+            activityEvents.graderScored(graderProbability, graderProbability >= 0.50 ? "supported" : "neutral",
+                    result.confidence());
             return result.confidence();
         }
-        int effective = (int) Math.round(probability.get() * 100);
+        activityEvents.graderScored(graderProbability, "disputed", result.confidence());
+        int effective = (int) Math.round(graderProbability * 100);
         Log.infof("Grader clearly disputes the conclusion; effective confidence %d", effective);
         return effective;
     }
@@ -138,8 +142,8 @@ public class AnalysisService {
      * An already-paused rollout is not re-patched; a rollout a human unpaused is
      * paused again while the analysis is still below the threshold.
      */
-    private String pauseIfNeeded(PauseGate pauseGate, AnalysisResult result, int effectiveConfidence,
-                                 String namespace, String rolloutName) {
+    private String pauseIfNeeded(PauseGate pauseGate, AnalysisResult result, Optional<Double> grade,
+                                 int effectiveConfidence, String namespace, String rolloutName) {
         if (pauseGate == null) {
             pauseGate = PauseGate.DISABLED;
         }
@@ -152,7 +156,11 @@ public class AnalysisService {
         if (rollout == null) {
             Log.warnf("Uncertainty gate requested a pause but no rollout was paused in namespace %s", namespace);
             activityEvents.pauseFailed("namespace=" + namespace + ", confidence=" + effectiveConfidence);
+            return null;
         }
+        // a negative grader probability marks that no second opinion was available
+        activityEvents.pauseGateTriggered(result.confidence(), grade.orElse(-1.0), effectiveConfidence,
+                pauseGate.threshold());
         return rollout;
     }
 }
