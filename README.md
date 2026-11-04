@@ -93,11 +93,20 @@ composes the request from the analysis result and reports the outcome through th
 
 ### Uncertainty pause gate
 
-When the caller sends `pauseOnUncertainty: true` in the request context, the agent pauses the rollout instead of letting a low-confidence promote decision proceed: if the analysis promotes with confidence below `uncertaintyThreshold` (default 50), the Rollout's `spec.paused` is patched and a human decides with `oc argo rollouts unpause`. The measurement itself stays successful — the pause, not an abort, is what holds the rollout. A rollback decision never pauses, since the abort already stops the rollout. The paused rollout name is returned in the response's `pausedRollout` field and published as a `PAUSE` activity event, and the gate publishes a `PAUSE_GATE` event with the full causal chain: self-reported confidence, grader probability, effective confidence, and threshold (a negative grader probability means no second opinion was available).
+When the caller sends `pauseOnUncertainty: true` in the request context, the agent pauses the rollout instead of letting a low-confidence promote decision proceed: if the analysis promotes with confidence below `uncertaintyThreshold` (default 50), the Rollout's `spec.paused` is patched and a human decides with `oc argo rollouts unpause` or the promote endpoint below. The measurement itself stays successful — the pause, not an abort, is what holds the rollout. A rollback decision never pauses, since the abort already stops the rollout. The paused rollout name is returned in the response's `pausedRollout` field and published as a `PAUSE` activity event, and the gate publishes a `PAUSE_GATE` event with the full causal chain: self-reported confidence, grader probability, effective confidence, and threshold (a negative grader probability means no second opinion was available).
 
 The rollout named in the request context (`rolloutName`, which the plugin sends) is the one paused; without a name, the first rollout in the namespace is used. An already-paused rollout is not re-patched and does not re-publish an event, but a rollout that a human has unpaused is paused again by a later analysis that is still below the threshold — each measurement applies the gate policy. A pause that fails (for example, missing RBAC) is surfaced as a `PAUSE_FAILED` activity event.
 
 Pausing requires patch permission on rollouts in the target namespace, granted by a namespaced Role (see the `progressive-delivery` repo); the agent is read-only everywhere else.
+
+### Manual rollout control
+
+Two endpoints serve the human decision on a gate-held rollout, both defaulting to the `quarkus-demo` rollout in the `quarkus-demo` namespace (the same defaults as `GET /rollout/summary`):
+
+- `POST /rollout/promote?namespace=...&name=...` — resumes the rollout by patching `spec.paused` to `false`, the exact reverse of the gate's pause patch. Returns 200 on success, 404 when the rollout does not exist, 500 on error.
+- `POST /rollout/abort?namespace=...&name=...` — aborts the rollout to the stable version with the same signal `kubectl argo rollouts abort` sends: a merge patch of `status.abort=true` on the rollout's status subresource, after unpausing so the controller acts on it. The controller scales the canary down and reverts traffic to the stable ReplicaSet. `spec.template` is left alone because Git owns it — the rollout stays in the aborted state until the image is reverted in Git.
+
+Both publish `PROMOTE` / `ABORT` activity events and return a `ControlResult` JSON body (`action`, `namespace`, `rollout`, `error`). Promote needs patch permission on rollouts, abort additionally on `rollouts/status` (extend the namespaced pause Role from the `progressive-delivery` repo).
 
 ### Analysis grader (decision-model second opinion)
 
@@ -356,6 +365,24 @@ The agent exposes a REST API for other systems to use:
 
 On failure the endpoint returns HTTP 500 (or 504 on timeout) with `promote: false`,
 `confidence: 0`, and a short `error` message.
+
+Manual rollout control (see [Manual rollout control](#manual-rollout-control)):
+
+```bash
+POST /rollout/promote?namespace=quarkus-demo&name=quarkus-demo   # resume a gate-held rollout
+POST /rollout/abort?namespace=quarkus-demo&name=quarkus-demo     # abort to the stable version
+```
+
+Both return a `ControlResult`:
+
+```json
+{
+	"action": "promote",
+	"namespace": "quarkus-demo",
+	"rollout": "quarkus-demo",
+	"error": null
+}
+```
 
 ## Integration with Argo Rollouts
 

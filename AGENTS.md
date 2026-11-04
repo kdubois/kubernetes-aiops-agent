@@ -37,6 +37,7 @@ src/main/java/dev/kevindubois/rollout/agent/
     KubernetesAgentRequest.java     # REST request DTO (userId, prompt, context)
     KubernetesAgentResponse.java    # REST response DTO (promote, confidence, analysis, ...)
     RolloutSummaryResource.java     # REST endpoint: GET /rollout/summary
+    RolloutControlResource.java     # REST endpoints: POST /rollout/promote, /rollout/abort
   k8s/
     K8sTools.java                   # getCanaryDiagnostics, getCanaryMetrics, getRolloutStatus (structured concurrency)
     RolloutStatusData.java          # Record: rollout phase, step, weights, pod counts
@@ -139,7 +140,7 @@ The analysis request from the plugin triggers this sequence:
 5. `AnalysisEscalation` — the strong-model tier (Confidence Cascade shape): a clearly disputed conclusion is re-analyzed once with a stronger model over the same diagnostic data — Qwen (cheap tier) first, DeepSeek (strong tier) on dispute, both open weights — and the escalated conclusion is re-graded before the gate decides. Configure via `ANALYSIS_STRONG_*`; an empty model disables the tier and a dispute goes straight to the gate. Evaluate the grader and escalation together with `ANALYSIS_API_KEY=... TYPESAFE_API_KEY=... ANALYSIS_STRONG_MODEL=... mvn test -Dtest=GraderEvalTest -Dgrader.eval=true`.
 6. `RemediationAgent` — declarative trailing step in the same sequence. On a rollback with `repoUrl` set it composes the request and hands it to `RemediationDelegator`, which calls the remediation-agent over A2A on a background thread. On a promote or without a repository it returns null and the sequence ends there.
 7. Response returned synchronously to the plugin (`promote`, `confidence`, `analysis`, `rootCause`) — the decision is not delayed by the sandbox run. The response `confidence` stays the self-reported value; the effective confidence drives only the gate and the activity events.
-8. If `pauseOnUncertainty` is enabled and the result promotes with confidence below `uncertaintyThreshold`, the rollout is paused for human review (`spec.paused` patch, namespaced Role required).
+8. If `pauseOnUncertainty` is enabled and the result promotes with confidence below `uncertaintyThreshold`, the rollout is paused for human review (`spec.paused` patch, namespaced Role required). The human decision is served by `POST /rollout/promote` (unpause) and `POST /rollout/abort` (status subresource `abort` signal) in `RolloutControlResource`.
 9. When the sandbox run finishes, the delegator publishes the outcome through the activity events:
    - Operational signals (OOM, memory leak, heap warnings) → GitHub issue
    - Code bugs (NPE, wrong value, logic error) → GitHub PR

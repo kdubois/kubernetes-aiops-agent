@@ -103,6 +103,16 @@ public class ActivityEvents {
         store.publish("PAUSE_FAILED", "Pause requested but no rollout was paused", detail);
     }
 
+    /** A human resumed a rollout the pause gate had held. */
+    public void rolloutResumed(String namespace, String rollout) {
+        store.publish("PROMOTE", "Rollout promoted", "rollout=" + namespace + "/" + rollout);
+    }
+
+    /** A human aborted the rollout back to the stable version. */
+    public void rolloutAborted(String namespace, String rollout) {
+        store.publish("ABORT", "Rollout aborted to stable", "rollout=" + namespace + "/" + rollout);
+    }
+
     public void remediationFailed(String reason) {
         store.publish("REMEDIATION", "Failed", reason);
     }
