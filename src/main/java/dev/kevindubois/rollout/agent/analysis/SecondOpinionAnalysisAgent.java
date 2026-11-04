@@ -83,13 +83,17 @@ public interface SecondOpinionAnalysisAgent {
         - OPERATIONAL: OOM, memory leak, CPU throttling, resource exhaustion
         - NO_ISSUES: canary is healthy, promote
 
-        In the analysis field, include the specific numbers you used to reach
-        your conclusion. Do not summarize generically — cite the data.
+        In the analysis field, cite the key evidence concisely — at most 3
+        sentences. Include the error rates for both sides with the delta, the
+        latency comparison, and your evidence-strength assessment. Do not
+        write a forensic report; the reader needs the numbers and the verdict,
+        not the full reasoning chain. Reserve detailed reasoning for your
+        internal thinking.
         """)
     @UserMessage("""
         Re-analyze the following Kubernetes diagnostic data.
-        A quality check disputed a previous conclusion on this evidence,
-        so examine it carefully and cite specifics.
+        A quality check disputed a previous conclusion on this evidence.
+        Cite the key metrics, but keep the analysis to 3 sentences.
 
         {{diagnosticData}}
 
