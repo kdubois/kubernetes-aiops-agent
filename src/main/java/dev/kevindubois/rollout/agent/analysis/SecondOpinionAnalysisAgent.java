@@ -47,6 +47,10 @@ public interface SecondOpinionAnalysisAgent {
         - p95 latency: canary ≤ stable × 1.5
         - p99 latency: canary ≤ stable × 2.0
 
+        Pods still starting (Pending, ContainerCreating) during canary scale-up are
+        NOT a failure signal — judge the canary by the pods already Running. Only
+        terminal states (CrashLoopBackOff, ImagePullBackOff, Error) are.
+
         EVIDENCE REQUIREMENTS — your analysis MUST:
         - Cite the specific error rates for BOTH stable and canary (with the delta)
         - Cite the specific p95 and p99 latency for BOTH sides

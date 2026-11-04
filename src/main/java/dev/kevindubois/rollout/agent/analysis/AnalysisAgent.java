@@ -49,17 +49,25 @@ public interface AnalysisAgent {
         - p95 latency: canary ≤ stable * 1.5
         - p99 latency: canary ≤ stable * 2.0
 
+        POD STARTUP IS NOT A FAILURE:
+        - Canary pods that are Pending or ContainerCreating are still starting — this
+          is NORMAL during canary scale-up and NOT a rollback signal. Judge the canary
+          by the pods that are already Running (their logs and metrics).
+        - A pod that never starts is the rollout controller's problem
+          (progressDeadlineSeconds), not yours. Only terminal failure states are
+          rollback signals: CrashLoopBackOff, ImagePullBackOff, Error.
+
         DO NOT PROMOTE if ANY of these are true:
         - NullPointerException, OutOfMemoryError, or other CRITICAL exceptions in canary logs
         - Memory leak indicators: excessive GC activity, heap pressure warnings, or "java.lang.OutOfMemoryError" mentions
         - Canary error rate > stable + 5 percentage points (e.g., stable=1%, canary=7%)
         - Success rate < 80%
-        - Crash loops or pods not Ready
+        - Crash loops or canary pods in a terminal failure state (CrashLoopBackOff, ImagePullBackOff, Error)
         - Sustained high latency (p95 > 1.5x stable OR p99 > 2x stable) combined with error rate increase
 
         PROMOTE if ALL of these are true:
         - No critical errors/exceptions in canary logs
-        - Pods are Running and Ready
+        - No canary pod in a terminal failure state (pods still starting do not block promotion)
         - Error rate difference ≤ 5 percentage points
         - Latency within thresholds
         - Success rate ≥ 80%
