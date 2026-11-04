@@ -2,6 +2,7 @@ package dev.kevindubois.rollout.agent.analysis;
 
 import dev.kevindubois.rollout.agent.k8s.K8sTools;
 import dev.kevindubois.rollout.agent.observability.ActivityEvents;
+import dev.kevindubois.rollout.agent.remediation.RemediationAgent;
 import dev.langchain4j.agentic.scope.ResultWithAgenticScope;
 import dev.langchain4j.exception.NonRetriableException;
 import dev.langchain4j.exception.RetriableException;
@@ -37,6 +38,9 @@ public class AnalysisService {
     @Inject
     AnalysisEscalation analysisEscalation;
 
+    @Inject
+    RemediationAgent remediationAgent;
+
     /**
      * Execute the full analysis pipeline: workflow + grader second opinion +
      * uncertainty gate + events + remediation trigger.
@@ -67,9 +71,7 @@ public class AnalysisService {
                 prompt != null ? prompt : "",
                 namespace,
                 stableSelector != null && !stableSelector.isBlank() ? stableSelector : "role=stable",
-                canarySelector != null && !canarySelector.isBlank() ? canarySelector : "role=canary",
-                repoUrl != null ? repoUrl : "",
-                baseBranch != null && !baseBranch.isBlank() ? baseBranch : "main");
+                canarySelector != null && !canarySelector.isBlank() ? canarySelector : "role=canary");
 
         AnalysisResult result = workflow.result();
         String diagnosticData = workflow.agenticScope().readState("diagnosticData", "");
@@ -79,31 +81,35 @@ public class AnalysisService {
 
         // narrative order: analysis conclusion → quality check on it →
         // escalation if disputed → escalated conclusion → quality check on
-        // that → score → decision. The audience sees the reasoning before
-        // the judgment on it, and sees the quality dispute that triggers
-        // the escalation before the escalation fires.
+        // that → effective confidence → decision → remediation. The audience
+        // sees the reasoning before the judgment on it, and sees the quality
+        // dispute that triggers the escalation before the escalation fires.
         Optional<Double> grade = analysisGrader.grade(result, diagnosticReport, rolloutReport, metricsReport);
-        activityEvents.analysisSummary(result, null);
+        activityEvents.analysisSummary(result, activityEvents.analysisModelLabel());
         publishQualityCheck(grade, result.confidence());
 
         if (analysisEscalation.enabled() && clearlyDisputed(grade)) {
             AnalysisResult escalated = analysisEscalation.escalate(diagnosticData, prompt);
             if (escalated != null) {
-                Log.infof("Grader disputed the analysis (probability %.2f); escalating to the strong model",
+                Log.infof("Grader disputed the analysis (probability %.2f); escalating for a second opinion",
                         grade.get());
                 activityEvents.analysisEscalated(grade.get(), result, escalated);
                 result = escalated;
                 grade = analysisGrader.grade(result, diagnosticReport, rolloutReport, metricsReport);
-                activityEvents.analysisSummary(result, null);
+                activityEvents.analysisSummary(result, activityEvents.secondOpinionModelLabel());
                 publishQualityCheck(grade, result.confidence());
             }
         }
 
         int effectiveConfidence = effectiveConfidence(result, grade);
-        activityEvents.confidenceScored(result.confidence(), effectiveConfidence, result.summary(), grade.orElse(null));
+        activityEvents.confidenceScored(result.confidence(), effectiveConfidence, grade.orElse(null));
 
         String pausedRollout = pauseIfNeeded(pauseGate, result, grade, effectiveConfidence, namespace, rolloutName);
         activityEvents.analysisDecided(result, effectiveConfidence, pausedRollout != null);
+
+        // remediation fires after the decision event, on the final result —
+        // the delegator answers asynchronously so this returns immediately
+        remediationAgent.remediate(result, repoUrl, baseBranch, prompt != null ? prompt : "");
 
         Log.info("Analysis pipeline completed successfully");
         return new AnalysisOutcome(result, pausedRollout);

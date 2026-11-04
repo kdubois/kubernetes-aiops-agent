@@ -36,6 +36,16 @@ public class ActivityEvents {
         return name.isEmpty() ? modelName : name;
     }
 
+    /** Short model name of the analysis tier, for UI badges and event labels. */
+    public String analysisModelLabel() {
+        return shortModelName(analysisModelName);
+    }
+
+    /** Short model name of the second-opinion tier, for UI badges and event labels. */
+    public String secondOpinionModelLabel() {
+        return shortModelName(secondOpinionModelName.orElse("second-opinion model"));
+    }
+
     public void requestStarted(String detail, int measurement, int totalMeasurements) {
         store.publish("ANALYSIS_START",
                 String.format("Analysis %d of %d — %s", measurement, totalMeasurements, detail));
@@ -50,29 +60,34 @@ public class ActivityEvents {
     }
 
     /**
-     * Publishes the confidence that drove the pause gate (the effective one —
-     * the grader-combined value when the second opinion is available), with
-     * the self-reported value and the grader probability kept visible in the
-     * details.
+     * Publishes the confidence that drives the decision (the effective one —
+     * lowered by the quality check only when it clearly disputes the
+     * conclusion), with the inputs kept visible in the details.
      */
-    public void confidenceScored(int selfReported, int effective, String summary, Double graderProbability) {
-        String details = (summary != null ? summary : "") + " (analysis: " + selfReported;
-        if (graderProbability != null) {
-            details += ", quality check: " + (int) Math.round(graderProbability * 100);
-        }
-        store.publish("CONFIDENCE_SCORE", "Score: " + effective + "/100", details + ")");
+    public void confidenceScored(int selfReported, int effective, Double qualityProbability) {
+        String inputs = qualityProbability != null
+                ? String.format("self-reported %d/100, quality check %d/100 — only a clearly disputed check (below 30/100) lowers it",
+                        selfReported, (int) Math.round(qualityProbability * 100))
+                : String.format("self-reported %d/100 — no quality check available", selfReported);
+        store.publish("CONFIDENCE_SCORE", "Effective confidence: " + effective + "/100", inputs);
     }
 
     /**
-     * The decision model graded the analysis conclusion. The score is the
-     * quality-check probability expressed on a 0-100 scale.
+     * The decision model graded the analysis conclusion against the diagnostic
+     * data. The score is the probability that the conclusion is supported by
+     * the evidence, on a 0-100 scale.
      */
     public void qualityChecked(double probability, String verdict, int selfReported) {
         int score = (int) Math.round(probability * 100);
+        String finding = switch (verdict) {
+            case "supported" -> "the conclusion is supported by the evidence";
+            case "neutral" -> "the evidence neither supports nor disputes the conclusion";
+            default -> "the conclusion is not supported by the evidence";
+        };
         store.publish("QUALITY_CHECK",
-                String.format("Quality check: %s (%d/100)", verdict, score),
-                String.format("analysis confidence %d/100, quality score %d/100 — %s",
-                        selfReported, score, verdict));
+                String.format("Quality check: %d/100 — %s", score, finding),
+                String.format("decision model (Jev) graded the analysis conclusion against the diagnostic data; analysis self-confidence %d/100",
+                        selfReported));
     }
 
     /**
@@ -91,15 +106,15 @@ public class ActivityEvents {
     }
 
     /**
-     * The grader disputed the default model's conclusion and the strong-model
-     * escalation tier re-analyzed it, with both tiers' decisions visible.
+     * The quality check disputed the analysis conclusion and the
+     * second-opinion tier re-analyzed it, with both tiers' decisions visible.
      */
     public void analysisEscalated(double disputedProbability, AnalysisResult disputed, AnalysisResult escalated) {
         store.publish("MODEL_ESCALATION", "Escalated for a second opinion",
                 String.format("%s said %s (%d/100), quality check disputed at %d/100 — %s re-analyzed: %s (%d/100)",
-                        shortModelName(analysisModelName), disputed.promote() ? "continue" : "rollback", disputed.confidence(),
+                        analysisModelLabel(), disputed.promote() ? "continue" : "rollback", disputed.confidence(),
                         (int) Math.round(disputedProbability * 100),
-                        shortModelName(secondOpinionModelName.orElse("second-opinion model")), escalated.promote() ? "continue" : "rollback", escalated.confidence()));
+                        secondOpinionModelLabel(), escalated.promote() ? "continue" : "rollback", escalated.confidence()));
     }
 
     /**

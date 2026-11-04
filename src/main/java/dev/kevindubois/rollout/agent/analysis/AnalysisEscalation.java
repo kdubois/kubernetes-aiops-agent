@@ -12,7 +12,7 @@ import java.time.Duration;
  * Strong-model escalation tier for the analysis, in the shape of langchain4j's
  * Confidence Cascade: the default (cheaper) model analyzes first, the grader
  * checks the conclusion, and a clearly disputed conclusion is re-analyzed once
- * with a stronger model over the same diagnostic data. If the escalated
+ * by a second-opinion model over the same diagnostic data. If the escalated
  * conclusion is still disputed, the pause gate takes over — the human is the
  * final tier.
  *
@@ -82,12 +82,12 @@ public class AnalysisEscalation {
     }
 
     /**
-     * Re-analyzes the same diagnostic data with the strong model.
+     * Re-analyzes the same diagnostic data with the second-opinion model.
      *
      * @param diagnosticData the combined diagnostic report the disputed
      *                       conclusion was based on
      * @param prompt         the operator notes forwarded with the request
-     * @return the escalated conclusion, or null when the strong model fails
+     * @return the escalated conclusion, or null when the second-opinion model fails
      */
     public AnalysisResult escalate(String diagnosticData, String prompt) {
         try {

@@ -57,9 +57,9 @@ cd ../argo-rollouts-quarkus-demo
 ### Remediation Capabilities
 
 After a rollback decision with a repository URL configured, the agent delegates the fix to the
-[remediation-agent](../remediation-agent) service over A2A — a declarative remediation step in
-the analysis sequence that hands off to a background A2A call, so the analysis response returns
-to Argo Rollouts immediately.
+[remediation-agent](../remediation-agent) service over A2A. Remediation is triggered after the
+decision event is published — on the final, post-escalation result — and hands off to a
+background A2A call, so the analysis response returns to Argo Rollouts immediately.
 
 The remote remediation agent:
 
@@ -114,7 +114,7 @@ The confidence the analysis LLM reports about itself is not always calibrated. A
 
 The grader degrades gracefully: without `TYPESAFE_API_KEY`, on a call failure, or on a timeout it disables itself and the gate falls back to the self-reported confidence — the grader never fails the measurement. The response contract is unchanged: `confidence` stays the self-reported value; the `CONFIDENCE_SCORE` activity event and the pause gate reflect the effective confidence, with both values logged next to each other.
 
-Every grade is published as a `GRADER` activity event with the verdict — `supported` (probability ≥ 0.50), `neutral` (0.30–0.50), or `disputed` (below 0.30) — alongside the self-reported confidence, and the `CONFIDENCE_SCORE` details include the grader probability when a second opinion was available. When the escalation tier re-analyzes a disputed conclusion, the `MODEL_ESCALATION` event names both tiers and their decisions, e.g. `tier 1 (Qwen): promote 70/100, grader 0.28 → tier 2 (DeepSeek): rollback 95/100`. The tier labels are configurable (`analysis.escalation.tier1-label`, `analysis.escalation.tier2-label`; the defaults describe the reference deployment's Qwen/DeepSeek split).
+Every grade is published as a `QUALITY_CHECK` activity event with the score and the finding — `supported` (≥ 50/100), `neutral` (30–50), or `disputed` (below 30/100) — alongside the analysis self-confidence, and the `CONFIDENCE_SCORE` event publishes the effective confidence with both inputs. When the escalation tier re-analyzes a disputed conclusion, the `MODEL_ESCALATION` event names both models and their decisions, e.g. `glm-5-3 said continue (95/100), quality check disputed at 29/100 — DeepSeek-V4.1 re-analyzed: continue (85/100)`. The model names come from the configuration (`quarkus.langchain4j.openai.chat-model.model-name` and `analysis.escalation.model`), so the events always name the models actually in use.
 
 The grader is a single decision call with a threshold (grade → combine → gate), shaped like langchain4j-agentic's Confidence Cascade pattern, so a future tiered-model design (cheap analysis first, a stronger model when uncertain) can adopt the cascade planner directly.
 
