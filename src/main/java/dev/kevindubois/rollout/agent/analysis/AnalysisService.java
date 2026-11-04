@@ -77,11 +77,15 @@ public class AnalysisService {
         String rolloutReport = workflow.agenticScope().readState("rolloutReport", "");
         String metricsReport = workflow.agenticScope().readState("metricsReport", "");
 
-        // second opinion, and the escalation tier: a clearly disputed conclusion
-        // is re-analyzed once with the strong model before the gate decides.
-        // enabled() first: it initializes the tier (and logs its state) on the
-        // first analysis instead of only when a dispute actually occurs
+        // narrative order: analysis conclusion → quality check on it →
+        // escalation if disputed → escalated conclusion → quality check on
+        // that → score → decision. The audience sees the reasoning before
+        // the judgment on it, and sees the quality dispute that triggers
+        // the escalation before the escalation fires.
         Optional<Double> grade = analysisGrader.grade(result, diagnosticReport, rolloutReport, metricsReport);
+        activityEvents.analysisSummary(result, null);
+        publishQualityCheck(grade, result.confidence());
+
         if (analysisEscalation.enabled() && clearlyDisputed(grade)) {
             AnalysisResult escalated = analysisEscalation.escalate(diagnosticData, prompt);
             if (escalated != null) {
@@ -90,14 +94,16 @@ public class AnalysisService {
                 activityEvents.analysisEscalated(grade.get(), result, escalated);
                 result = escalated;
                 grade = analysisGrader.grade(result, diagnosticReport, rolloutReport, metricsReport);
+                activityEvents.analysisSummary(result, null);
+                publishQualityCheck(grade, result.confidence());
             }
         }
 
         int effectiveConfidence = effectiveConfidence(result, grade);
         activityEvents.confidenceScored(result.confidence(), effectiveConfidence, result.summary(), grade.orElse(null));
-        activityEvents.analysisCompleted(result, effectiveConfidence);
 
         String pausedRollout = pauseIfNeeded(pauseGate, result, grade, effectiveConfidence, namespace, rolloutName);
+        activityEvents.analysisDecided(result, effectiveConfidence, pausedRollout != null);
 
         Log.info("Analysis pipeline completed successfully");
         return new AnalysisOutcome(result, pausedRollout);
@@ -118,22 +124,24 @@ public class AnalysisService {
         return probability.isPresent() && probability.get() < CLEARLY_UNSUPPORTED;
     }
 
+    private void publishQualityCheck(Optional<Double> grade, int selfReported) {
+        if (grade.isEmpty()) {
+            return;
+        }
+        double p = grade.get();
+        activityEvents.qualityChecked(p,
+                p >= 0.50 ? "supported" : p >= CLEARLY_UNSUPPORTED ? "neutral" : "disputed",
+                selfReported);
+    }
+
     private int effectiveConfidence(AnalysisResult result, Optional<Double> probability) {
         if (probability.isEmpty()) {
             return result.confidence();
         }
-        double graderProbability = probability.get();
-        Log.infof("Analysis grader: self-reported confidence %d, grader probability %.2f",
-                result.confidence(), graderProbability);
-        if (graderProbability >= CLEARLY_UNSUPPORTED) {
-            activityEvents.graderScored(graderProbability, graderProbability >= 0.50 ? "supported" : "neutral",
-                    result.confidence());
+        if (probability.get() >= CLEARLY_UNSUPPORTED) {
             return result.confidence();
         }
-        activityEvents.graderScored(graderProbability, "disputed", result.confidence());
-        int effective = (int) Math.round(graderProbability * 100);
-        Log.infof("Grader clearly disputes the conclusion; effective confidence %d", effective);
-        return effective;
+        return (int) Math.round(probability.get() * 100);
     }
 
     /**

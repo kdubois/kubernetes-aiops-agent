@@ -28,6 +28,11 @@ public class ActivityEvents {
     @ConfigProperty(name = "analysis.escalation.tier2-label", defaultValue = "DeepSeek")
     String tier2Label;
 
+    public void requestStarted(String detail, int measurement, int totalMeasurements) {
+        store.publish("ANALYSIS_START",
+                String.format("Analysis %d of %d — %s", measurement, totalMeasurements, detail));
+    }
+
     public void requestStarted(String detail) {
         store.publish("ANALYSIS_START", "Analysis request received", detail);
     }
@@ -43,21 +48,23 @@ public class ActivityEvents {
      * details.
      */
     public void confidenceScored(int selfReported, int effective, String summary, Double graderProbability) {
-        String details = (summary != null ? summary : "") + " (self-reported: " + selfReported;
+        String details = (summary != null ? summary : "") + " (analysis: " + selfReported;
         if (graderProbability != null) {
-            details += ", grader: " + String.format("%.2f", graderProbability);
+            details += ", quality check: " + (int) Math.round(graderProbability * 100);
         }
         store.publish("CONFIDENCE_SCORE", "Score: " + effective + "/100", details + ")");
     }
 
     /**
-     * The decision model graded the analysis conclusion.
+     * The decision model graded the analysis conclusion. The score is the
+     * quality-check probability expressed on a 0-100 scale.
      */
-    public void graderScored(double probability, String verdict, int selfReported) {
-        store.publish("GRADER",
-                String.format("Grader: %s (%.2f)", verdict, probability),
-                String.format("self-reported confidence %d, grader probability %.2f — %s",
-                        selfReported, probability, verdict));
+    public void qualityChecked(double probability, String verdict, int selfReported) {
+        int score = (int) Math.round(probability * 100);
+        store.publish("QUALITY_CHECK",
+                String.format("Quality check: %s (%d/100)", verdict, score),
+                String.format("analysis confidence %d/100, quality score %d/100 — %s",
+                        selfReported, score, verdict));
     }
 
     /**
@@ -66,10 +73,13 @@ public class ActivityEvents {
      * and the gate fired on the self-reported confidence alone.
      */
     public void pauseGateTriggered(int selfReported, double graderProbability, int effective, int threshold) {
+        int qualityScore = graderProbability < 0 ? -1 : (int) Math.round(graderProbability * 100);
+        String qualityPart = qualityScore >= 0
+                ? String.format(", quality check %d/100", qualityScore) : "";
         store.publish("PAUSE_GATE",
-                "Pause gate held the rollout",
-                String.format("self-reported %d, grader %.2f, effective %d < threshold %d",
-                        selfReported, graderProbability, effective, threshold));
+                "Held for human review",
+                String.format("analysis confidence %d/100%s, effective %d/100 below threshold %d/100",
+                        selfReported, qualityPart, effective, threshold));
     }
 
     /**
@@ -77,22 +87,42 @@ public class ActivityEvents {
      * escalation tier re-analyzed it, with both tiers' decisions visible.
      */
     public void analysisEscalated(double disputedProbability, AnalysisResult disputed, AnalysisResult escalated) {
-        store.publish("MODEL_ESCALATION", "Analysis escalated to the strong model",
-                String.format("tier 1 (%s): %s %d/100, grader %.2f → tier 2 (%s): %s %d/100",
-                        tier1Label, disputed.promote() ? "promote" : "rollback", disputed.confidence(),
-                        disputedProbability,
-                        tier2Label, escalated.promote() ? "promote" : "rollback", escalated.confidence()));
+        store.publish("MODEL_ESCALATION", "Escalated to the strong model for a second opinion",
+                String.format("%s said %s (%d/100), quality check disputed at %d/100 — %s re-analyzed: %s (%d/100)",
+                        tier1Label, disputed.promote() ? "continue" : "rollback", disputed.confidence(),
+                        (int) Math.round(disputedProbability * 100),
+                        tier2Label, escalated.promote() ? "continue" : "rollback", escalated.confidence()));
     }
 
-    public void analysisCompleted(AnalysisResult result, int effectiveConfidence) {
+    /**
+     * Publishes the analysis conclusion — what the model decided and why —
+     * before any quality grading, so the audience sees the reasoning first.
+     */
+    public void analysisSummary(AnalysisResult result, String modelLabel) {
         if (result.summary() != null && !result.summary().isBlank()) {
-            store.publish("ANALYSIS_SUMMARY", "Analysis summary", result.summary());
+            String title = modelLabel != null
+                    ? "[" + modelLabel + "] " + result.summary() : result.summary();
+            store.publish("ANALYSIS_SUMMARY", title);
         }
         store.publish("ANALYSIS_INSIGHT", result.analysis(),
                 "Root cause: " + (result.rootCause() != null ? result.rootCause() : "No issues"));
-        store.publish("DECISION",
-                result.promote() ? "PROMOTE recommended" : "ROLLBACK recommended",
-                "confidence: " + effectiveConfidence + "%");
+    }
+
+    /**
+     * Publishes the decision after the quality check, with the effective
+     * confidence and what happens next.
+     */
+    public void analysisDecided(AnalysisResult result, int effectiveConfidence, boolean gateTriggered) {
+        String decision = result.promote() ? "Continue rollout" : "Rollback canary";
+        String detail;
+        if (gateTriggered) {
+            detail = String.format("effective confidence %d/100 — held for human review", effectiveConfidence);
+        } else if (result.promote()) {
+            detail = String.format("effective confidence %d/100 — canary proceeds", effectiveConfidence);
+        } else {
+            detail = String.format("effective confidence %d/100 — canary will be rolled back", effectiveConfidence);
+        }
+        store.publish("DECISION", decision, detail);
     }
 
     public void remediationTriggered() {
@@ -105,12 +135,12 @@ public class ActivityEvents {
 
     /** A human resumed a rollout the pause gate had held. */
     public void rolloutResumed(String namespace, String rollout) {
-        store.publish("PROMOTE", "Rollout promoted", "rollout=" + namespace + "/" + rollout);
+        store.publish("HUMAN_ACTION", "Human resumed the rollout", namespace + "/" + rollout);
     }
 
     /** A human aborted the rollout back to the stable version. */
     public void rolloutAborted(String namespace, String rollout) {
-        store.publish("ABORT", "Rollout aborted to stable", "rollout=" + namespace + "/" + rollout);
+        store.publish("HUMAN_ACTION", "Human aborted to stable", namespace + "/" + rollout);
     }
 
     public void remediationFailed(String reason) {

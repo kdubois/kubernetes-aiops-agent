@@ -137,7 +137,7 @@ class AnalysisPipelineTest {
         verify(k8sTools, never()).pauseRollout(any(), any());
         // the UI-facing confidence event reflects the effective confidence
         verify(activityEvents).confidenceScored(80, 80, "Canary healthy - promote", 0.95);
-        verify(activityEvents).graderScored(0.95, "supported", 80);
+        verify(activityEvents).qualityChecked(0.95, "supported", 80);
     }
 
     @Test
@@ -155,7 +155,7 @@ class AnalysisPipelineTest {
         verify(k8sTools, never()).pauseRollout(any(), any());
         // the neutral band does not lower the effective confidence
         verify(activityEvents).confidenceScored(80, 80, "Canary healthy - promote", 0.45);
-        verify(activityEvents).graderScored(0.45, "neutral", 80);
+        verify(activityEvents).qualityChecked(0.45, "neutral", 80);
     }
 
     @Test
@@ -174,9 +174,9 @@ class AnalysisPipelineTest {
         assertThat(response.pausedRollout()).isEqualTo("quarkus-demo");
         verify(k8sTools).pauseRollout(NAMESPACE, null);
         // the gate drove on the grader's confidence, not the self-reported one
-        verify(activityEvents).graderScored(0.2, "disputed", 80);
+        verify(activityEvents).qualityChecked(0.2, "disputed", 80);
         verify(activityEvents).confidenceScored(80, 20, "Canary healthy - promote", 0.2);
-        verify(activityEvents).analysisCompleted(any(), eq(20));
+        verify(activityEvents).analysisDecided(any(), eq(20), eq(true));
         verify(activityEvents).pauseGateTriggered(80, 0.2, 20, 70);
     }
 
