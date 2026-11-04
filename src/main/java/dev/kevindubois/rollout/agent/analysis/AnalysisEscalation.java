@@ -36,7 +36,7 @@ import java.time.Duration;
 public class AnalysisEscalation {
 
     private final ChatModel strongModel;
-    private final AnalysisAgent strongAgent;
+    private final SecondOpinionAnalysisAgent strongAgent;
 
     @jakarta.inject.Inject
     AnalysisEscalation(Config config) {
@@ -46,7 +46,7 @@ public class AnalysisEscalation {
     AnalysisEscalation(ChatModel strongModel) {
         this.strongModel = strongModel;
         this.strongAgent = strongModel == null ? null
-                : AgenticServices.agentBuilder(AnalysisAgent.class)
+                : AgenticServices.agentBuilder(SecondOpinionAnalysisAgent.class)
                         .chatModel(strongModel)
                         .build();
         if (strongModel == null) {
