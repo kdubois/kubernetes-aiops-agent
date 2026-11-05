@@ -36,7 +36,8 @@ public class RemediationDelegator {
     private static final int CALL_TIMEOUT_MINUTES = 35;
 
     /** Terminal statuses from the remediation agent that created nothing — reported as failures. */
-    private static final Set<String> FAILED_STATUSES = Set.of("rejected", "infra_error", "agent_error", "timeout");
+    private static final Set<String> FAILED_STATUSES = Set.of("rejected", "infra_error", "agent_error", "timeout",
+            "pr_failed");
 
     @Inject
     RemediationA2AAgentProducer remediationAgentProducer;
