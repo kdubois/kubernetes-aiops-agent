@@ -62,7 +62,7 @@ public class RemediationDelegator {
      */
     public String delegate(RemediationRequest request) {
         Log.info("Delegating remediation to the remediation agent over A2A");
-        activityEvents.remediationTriggered();
+        activityEvents.remediationTriggered(request.rootCause());
 
         CompletableFuture.runAsync(() -> invokeRemediationAgent(request), executor);
         return "delegated";

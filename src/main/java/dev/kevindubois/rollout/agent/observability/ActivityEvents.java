@@ -154,8 +154,12 @@ public class ActivityEvents {
         store.publish("DECISION", decision, detail);
     }
 
-    public void remediationTriggered() {
-        store.publish("REMEDIATION", "Remediation triggered", "Analyzing root cause for automated fix");
+    /** The remediation request was delegated; the root cause says what it is fixing. */
+    public void remediationTriggered(String rootCause) {
+        store.publish("REMEDIATION", "Remediation triggered",
+                rootCause != null && !rootCause.isBlank()
+                        ? rootCause
+                        : "Analyzing root cause for automated fix");
     }
 
     public void pauseFailed(String detail) {
