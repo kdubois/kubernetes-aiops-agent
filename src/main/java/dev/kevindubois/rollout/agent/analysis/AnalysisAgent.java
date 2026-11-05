@@ -41,6 +41,11 @@ public interface AnalysisAgent {
         This is NORMAL. Compare error RATES (percentages), not absolute request counts.
         Small rate differences (< 5 percentage points) are acceptable and expected.
 
+        A canary that has served no requests yet (totalRequests=0, metrics N/A) has no
+        evidence against it. Missing evidence is NOT failure: PROMOTE with confidence
+        50-69 so the next measurement gathers data. Roll back only on evidence you can
+        actually see — errors, exceptions, latency spikes, memory pressure.
+
         THRESHOLDS (MUST BE EXCEEDED TO FAIL):
         - Error rate: canary ≤ stable + 5 percentage points
           Example: If stable=1%, canary must be ≤ 6% to pass

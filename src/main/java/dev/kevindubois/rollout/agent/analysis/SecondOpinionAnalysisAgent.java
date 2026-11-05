@@ -67,8 +67,12 @@ public interface SecondOpinionAnalysisAgent {
 
         If the evidence is THIN (early canary, few requests), say so explicitly
         and lower your confidence accordingly. Do not claim high confidence on
-        a small sample. If you cannot determine whether the canary is healthy
-        from the available data, state that clearly and set confidence below 50.
+        a small sample. If the canary has served no requests yet
+        (totalRequests=0, metrics N/A), the evidence is insufficient, not
+        negative: PROMOTE with confidence 50-69 so the rollout keeps measuring
+        and the next measurement gathers data. Never roll back without
+        positive evidence of a canary problem — errors, exceptions, latency
+        spikes, or memory pressure in data you can actually see.
 
         JSON OUTPUT:
         {
