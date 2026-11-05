@@ -79,13 +79,15 @@ public class AnalysisService {
         String rolloutReport = workflow.agenticScope().readState("rolloutReport", "");
         String metricsReport = workflow.agenticScope().readState("metricsReport", "");
 
-        // narrative order: analysis conclusion → quality check on it →
-        // escalation if disputed → escalated conclusion → quality check on
-        // that → effective confidence → decision → remediation. The audience
-        // sees the reasoning before the judgment on it, and sees the quality
-        // dispute that triggers the escalation before the escalation fires.
+        // narrative order: analysis conclusion with its self-reported
+        // confidence → quality check on it → escalation if disputed →
+        // escalated conclusion with confidence → quality check on that →
+        // decision (effective confidence) → remediation. The audience sees
+        // the claim before the judgment on it, and sees the quality dispute
+        // that triggers the escalation before the escalation fires.
         Optional<Double> grade = analysisGrader.grade(result, diagnosticReport, rolloutReport, metricsReport);
         activityEvents.analysisSummary(result, activityEvents.analysisModelLabel());
+        activityEvents.analysisConfidence(result.confidence());
         publishQualityCheck(grade, result.confidence());
 
         if (analysisEscalation.enabled() && clearlyDisputed(grade)) {
@@ -97,15 +99,15 @@ public class AnalysisService {
                 result = escalated;
                 grade = analysisGrader.grade(result, diagnosticReport, rolloutReport, metricsReport);
                 activityEvents.analysisSummary(result, activityEvents.secondOpinionModelLabel());
+                activityEvents.analysisConfidence(result.confidence());
                 publishQualityCheck(grade, result.confidence());
             }
         }
 
         int effectiveConfidence = effectiveConfidence(result, grade);
-        activityEvents.confidenceScored(result.confidence(), effectiveConfidence, grade.orElse(null));
 
         String pausedRollout = pauseIfNeeded(pauseGate, result, grade, effectiveConfidence, namespace, rolloutName);
-        activityEvents.analysisDecided(result, effectiveConfidence, pausedRollout != null);
+        activityEvents.analysisDecided(result, effectiveConfidence, grade.orElse(null), pausedRollout != null);
 
         // remediation fires after the decision event, on the final result —
         // the delegator answers asynchronously so this returns immediately

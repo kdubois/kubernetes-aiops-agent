@@ -60,16 +60,13 @@ public class ActivityEvents {
     }
 
     /**
-     * Publishes the confidence that drives the decision (the effective one —
-     * lowered by the quality check only when it clearly disputes the
-     * conclusion), with the inputs kept visible in the details.
+     * Publishes the analysis model's self-reported confidence in its own
+     * conclusion, right after the insight — the claim the quality check
+     * then grades.
      */
-    public void confidenceScored(int selfReported, int effective, Double qualityProbability) {
-        String inputs = qualityProbability != null
-                ? String.format("self-reported %d/100, quality check %d/100 — only a clearly disputed check (below 30/100) lowers it",
-                        selfReported, (int) Math.round(qualityProbability * 100))
-                : String.format("self-reported %d/100 — no quality check available", selfReported);
-        store.publish("CONFIDENCE_SCORE", "Effective confidence: " + effective + "/100", inputs);
+    public void analysisConfidence(int selfReported) {
+        store.publish("CONFIDENCE_SCORE", "Analysis confidence: " + selfReported + "/100",
+                "self-reported by the analysis model");
     }
 
     /**
@@ -133,17 +130,26 @@ public class ActivityEvents {
 
     /**
      * Publishes the decision after the quality check, with the effective
-     * confidence and what happens next.
+     * confidence (the self-reported value, lowered only by a clearly
+     * disputed check) and its inputs.
      */
-    public void analysisDecided(AnalysisResult result, int effectiveConfidence, boolean gateTriggered) {
+    public void analysisDecided(AnalysisResult result, int effectiveConfidence, Double qualityProbability,
+                                boolean gateTriggered) {
         String decision = result.promote() ? "Continue rollout" : "Rollback canary";
+        String combination = qualityProbability != null
+                ? String.format(" (analysis %d/100, quality check %d/100)",
+                        result.confidence(), (int) Math.round(qualityProbability * 100))
+                : "";
         String detail;
         if (gateTriggered) {
-            detail = String.format("effective confidence %d/100 — held for human review", effectiveConfidence);
+            detail = String.format("effective confidence %d/100%s — held for human review",
+                    effectiveConfidence, combination);
         } else if (result.promote()) {
-            detail = String.format("effective confidence %d/100 — canary proceeds", effectiveConfidence);
+            detail = String.format("effective confidence %d/100%s — canary proceeds",
+                    effectiveConfidence, combination);
         } else {
-            detail = String.format("effective confidence %d/100 — canary will be rolled back", effectiveConfidence);
+            detail = String.format("effective confidence %d/100%s — canary will be rolled back",
+                    effectiveConfidence, combination);
         }
         store.publish("DECISION", decision, detail);
     }

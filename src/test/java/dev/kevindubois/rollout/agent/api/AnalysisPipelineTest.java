@@ -136,7 +136,7 @@ class AnalysisPipelineTest {
         assertThat(response.pausedRollout()).isNull();
         verify(k8sTools, never()).pauseRollout(any(), any());
         // the UI-facing confidence event reflects the effective confidence
-        verify(activityEvents).confidenceScored(80, 80, 0.95);
+        verify(activityEvents).analysisConfidence(80);
         verify(activityEvents).qualityChecked(0.95, "supported", 80);
     }
 
@@ -154,7 +154,7 @@ class AnalysisPipelineTest {
         assertThat(response.pausedRollout()).isNull();
         verify(k8sTools, never()).pauseRollout(any(), any());
         // the neutral band does not lower the effective confidence
-        verify(activityEvents).confidenceScored(80, 80, 0.45);
+        verify(activityEvents).analysisConfidence(80);
         verify(activityEvents).qualityChecked(0.45, "neutral", 80);
     }
 
@@ -175,8 +175,8 @@ class AnalysisPipelineTest {
         verify(k8sTools).pauseRollout(NAMESPACE, null);
         // the gate drove on the grader's confidence, not the self-reported one
         verify(activityEvents).qualityChecked(0.2, "disputed", 80);
-        verify(activityEvents).confidenceScored(80, 20, 0.2);
-        verify(activityEvents).analysisDecided(any(), eq(20), eq(true));
+        verify(activityEvents).analysisConfidence(80);
+        verify(activityEvents).analysisDecided(any(), eq(20), eq(0.2), eq(true));
         verify(activityEvents).pauseGateTriggered(80, 0.2, 20, 70);
     }
 
@@ -231,7 +231,7 @@ class AnalysisPipelineTest {
         assertThat(response.confidence()).isEqualTo(80);
         assertThat(response.pausedRollout()).isNull();
         verify(k8sTools, never()).pauseRollout(any(), any());
-        verify(activityEvents).confidenceScored(80, 80, null);
+        verify(activityEvents).analysisConfidence(80);
     }
 
     @Test
