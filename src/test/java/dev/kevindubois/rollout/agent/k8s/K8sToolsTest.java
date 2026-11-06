@@ -493,4 +493,16 @@ class K8sToolsTest {
         assertNotNull(result);
         assertFalse(result.hasError());
     }
+
+    @Test
+    void sampleTooThinRequiresScrapedMetricsBelowTheFloor() {
+        // a scraped canary with a small sample is thin
+        assertTrue(K8sTools.sampleTooThin(Map.of("totalRequests", 42.0, "podCount", 1), 500));
+        // a grown sample is not
+        assertFalse(K8sTools.sampleTooThin(Map.of("totalRequests", 900.0, "podCount", 1), 500));
+        // a scrape error must not trigger waiting — the caller reports it
+        assertFalse(K8sTools.sampleTooThin(Map.of("error", "No pods found"), 500));
+        // floor disabled
+        assertFalse(K8sTools.sampleTooThin(Map.of("totalRequests", 42.0), 0));
+    }
 }

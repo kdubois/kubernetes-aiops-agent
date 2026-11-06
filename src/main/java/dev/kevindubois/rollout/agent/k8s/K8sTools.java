@@ -9,6 +9,7 @@ import io.quarkus.arc.Unremovable;
 import io.quarkus.logging.Log;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import java.util.*;
 
@@ -27,6 +28,28 @@ public class K8sTools {
 
     @Inject
     ActivityEventStore activityEvents;
+
+    /**
+     * The canary sample the analysis waits for before judging: below this, an
+     * error rate is statistical noise and the quality check rightly refuses
+     * to decide on it. The canary serves its traffic share continuously, so
+     * a short wait grows the sample; the wait is bounded by
+     * {@code maxSampleWaits} so a canary serving no traffic cannot stall the
+     * measurement.
+     */
+    @Inject
+    @ConfigProperty(name = "analysis.sample.min-requests", defaultValue = "500")
+    int minCanaryRequests;
+
+    /** Seconds between scrapes while waiting for the canary sample to grow. */
+    @Inject
+    @ConfigProperty(name = "analysis.sample.wait-seconds", defaultValue = "10")
+    int sampleWaitSeconds;
+
+    /** Bounded waits for sample growth — zero disables the floor entirely. */
+    @Inject
+    @ConfigProperty(name = "analysis.sample.max-waits", defaultValue = "3")
+    int maxSampleWaits;
 
     /**
      * Fetches the Argo Rollouts resource status for a namespace: phase, current step,
@@ -209,6 +232,22 @@ public class K8sTools {
             stableThread.join();
             canaryThread.join();
 
+            // Gather more evidence when the canary sample is too thin to judge.
+            // Each wait is visible in the activity feed, and a scale-up since
+            // the first scrape is picked up on the re-scrape.
+            for (int wait = 0; wait < maxSampleWaits && sampleTooThin(canaryMetricsHolder, minCanaryRequests); wait++) {
+                double seen = asDouble(canaryMetricsHolder.get("totalRequests"));
+                Log.infof("Canary sample below the floor (%.0f of %d requests); waiting %ds for more traffic",
+                        seen, minCanaryRequests, sampleWaitSeconds);
+                activityEvents.publish("TOOL_RESULT", "Gathering more canary evidence",
+                        String.format("canary requests=%d of %d needed", (int) seen, minCanaryRequests));
+                Thread.sleep(sampleWaitSeconds * 1000L);
+                List<Pod> refreshedCanary = k8sClient.pods().inNamespace(namespace)
+                        .withLabels(selectorLabels(canarySelector, "role=canary")).list().getItems();
+                canaryMetricsHolder.clear();
+                canaryMetricsHolder.putAll(collectSideMetrics(namespace, refreshedCanary));
+            }
+
             if (!stableMetricsHolder.containsKey("error")) {
                 activityEvents.publish("TOOL_RESULT", "Stable pod metrics retrieved",
                     "pods=" + stableMetricsHolder.get("podCount"));
@@ -249,6 +288,12 @@ public class K8sTools {
             thread.join();
         }
         return aggregateMetrics(perPod);
+    }
+
+    /** True when the canary metrics scraped fine but the sample is too small to judge. */
+    static boolean sampleTooThin(Map<String, Object> canaryMetrics, int minRequests) {
+        return minRequests > 0 && !canaryMetrics.containsKey("error")
+                && asDouble(canaryMetrics.get("totalRequests")) < minRequests;
     }
 
     /**
