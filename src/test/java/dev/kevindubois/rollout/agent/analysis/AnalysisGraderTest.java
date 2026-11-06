@@ -21,7 +21,8 @@ import static org.mockito.Mockito.when;
 
 class AnalysisGraderTest {
 
-    private static final String QUESTION_ID = "conclusion_supported";
+    private static final String CONTRADICTION_ID = "conclusion_contradicted";
+    private static final String SUFFICIENCY_ID = "evidence_sufficient";
 
     private final DecisionModel model = mock(DecisionModel.class);
 
@@ -30,24 +31,49 @@ class AnalysisGraderTest {
                 "remediation", "summary", IssueCategory.NO_ISSUES, List.of());
     }
 
-    private void stubProbability(double probability) {
+    private void stubAnswers(double contradiction, double sufficiency) {
         when(model.decide(any(DecisionRequest.class))).thenReturn(DecisionResponse.builder()
-                .answers(Map.of(QUESTION_ID, YesNoAnswer.from(probability)))
+                .answers(Map.of(
+                        CONTRADICTION_ID, YesNoAnswer.from(contradiction),
+                        SUFFICIENCY_ID, YesNoAnswer.from(sufficiency)))
                 .build());
     }
 
     @Test
-    void returnsYesProbability() {
-        stubProbability(0.92);
+    void contradictedConclusionLandsInTheDisputedBand() {
+        stubAnswers(0.8, 0.9);
 
         Optional<Double> probability = new AnalysisGrader(model, true).grade(result(90), "diagnostics", "rollout-status", "metrics");
 
-        assertThat(probability).hasValue(0.92);
+        assertThat(probability).isPresent();
+        assertThat(probability.get()).isLessThan(0.30);
     }
 
     @Test
-    void asksOneYesNoQuestionOverCondensedState() {
-        stubProbability(0.5);
+    void thinEvidenceLandsInTheNeutralBand() {
+        // the regression this design fixes: a correct conclusion on an early-canary
+        // sample used to grade as disputed and the gate held healthy rollouts
+        stubAnswers(0.1, 0.2);
+
+        Optional<Double> probability = new AnalysisGrader(model, true).grade(result(85), "diagnostics", "rollout-status", "metrics");
+
+        assertThat(probability).isPresent();
+        assertThat(probability.get()).isBetween(0.30, 0.50);
+    }
+
+    @Test
+    void verifiedConclusionLandsInTheSupportedBand() {
+        stubAnswers(0.1, 0.9);
+
+        Optional<Double> probability = new AnalysisGrader(model, true).grade(result(90), "diagnostics", "rollout-status", "metrics");
+
+        assertThat(probability).isPresent();
+        assertThat(probability.get()).isGreaterThanOrEqualTo(0.50);
+    }
+
+    @Test
+    void asksBothQuestionsOverCondensedState() {
+        stubAnswers(0.5, 0.5);
 
         new AnalysisGrader(model, true).grade(result(85),
                 "pod quarkus-demo-stable-1 Running\nINFO request ok\n",
@@ -57,8 +83,10 @@ class AnalysisGraderTest {
         ArgumentCaptor<DecisionRequest> captor = ArgumentCaptor.forClass(DecisionRequest.class);
         org.mockito.Mockito.verify(model).decide(captor.capture());
         DecisionRequest request = captor.getValue();
-        assertThat(request.questions()).containsKey(QUESTION_ID);
-        assertThat(request.questions().get(QUESTION_ID)).isInstanceOf(YesNoQuestion.class);
+        assertThat(request.questions()).containsKey(CONTRADICTION_ID);
+        assertThat(request.questions()).containsKey(SUFFICIENCY_ID);
+        assertThat(request.questions().get(CONTRADICTION_ID)).isInstanceOf(YesNoQuestion.class);
+        assertThat(request.questions().get(SUFFICIENCY_ID)).isInstanceOf(YesNoQuestion.class);
         String state = ((TextInput) request.input()).text();
         assertThat(state)
                 .contains("metrics")
@@ -70,8 +98,25 @@ class AnalysisGraderTest {
     }
 
     @Test
+    void stateCarriesTheThresholdsAndActionSemantics() {
+        stubAnswers(0.5, 0.5);
+
+        new AnalysisGrader(model, true).grade(result(85), "diagnostics", "rollout-status", "metrics");
+
+        ArgumentCaptor<DecisionRequest> captor = ArgumentCaptor.forClass(DecisionRequest.class);
+        org.mockito.Mockito.verify(model).decide(captor.capture());
+        String state = ((TextInput) captor.getValue().input()).text();
+        assertThat(state)
+                .contains("thresholds the analysis applies")
+                .contains("success rate canary >= 80%")
+                .contains("PROMOTE continues the rollout to its next measurement")
+                .contains("ROLLBACK aborts to the stable version immediately")
+                .contains("small canary samples by design");
+    }
+
+    @Test
     void truncatesDiagnosticDataBeforeTheConclusion() {
-        stubProbability(0.5);
+        stubAnswers(0.5, 0.5);
 
         new AnalysisGrader(model, true).grade(result(85),
                 ("ERROR something failed\n" + "quiet\n").repeat(5_000),
@@ -94,7 +139,7 @@ class AnalysisGraderTest {
         // regression: the metrics report used to be truncated away with the combined
         // diagnostic data, and the grader doubted every conclusion it could not see
         // the quantitative evidence for
-        stubProbability(0.5);
+        stubAnswers(0.5, 0.5);
 
         new AnalysisGrader(model, true).grade(result(85), "x".repeat(50_000), "y".repeat(50_000),
                 "error rate: canary 0.5% vs stable 1.0%; p95 47ms vs 48ms");
@@ -111,7 +156,7 @@ class AnalysisGraderTest {
     void canaryEvidenceIsNotCutByPosition() {
         // regression: the log excerpt was positional and the report lists stable
         // pods before canary pods, so the canary evidence was truncated away
-        stubProbability(0.5);
+        stubAnswers(0.5, 0.5);
 
         String stableHalf = "STABLE LOGS:\n" + "INFO request ok\n".repeat(2_000);
         String canaryHalf = "CANARY LOGS:\n" + "WARN heap pressure rising in canary\n".repeat(100);
@@ -128,9 +173,9 @@ class AnalysisGraderTest {
 
     @Test
     void missingAnswerFallsBackToEmpty() {
-        // the model answered a different question, so ours has no answer
+        // the model answered only one of the two questions
         when(model.decide(any(DecisionRequest.class))).thenReturn(DecisionResponse.builder()
-                .answers(Map.of("other", YesNoAnswer.from(0.5)))
+                .answers(Map.of(CONTRADICTION_ID, YesNoAnswer.from(0.5)))
                 .build());
 
         assertThat(new AnalysisGrader(model, true).grade(result(90), "diagnostics", "rollout-status", "metrics")).isEmpty();

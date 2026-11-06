@@ -19,10 +19,20 @@ import java.util.regex.Pattern;
 
 /**
  * Independent second opinion on a completed analysis. Asks the Jev decision
- * model one yes/no question — does the diagnostic data support the analysis
- * the diagnostic data? — and returns the yes-probability. The pause gate
- * combines it conservatively with the analysis LLM's self-reported confidence:
- * effective confidence = min(self-reported, probability × 100).
+ * model two yes/no questions — does any evidence contradict the conclusion,
+ * and is there enough data to verify it — and maps the answers onto the
+ * supported-probability scale the pause gate consumes. The mapping keeps the
+ * gate's three bands apart: a contradicted conclusion stays below the 0.30
+ * veto bar (escalation, confidence drop), evidence too thin to verify lands
+ * in the neutral band (the self-reported confidence stands — the next
+ * measurement is the remedy, not a human), and a verified conclusion reaches
+ * 0.5 and above.
+ *
+ * <p>The grader state carries the decision thresholds the analysis judged
+ * against and what promote/rollback actually do, so "supported" means
+ * checkable against the stated policy rather than statistically proven —
+ * without them, a correct conclusion built on an early-canary sample read
+ * as disputed and the gate held healthy rollouts.
  *
  * <p>Deliberately a single decision call with a threshold (grade → combine →
  * gate), shaped like the Confidence Cascade pattern langchain4j-agentic
@@ -38,9 +48,22 @@ import java.util.regex.Pattern;
 @ApplicationScoped
 public class AnalysisGrader {
 
-    private static final String QUESTION_ID = "conclusion_supported";
-    private static final String QUESTION =
-            "Does the diagnostic data support this analysis conclusion?";
+    private static final String CONTRADICTION_ID = "conclusion_contradicted";
+    private static final String CONTRADICTION_QUESTION =
+            "Does any evidence in the diagnostic data contradict the analysis conclusion — "
+            + "metrics breaching the thresholds above, or canary errors the conclusion ignores? "
+            + "Thin or insufficient data is NOT a contradiction.";
+
+    private static final String SUFFICIENCY_ID = "evidence_sufficient";
+    private static final String SUFFICIENCY_QUESTION =
+            "Is there enough diagnostic data to verify the conclusion against the thresholds — "
+            + "enough requests for the error rates and latency to be meaningful?";
+
+    /** P(contradicted) at or above this bar means the conclusion is disputed. */
+    private static final double CONTRADICTED_BAR = 0.5;
+
+    /** P(sufficient) below this bar means the evidence is too thin to verify. */
+    private static final double SUFFICIENT_BAR = 0.5;
 
     /**
      * Budgets inside the grader state. The metrics and rollout reports are the
@@ -97,14 +120,16 @@ public class AnalysisGrader {
             Log.infof("Grader state:%n%s", graderState);
             DecisionResponse response = decisionModel.decide(DecisionRequest.builder()
                     .input(graderState)
-                    .question(QUESTION_ID, YesNoQuestion.from(QUESTION))
+                    .question(CONTRADICTION_ID, YesNoQuestion.from(CONTRADICTION_QUESTION))
+                    .question(SUFFICIENCY_ID, YesNoQuestion.from(SUFFICIENCY_QUESTION))
                     .build());
-            YesNoAnswer answer = response.yesNo(QUESTION_ID);
-            if (answer == null) {
+            YesNoAnswer contradiction = response.yesNo(CONTRADICTION_ID);
+            YesNoAnswer sufficiency = response.yesNo(SUFFICIENCY_ID);
+            if (contradiction == null || sufficiency == null) {
                 Log.warn("Analysis grader returned no answer; falling back to the self-reported confidence");
                 return Optional.empty();
             }
-            return Optional.of(answer.probability());
+            return Optional.of(supportedProbability(contradiction.probability(), sufficiency.probability()));
         } catch (RuntimeException e) {
             Log.warnf("Analysis grader call failed (%s); falling back to the self-reported confidence", e.getMessage());
             return Optional.empty();
@@ -112,17 +137,43 @@ public class AnalysisGrader {
     }
 
     /**
-     * Condensed grader state: the metrics and rollout reports first — they are
-     * the quantitative basis of every conclusion and are small enough to keep
-     * whole — then the error, warning and resource-pressure lines from the log
-     * diagnostics, then the conclusion. The log excerpt is filtered by signal,
-     * not position: the report lists stable pods before canary pods, so a
-     * positional excerpt kept the benign stable half and cut the canary
-     * evidence the conclusion rests on.
+     * Maps the two answers onto the single supported-probability scale the
+     * gate consumes, preserving its bands: contradicted stays below the 0.30
+     * veto bar, insufficient lands in the 0.30–0.50 neutral band, and
+     * supported reaches 0.5 and above.
+     */
+    private static double supportedProbability(double contradiction, double sufficiency) {
+        if (contradiction >= CONTRADICTED_BAR) {
+            return 0.30 * (1 - contradiction);
+        }
+        if (sufficiency < SUFFICIENT_BAR) {
+            return 0.30 + 0.20 * sufficiency;
+        }
+        return 0.50 + 0.50 * sufficiency * (1 - contradiction);
+    }
+
+    /**
+     * Condensed grader state: the decision context first — the thresholds the
+     * analysis judged against and what promote/rollback actually do, so
+     * "supported" is checkable against the stated policy — then the metrics
+     * and rollout reports (they are the quantitative basis of every
+     * conclusion and are small enough to keep whole), then the error, warning
+     * and resource-pressure lines from the log diagnostics, then the
+     * conclusion. The log excerpt is filtered by signal, not position: the
+     * report lists stable pods before canary pods, so a positional excerpt
+     * kept the benign stable half and cut the canary evidence the conclusion
+     * rests on.
      */
     private String state(AnalysisResult result, String diagnosticReport, String rolloutReport,
             String metricsReport) {
-        return "Metrics:\n"
+        return "Decision context:\n"
+                + "- thresholds the analysis applies: error rate canary <= stable + 5 percentage points; "
+                + "success rate canary >= 80%; p95 latency canary <= 1.5x stable; p99 latency canary <= 2.0x stable\n"
+                + "- action semantics: PROMOTE continues the rollout to its next measurement "
+                + "(more canary traffic, ~30s later); ROLLBACK aborts to the stable version immediately\n"
+                + "- early measurements have small canary samples by design; the canary request count "
+                + "is in the metrics below\n\n"
+                + "Metrics:\n"
                 + TextUtils.truncate(metricsReport, MAX_METRICS_LENGTH)
                 + "\n\nRollout status:\n"
                 + TextUtils.truncate(rolloutReport, MAX_ROLLOUT_LENGTH)
