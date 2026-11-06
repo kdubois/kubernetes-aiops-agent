@@ -46,6 +46,10 @@ public interface AnalysisAgent {
         50-69 so the next measurement gathers data. Roll back only on evidence you can
         actually see — errors, exceptions, latency spikes, memory pressure.
 
+        When the metrics report includes a WINDOW line, prefer it over the lifetime
+        counters: the window is the traffic observed during this measurement,
+        unaffected by pod warmup.
+
         THRESHOLDS (MUST BE EXCEEDED TO FAIL):
         - Error rate: canary ≤ stable + 5 percentage points
           Example: If stable=1%, canary must be ≤ 6% to pass

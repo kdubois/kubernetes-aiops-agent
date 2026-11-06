@@ -12,6 +12,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -504,5 +505,36 @@ class K8sToolsTest {
         assertFalse(K8sTools.sampleTooThin(Map.of("error", "No pods found"), 500));
         // floor disabled
         assertFalse(K8sTools.sampleTooThin(Map.of("totalRequests", 42.0), 0));
+    }
+
+    @Test
+    void windowDeltasMeasureTheIntervalBetweenScrapes() {
+        Map<String, Object> first = Map.of(
+                "totalRequests", 100.0, "successfulRequests", 99.0,
+                "latencyCount", 100.0, "latencySumSeconds", 5.0);
+        Map<String, Object> next = new HashMap<>(Map.of(
+                "totalRequests", 412.0, "successfulRequests", 408.0,
+                "latencyCount", 412.0, "latencySumSeconds", 21.0));
+
+        K8sTools.addWindowDeltas(first, next, 10);
+
+        assertEquals(312.0, next.get("windowRequests"));
+        assertEquals(3.0, next.get("windowErrorRequests"));
+        assertEquals(0.96, (Double) next.get("windowErrorRate"), 0.01);
+        // (21s - 5s) / (412 - 100) requests = 51.3ms mean over the window
+        assertEquals(51.28, (Double) next.get("windowMeanLatencyMs"), 0.01);
+    }
+
+    @Test
+    void counterResetsAndScrapeErrorsProduceNoWindowFields() {
+        // pod restarted between the scrapes: counters went backwards
+        Map<String, Object> reset = new HashMap<>(Map.of("totalRequests", 5.0, "successfulRequests", 5.0));
+        K8sTools.addWindowDeltas(Map.of("totalRequests", 100.0, "successfulRequests", 99.0), reset, 10);
+        assertFalse(reset.containsKey("windowRequests"));
+
+        // either scrape errored: no window rather than nonsense
+        Map<String, Object> errored = new HashMap<>(Map.of("totalRequests", 200.0, "successfulRequests", 199.0));
+        K8sTools.addWindowDeltas(Map.of("error", "no pods"), errored, 10);
+        assertFalse(errored.containsKey("windowRequests"));
     }
 }

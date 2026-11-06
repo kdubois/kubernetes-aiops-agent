@@ -72,7 +72,10 @@ public interface SecondOpinionAnalysisAgent {
         negative: PROMOTE with confidence 50-69 so the rollout keeps measuring
         and the next measurement gathers data. Never roll back without
         positive evidence of a canary problem — errors, exceptions, latency
-        spikes, or memory pressure in data you can actually see.
+        spikes, or memory pressure in data you can actually see. When the
+        metrics report includes a WINDOW line, prefer it over the lifetime
+        counters: the window is the traffic observed during this measurement,
+        unaffected by pod warmup.
 
         JSON OUTPUT:
         {

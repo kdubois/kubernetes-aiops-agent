@@ -32,21 +32,25 @@ public class K8sTools {
     /**
      * The canary sample the analysis waits for before judging: below this, an
      * error rate is statistical noise and the quality check rightly refuses
-     * to decide on it. The canary serves its traffic share continuously, so
-     * a short wait grows the sample; the wait is bounded by
-     * {@code maxSampleWaits} so a canary serving no traffic cannot stall the
-     * measurement.
+     * to decide on it. The measurement window extends until the sample
+     * reaches this floor, bounded by {@code maxSampleWaits} so a canary
+     * serving no traffic cannot stall the measurement.
      */
     @Inject
     @ConfigProperty(name = "analysis.sample.min-requests", defaultValue = "500")
     int minCanaryRequests;
 
-    /** Seconds between scrapes while waiting for the canary sample to grow. */
+    /**
+     * The measurement window: metrics are scraped twice with this gap, and
+     * the evidence the analysis judges is the delta — the requests, errors
+     * and mean latency of the window itself, unaffected by pod warmup.
+     * Zero disables the second scrape (lifetime counters only).
+     */
     @Inject
-    @ConfigProperty(name = "analysis.sample.wait-seconds", defaultValue = "10")
-    int sampleWaitSeconds;
+    @ConfigProperty(name = "analysis.sample.window-seconds", defaultValue = "10")
+    int windowSeconds;
 
-    /** Bounded waits for sample growth — zero disables the floor entirely. */
+    /** Window extensions beyond the first while the canary sample is thin. */
     @Inject
     @ConfigProperty(name = "analysis.sample.max-waits", defaultValue = "3")
     int maxSampleWaits;
@@ -231,34 +235,52 @@ public class K8sTools {
             });
             stableThread.join();
             canaryThread.join();
+            Map<String, Object> stableMetrics = stableMetricsHolder;
+            Map<String, Object> canaryMetrics = canaryMetricsHolder;
 
-            // Gather more evidence when the canary sample is too thin to judge.
-            // Each wait is visible in the activity feed, and a scale-up since
-            // the first scrape is picked up on the re-scrape.
-            for (int wait = 0; wait < maxSampleWaits && sampleTooThin(canaryMetricsHolder, minCanaryRequests); wait++) {
-                double seen = asDouble(canaryMetricsHolder.get("totalRequests"));
-                Log.infof("Canary sample below the floor (%.0f of %d requests); waiting %ds for more traffic",
-                        seen, minCanaryRequests, sampleWaitSeconds);
-                activityEvents.publish("TOOL_RESULT", "Gathering more canary evidence",
-                        String.format("canary requests=%d of %d needed", (int) seen, minCanaryRequests));
-                Thread.sleep(sampleWaitSeconds * 1000L);
-                List<Pod> refreshedCanary = k8sClient.pods().inNamespace(namespace)
-                        .withLabels(selectorLabels(canarySelector, "role=canary")).list().getItems();
-                canaryMetricsHolder.clear();
-                canaryMetricsHolder.putAll(collectSideMetrics(namespace, refreshedCanary));
+            // Windowed second scrape: the lifetime counters mix pod warmup
+            // with steady state, so the evidence the analysis judges is the
+            // delta between two scrapes — the requests, errors and mean
+            // latency of the measurement window itself. The window extends
+            // while the canary sample is too thin to judge; bounded so a
+            // canary serving no traffic cannot stall the measurement. Each
+            // extension is visible in the activity feed, and a scale-up
+            // since the previous scrape is picked up on the re-scrape.
+            int windows = 0;
+            int maxWindows = 1 + Math.max(0, maxSampleWaits);
+            while (windowSeconds > 0 && windows < maxWindows) {
+                if (windows > 0) {
+                    if (!sampleTooThin(canaryMetrics, minCanaryRequests)) {
+                        break;
+                    }
+                    double seen = asDouble(canaryMetrics.get("totalRequests"));
+                    Log.infof("Canary sample below the floor (%.0f of %d requests); extending the measurement window",
+                            seen, minCanaryRequests);
+                    activityEvents.publish("TOOL_RESULT", "Gathering more canary evidence",
+                            String.format("canary requests=%d of %d needed", (int) seen, minCanaryRequests));
+                }
+                Thread.sleep(windowSeconds * 1000L);
+                windows++;
+                List<Pod>[] refreshed = fetchPodsPairInParallel(namespace, stableSelector, canarySelector);
+                Map<String, Object> nextStable = collectSideMetrics(namespace, refreshed[0]);
+                Map<String, Object> nextCanary = collectSideMetrics(namespace, refreshed[1]);
+                addWindowDeltas(stableMetrics, nextStable, windowSeconds * windows);
+                addWindowDeltas(canaryMetrics, nextCanary, windowSeconds * windows);
+                stableMetrics = nextStable;
+                canaryMetrics = nextCanary;
             }
 
-            if (!stableMetricsHolder.containsKey("error")) {
+            if (!stableMetrics.containsKey("error")) {
                 activityEvents.publish("TOOL_RESULT", "Stable pod metrics retrieved",
-                    "pods=" + stableMetricsHolder.get("podCount"));
+                    "pods=" + stableMetrics.get("podCount"));
             }
-            if (!canaryMetricsHolder.containsKey("error")) {
+            if (!canaryMetrics.containsKey("error")) {
                 activityEvents.publish("TOOL_RESULT", "Canary pod metrics retrieved",
-                    "pods=" + canaryMetricsHolder.get("podCount"));
+                    "pods=" + canaryMetrics.get("podCount"));
             }
 
             Log.info("Successfully retrieved canary metrics");
-            return PodDataResult.of(stableMetricsHolder, canaryMetricsHolder);
+            return PodDataResult.of(stableMetrics, canaryMetrics);
 
         } catch (Exception e) {
             Log.error("Error getting canary metrics", e);
@@ -294,6 +316,32 @@ public class K8sTools {
     static boolean sampleTooThin(Map<String, Object> canaryMetrics, int minRequests) {
         return minRequests > 0 && !canaryMetrics.containsKey("error")
                 && asDouble(canaryMetrics.get("totalRequests")) < minRequests;
+    }
+
+    /**
+     * Adds the window evidence to the second scrape's aggregate: the request,
+     * error and mean-latency deltas between the two scrapes. Counters that
+     * reset between scrapes (pod restart) or errored scrapes produce no
+     * window fields rather than nonsense.
+     */
+    static void addWindowDeltas(Map<String, Object> first, Map<String, Object> next, int windowSeconds) {
+        next.put("windowSeconds", windowSeconds);
+        if (first.containsKey("error") || next.containsKey("error")) {
+            return;
+        }
+        double requests = asDouble(next.get("totalRequests")) - asDouble(first.get("totalRequests"));
+        double successful = asDouble(next.get("successfulRequests")) - asDouble(first.get("successfulRequests"));
+        if (requests <= 0 || successful < 0 || successful > requests) {
+            return;
+        }
+        next.put("windowRequests", requests);
+        next.put("windowErrorRequests", requests - successful);
+        next.put("windowErrorRate", (requests - successful) / requests * 100);
+        double latencyCount = asDouble(next.get("latencyCount")) - asDouble(first.get("latencyCount"));
+        if (latencyCount > 0) {
+            double latencySum = asDouble(next.get("latencySumSeconds")) - asDouble(first.get("latencySumSeconds"));
+            next.put("windowMeanLatencyMs", latencySum / latencyCount * 1000);
+        }
     }
 
     /**

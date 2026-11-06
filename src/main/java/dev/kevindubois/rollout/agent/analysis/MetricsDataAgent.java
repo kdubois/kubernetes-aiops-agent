@@ -57,7 +57,7 @@ public class MetricsDataAgent {
         if (metricsData.containsKey("podCount")) {
             sb.append(", pods=").append(formatNumber(metricsData.get("podCount")));
         }
-        
+
         if (metricsData.containsKey("heapUsedMb") || metricsData.containsKey("heapMaxMb")) {
             sb.append(", heapUsed=").append(formatMb(metricsData.get("heapUsedMb")));
             sb.append("/").append(formatMb(metricsData.get("heapMaxMb")));
@@ -66,6 +66,16 @@ public class MetricsDataAgent {
             sb.append(", gcCount=").append(formatNumber(metricsData.get("gcCount")));
         }
         sb.append("\n");
+
+        // the window line is the traffic observed during this measurement —
+        // unaffected by pod warmup, unlike the lifetime counters above
+        if (metricsData.containsKey("windowRequests")) {
+            sb.append(label).append(" WINDOW (last ").append(metricsData.get("windowSeconds")).append("s): ");
+            sb.append("requests=").append(formatNumber(metricsData.get("windowRequests")));
+            sb.append(", errorRate=").append(formatPercent(metricsData.get("windowErrorRate"), null));
+            sb.append(", meanLatency=").append(formatMs(metricsData.get("windowMeanLatencyMs")));
+            sb.append("\n");
+        }
     }
 
     private static String formatNumber(Object value) {
