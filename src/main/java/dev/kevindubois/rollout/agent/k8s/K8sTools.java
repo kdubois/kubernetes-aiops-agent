@@ -385,6 +385,10 @@ public class K8sTools {
         Map<String, Object> aggregated = new HashMap<>();
         aggregated.put("totalRequests", totalRequests);
         aggregated.put("successfulRequests", successfulRequests);
+        // exposed so the windowed scrape can compute the mean latency of the
+        // measurement window from the delta between two scrapes
+        aggregated.put("latencyCount", latencyCount);
+        aggregated.put("latencySumSeconds", latencySumSeconds);
         if (totalRequests > 0) {
             aggregated.put("calculatedSuccessRate", successfulRequests / totalRequests * 100);
             aggregated.put("errorRate", (totalRequests - successfulRequests) / totalRequests * 100);
