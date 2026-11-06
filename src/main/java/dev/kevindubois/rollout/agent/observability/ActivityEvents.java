@@ -71,15 +71,16 @@ public class ActivityEvents {
 
     /**
      * The decision model graded the analysis conclusion against the diagnostic
-     * data. The score is the probability that the conclusion is supported by
-     * the evidence, on a 0-100 scale.
+     * data. The score is the quality-check result on a 0-100 scale: passed
+     * (≥ 50), neutral (30–50, evidence too thin to decide), failed (below 30,
+     * evidence contradicts the conclusion).
      */
     public void qualityChecked(double probability, String verdict, int selfReported) {
         int score = (int) Math.round(probability * 100);
         String finding = switch (verdict) {
-            case "supported" -> "the conclusion is supported by the evidence";
-            case "neutral" -> "the evidence neither supports nor disputes the conclusion";
-            default -> "the conclusion is not supported by the evidence";
+            case "passed" -> "the evidence backs the conclusion";
+            case "neutral" -> "the evidence is too thin to decide";
+            default -> "the evidence contradicts the conclusion";
         };
         store.publish("QUALITY_CHECK",
                 String.format("Quality check: %d/100 — %s", score, finding),
@@ -108,7 +109,7 @@ public class ActivityEvents {
      */
     public void analysisEscalated(double disputedProbability, AnalysisResult disputed, AnalysisResult escalated) {
         store.publish("MODEL_ESCALATION", "Escalated for a second opinion",
-                String.format("%s said %s (%d/100), quality check disputed at %d/100 — %s re-analyzed: %s (%d/100)",
+                String.format("%s said %s (%d/100), quality check failed at %d/100 — %s re-analyzed: %s (%d/100)",
                         analysisModelLabel(), disputed.promote() ? "continue" : "rollback", disputed.confidence(),
                         (int) Math.round(disputedProbability * 100),
                         secondOpinionModelLabel(), escalated.promote() ? "continue" : "rollback", escalated.confidence()));

@@ -138,7 +138,7 @@ public class AnalysisService {
         }
         double p = grade.get();
         activityEvents.qualityChecked(p,
-                p >= 0.50 ? "supported" : p >= CLEARLY_UNSUPPORTED ? "neutral" : "disputed",
+                p >= 0.50 ? "passed" : p >= CLEARLY_UNSUPPORTED ? "neutral" : "failed",
                 selfReported);
     }
 
