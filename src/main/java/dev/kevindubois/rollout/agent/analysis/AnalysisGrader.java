@@ -51,19 +51,20 @@ public class AnalysisGrader {
     private static final String CONTRADICTION_ID = "conclusion_contradicted";
     private static final String CONTRADICTION_QUESTION =
             "Does any evidence in the diagnostic data contradict the analysis conclusion — "
-            + "metrics breaching the thresholds above, or canary errors the conclusion ignores? "
+            + "metrics breaching the thresholds above, or canary-only errors (exceptions, OOM, "
+            + "heap or GC warnings) that the conclusion ignores or calls healthy? "
             + "Thin or insufficient data is NOT a contradiction.";
 
     private static final String SUFFICIENCY_ID = "evidence_sufficient";
-    private static final String SUFFICIENCY_QUESTION =
-            "Is there enough diagnostic data to verify the conclusion against the thresholds — "
-            + "enough requests for the error rates and latency to be meaningful?";
 
     /** P(contradicted) at or above this bar means the conclusion is disputed. */
     private static final double CONTRADICTED_BAR = 0.5;
 
     /** P(sufficient) below this bar means the evidence is too thin to verify. */
     private static final double SUFFICIENT_BAR = 0.5;
+
+    /** Sample floor used when the analysis sample config is absent or disabled. */
+    static final int DEFAULT_SAMPLE_FLOOR = 500;
 
     /**
      * Budgets inside the grader state. The metrics and rollout reports are the
@@ -79,19 +80,31 @@ public class AnalysisGrader {
 
     private final DecisionModel decisionModel;
     private final boolean enabled;
+    private final int minCanaryRequests;
 
     @Inject
     AnalysisGrader(@ModelName("jev") DecisionModel decisionModel, Config config) {
-        this(decisionModel, keyConfigured(config));
+        this(decisionModel, keyConfigured(config), sampleFloor(config));
     }
 
     AnalysisGrader(DecisionModel decisionModel, boolean enabled) {
+        this(decisionModel, enabled, DEFAULT_SAMPLE_FLOOR);
+    }
+
+    AnalysisGrader(DecisionModel decisionModel, boolean enabled, int minCanaryRequests) {
         this.decisionModel = decisionModel;
         this.enabled = enabled;
+        this.minCanaryRequests = minCanaryRequests > 0 ? minCanaryRequests : DEFAULT_SAMPLE_FLOOR;
         if (!enabled) {
             Log.info("Analysis grader disabled (no TYPESAFE_API_KEY): "
                     + "the uncertainty gate uses the self-reported confidence");
         }
+    }
+
+    private static int sampleFloor(Config config) {
+        return config.getOptionalValue("analysis.sample.min-requests", Integer.class)
+                .filter(value -> value > 0)
+                .orElse(DEFAULT_SAMPLE_FLOOR);
     }
 
     private static boolean keyConfigured(Config config) {
@@ -121,7 +134,7 @@ public class AnalysisGrader {
             DecisionResponse response = decisionModel.decide(DecisionRequest.builder()
                     .input(graderState)
                     .question(CONTRADICTION_ID, YesNoQuestion.from(CONTRADICTION_QUESTION))
-                    .question(SUFFICIENCY_ID, YesNoQuestion.from(SUFFICIENCY_QUESTION))
+                    .question(SUFFICIENCY_ID, YesNoQuestion.from(sufficiencyQuestion()))
                     .build());
             YesNoAnswer contradiction = response.yesNo(CONTRADICTION_ID);
             YesNoAnswer sufficiency = response.yesNo(SUFFICIENCY_ID);
@@ -129,7 +142,10 @@ public class AnalysisGrader {
                 Log.warn("Analysis grader returned no answer; falling back to the self-reported confidence");
                 return Optional.empty();
             }
-            return Optional.of(supportedProbability(contradiction.probability(), sufficiency.probability()));
+            double supported = supportedProbability(contradiction.probability(), sufficiency.probability());
+            Log.infof("Grader: contradicted=%.2f sufficient=%.2f -> supported=%.2f",
+                    contradiction.probability(), sufficiency.probability(), supported);
+            return Optional.of(supported);
         } catch (RuntimeException e) {
             Log.warnf("Analysis grader call failed (%s); falling back to the self-reported confidence", e.getMessage());
             return Optional.empty();
@@ -153,6 +169,19 @@ public class AnalysisGrader {
     }
 
     /**
+     * The sufficiency question names the sample floor so the grader judges the
+     * canary against a fixed threshold instead of comparing its lifetime count
+     * with a stable pod that has served traffic for days.
+     */
+    private String sufficiencyQuestion() {
+        return "Is the canary sample large enough to verify the conclusion — at least "
+                + minCanaryRequests + " requests in the measurement window (or the lifetime "
+                + "total when no window line is present), or a clear canary-only exception "
+                + "in the logs? A canary lifetime total smaller than stable's is normal "
+                + "because stable ran longer, and does not by itself make the evidence thin.";
+    }
+
+    /**
      * Condensed grader state: the decision context first — the thresholds the
      * analysis judged against and what promote/rollback actually do, so
      * "supported" is checkable against the stated policy — then the metrics
@@ -171,8 +200,11 @@ public class AnalysisGrader {
                 + "success rate canary >= 80%; p95 latency canary <= 1.5x stable; p99 latency canary <= 2.0x stable\n"
                 + "- action semantics: PROMOTE continues the rollout to its next measurement "
                 + "(more canary traffic, ~30s later); ROLLBACK aborts to the stable version immediately\n"
-                + "- early measurements have small canary samples by design; the canary request count "
-                + "is in the metrics below\n\n"
+                + "- evidence sufficiency: the canary sample is sufficient at " + minCanaryRequests
+                + "+ requests in the measurement window (or the lifetime total when no window is "
+                + "present). Stable served more requests because it ran longer; compare rates, not "
+                + "totals. A repeated canary-only exception verifies a rollback conclusion even "
+                + "when its rate is low, and contradicts a conclusion that calls the canary healthy\n\n"
                 + "Metrics:\n"
                 + TextUtils.truncate(metricsReport, MAX_METRICS_LENGTH)
                 + "\n\nRollout status:\n"

@@ -111,7 +111,25 @@ class AnalysisGraderTest {
                 .contains("success rate canary >= 80%")
                 .contains("PROMOTE continues the rollout to its next measurement")
                 .contains("ROLLBACK aborts to the stable version immediately")
-                .contains("small canary samples by design");
+                .contains("sufficient at 500+ requests in the measurement window")
+                .contains("compare rates, not totals");
+    }
+
+    @Test
+    void sufficiencyJudgesTheCanaryAgainstTheSampleFloor() {
+        stubAnswers(0.1, 0.9);
+
+        new AnalysisGrader(model, true, 750).grade(result(90), "diagnostics", "rollout-status", "metrics");
+
+        ArgumentCaptor<DecisionRequest> captor = ArgumentCaptor.forClass(DecisionRequest.class);
+        org.mockito.Mockito.verify(model).decide(captor.capture());
+        DecisionRequest request = captor.getValue();
+        String state = ((TextInput) request.input()).text();
+        assertThat(state).contains("sufficient at 750+ requests");
+        String question = ((YesNoQuestion) request.questions().get(SUFFICIENCY_ID)).text();
+        assertThat(question)
+                .contains("at least 750 requests")
+                .contains("does not by itself make the evidence thin");
     }
 
     @Test
