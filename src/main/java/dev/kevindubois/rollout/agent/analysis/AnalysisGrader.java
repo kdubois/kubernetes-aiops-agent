@@ -18,7 +18,7 @@ import java.util.Optional;
 import java.util.regex.Pattern;
 
 /**
- * Independent second opinion on a completed analysis. Asks the Jev decision
+ * Independent second opinion on a completed analysis. Asks the configured decision
  * model two yes/no questions — does any evidence contradict the conclusion,
  * and is there enough data to verify it — and maps the answers onto the
  * supported-probability scale the pause gate consumes. The mapping keeps the
@@ -37,7 +37,7 @@ import java.util.regex.Pattern;
  * <p>Deliberately a single decision call with a threshold (grade → combine →
  * gate), shaped like the Confidence Cascade pattern langchain4j-agentic
  * provides since 1.23.0 (ConfidenceCascadePlanner). Our gate escalates to a
- * human pause instead of a stronger agent tier, so the cascade planner itself
+ * human pause instead of a second opinion tier, so the cascade planner itself
  * does not fit here — but keeping this shape means swapping to a tiered-model
  * cascade later is a wiring change, not a redesign.
  *
@@ -83,7 +83,7 @@ public class AnalysisGrader {
     private final int minCanaryRequests;
 
     @Inject
-    AnalysisGrader(@ModelName("jev") DecisionModel decisionModel, Config config) {
+    AnalysisGrader(@ModelName("decisionmodel") DecisionModel decisionModel, Config config) {
         this(decisionModel, keyConfigured(config), sampleFloor(config));
     }
 
@@ -108,7 +108,7 @@ public class AnalysisGrader {
     }
 
     private static boolean keyConfigured(Config config) {
-        String apiKey = config.getOptionalValue("quarkus.langchain4j.typesafe.jev.api-key", String.class).orElse("");
+        String apiKey = config.getOptionalValue("quarkus.langchain4j.typesafe.decisionmodel.api-key", String.class).orElse("");
         // "missing" is the sentinel that lets the decision model bean initialize without a key
         return !apiKey.isBlank() && !"missing".equals(apiKey);
     }

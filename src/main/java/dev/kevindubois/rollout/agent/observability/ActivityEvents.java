@@ -84,7 +84,7 @@ public class ActivityEvents {
         };
         store.publish("QUALITY_CHECK",
                 String.format("Quality check: %d/100 — %s", score, finding),
-                String.format("decision model (Jev) graded the analysis conclusion against the diagnostic data; analysis self-confidence %d/100",
+                String.format("decision model graded the analysis conclusion against the diagnostic data; analysis self-confidence %d/100",
                         selfReported));
     }
 

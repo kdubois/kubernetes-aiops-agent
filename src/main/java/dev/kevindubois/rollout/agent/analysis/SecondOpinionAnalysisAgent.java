@@ -5,7 +5,7 @@ import dev.langchain4j.service.SystemMessage;
 import dev.langchain4j.service.UserMessage;
 
 /**
- * The strong tier of the analysis cascade. A cheaper model analyzed the same
+ * The second opinion tier of the analysis cascade. A cheaper model analyzed the same
  * diagnostic data first and its conclusion was disputed by the quality
  * grader, so this agent re-analyzes the evidence with more scrutiny. The
  * prompt is tuned for a reasoning model (DeepSeek): it plays to its strength

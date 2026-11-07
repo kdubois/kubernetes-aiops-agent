@@ -188,7 +188,7 @@ class AnalysisPipelineTest {
         when(analysisGrader.grade(any(), any(), any(), any())).thenReturn(Optional.of(0.05));
         when(analysisEscalation.enabled()).thenReturn(true);
         AnalysisResult escalated = new AnalysisResult(false, 97, "escalated analysis",
-                "Canary introduces a defect", "Rollback", "Strong model found a defect the cheap model missed",
+                "Canary introduces a defect", "Rollback", "Second opinion model found a defect the cheap model missed",
                 IssueCategory.CODE_BUG, List.of("MetricsResource"));
         when(analysisEscalation.escalate(any(), any())).thenReturn(escalated);
 

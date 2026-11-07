@@ -7,7 +7,10 @@ resources:
   - rbac.yaml
   - deployment.yaml
   - service.yaml
-  # Uncomment after creating secret from template
-  - secret.yaml
+
+# The Secret is created separately from secret.yaml.template, because it holds
+# credentials and is git-ignored:
+#   cp deployment/secret.yaml.template deployment/secret.yaml
+#   kubectl apply -f deployment/secret.yaml
 
 
