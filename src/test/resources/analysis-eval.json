@@ -59,6 +59,30 @@
       }
     },
     {
+      "name": "npe-in-canary-small-sample",
+      "diagnosticReport": "=== LOG DIAGNOSTIC REPORT ===\nSTABLE POD: quarkus-demo-stable-7d9f6 - Running - Ready: 1/1\nSTABLE LOGS:\nINFO Application started (v1.stable)\nINFO Request completed in 48ms\nWARN Occasional request failure (simulated)\nWARN Occasional request failure (simulated)\nCANARY POD: quarkus-demo-canary-6k2p8 - Running - Ready: 1/1\nCANARY LOGS:\nINFO Application started (v2.nullpointer)\nERROR java.lang.NullPointerException: Cannot invoke \"String.length()\" because \"nullString\" is null\n    at dev.kevindubois.demo.MetricsResource.getStatus(MetricsResource.java:87)\n    at dev.kevindubois.demo.LoadGeneratorService.recordState(LoadGeneratorService.java:143)\nERROR java.lang.NullPointerException: Cannot invoke \"String.length()\" because \"nullString\" is null\n    at dev.kevindubois.demo.MetricsResource.getStatus(MetricsResource.java:87)\n    at dev.kevindubois.demo.LoadGeneratorService.recordState(LoadGeneratorService.java:143)\n=== END ===",
+      "rolloutReport": "=== ROLLOUT STATUS REPORT ===\nROLLOUT: quarkus-demo (namespace quarkus-demo)\nPHASE: Progressing\nSTEP INDEX: 2\nTRAFFIC: canary 30%, stable 70%\nPODS: stable 7, canary 3\n=== END ===",
+      "metricsReport": "=== METRICS REPORT ===\nSTABLE METRICS: totalRequests=1064429, successRate=99.02%, errorRate=0.98%, p95=47.7ms, p99=49.8ms\nCANARY METRICS: totalRequests=2407, successRate=99.13%, errorRate=0.87%, p95=47.7ms, p99=49.8ms\nSTABLE WINDOW (last 30s): requests=8100, errorRate=1.07%, fleetMeanLatency=47.6ms, worstPodLatency=49.1ms (pod quarkus-demo-stable-7d9f6)\nCANARY WINDOW (last 30s): requests=2407, errorRate=0.59%, fleetMeanLatency=47.7ms, worstPodLatency=49.8ms (pod quarkus-demo-canary-6k2p8)\n=== END ===",
+      "expected": {
+        "promote": false,
+        "issueCategory": "CODE_BUG",
+        "minConfidence": 70,
+        "rootCauseContains": "nullpointer"
+      }
+    },
+    {
+      "name": "memory-leak-in-canary-small-sample",
+      "diagnosticReport": "=== LOG DIAGNOSTIC REPORT ===\nSTABLE POD: quarkus-demo-stable-7d9f6 - Running - Ready: 1/1\nSTABLE LOGS:\nINFO Application started (v1.stable)\nINFO Request completed in 48ms\nWARN Occasional request failure (simulated)\nCANARY POD: quarkus-demo-canary-8w4tn - Running - Ready: 1/1\nCANARY LOGS:\nINFO Application started (v3.memoryleak)\nINFO Demo scenario mode: memory-leak\nWARN Heap usage above 75%: 430MB / 512MB\nWARN GC overhead limit approaching - consecutive full GCs detected\nWARN Allocated 100MB in 2s without release\n=== END ===",
+      "rolloutReport": "=== ROLLOUT STATUS REPORT ===\nROLLOUT: quarkus-demo (namespace quarkus-demo)\nPHASE: Progressing\nSTEP INDEX: 2\nTRAFFIC: canary 30%, stable 70%\nPODS: stable 7, canary 3\n=== END ===",
+      "metricsReport": "=== METRICS REPORT ===\nSTABLE METRICS: totalRequests=1064429, successRate=98.93%, errorRate=1.07%, p95=47.7ms, p99=49.8ms, heapUsed=210.0MB/512.0MB, gcCount=42\nCANARY METRICS: totalRequests=2407, successRate=99.41%, errorRate=0.59%, p95=351.3ms, p99=502.4ms, heapUsed=492.0MB/512.0MB, gcCount=318\nSTABLE WINDOW (last 30s): requests=8100, errorRate=1.07%, fleetMeanLatency=47.6ms, worstPodLatency=49.1ms (pod quarkus-demo-stable-7d9f6)\nCANARY WINDOW (last 30s): requests=2407, errorRate=0.59%, fleetMeanLatency=351.3ms, worstPodLatency=354.2ms (pod quarkus-demo-canary-8w4tn)\n=== END ===",
+      "expected": {
+        "promote": false,
+        "issueCategory": "OPERATIONAL",
+        "minConfidence": 70,
+        "rootCauseContains": "memory"
+      }
+    },
+    {
       "name": "latency-drift-in-canary",
       "diagnosticReport": "=== LOG DIAGNOSTIC REPORT ===\nSTABLE POD: quarkus-demo-stable-7d9f6 - Running - Ready: 1/1\nSTABLE LOGS:\nINFO Application started (v1.0.0)\nINFO Processing requests normally\nINFO Request completed in 45ms\nCANARY POD: quarkus-demo-canary-9b2k4 - Running - Ready: 1/1\nCANARY LOGS:\nINFO Application started (v4.0.0)\nINFO Processing requests normally\nINFO Request completed in 250ms\n=== END ===",
       "rolloutReport": "=== ROLLOUT STATUS REPORT ===\nROLLOUT: quarkus-demo (namespace quarkus-demo)\nPHASE: Progressing\nSTEP INDEX: 4\nTRAFFIC: canary 60%, stable 40%\nPODS: stable 8, canary 2\n=== END ===",
