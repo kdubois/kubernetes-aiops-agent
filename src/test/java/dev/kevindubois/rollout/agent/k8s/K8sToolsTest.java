@@ -526,6 +526,62 @@ class K8sToolsTest {
     }
 
     @Test
+    void windowLatencyReportsTheSlowestPodNotJustTheFleetMean() {
+        // The canary scaled up between scrapes: five fast pods dominate the
+        // request count while the one older pod is now 10x slower. The fleet
+        // mean hides it; the worst pod is the regression.
+        Map<String, Object> firstSlow = podSample("slow-pod", 100, 3.0);
+        Map<String, Object> nextSlow = podSample("slow-pod", 200, 33.0);
+        Map<String, Object> firstFresh = podSample("fresh-pod", 100, 3.0);
+        Map<String, Object> nextFresh = podSample("fresh-pod", 500, 15.0);
+
+        Map<String, Object> first = new HashMap<>(Map.of(
+                "totalRequests", 200.0, "successfulRequests", 200.0,
+                "latencyCount", 200.0, "latencySumSeconds", 6.0,
+                "perPodMetrics", List.of(firstSlow, firstFresh)));
+        Map<String, Object> next = new HashMap<>(Map.of(
+                "totalRequests", 700.0, "successfulRequests", 700.0,
+                "latencyCount", 700.0, "latencySumSeconds", 48.0,
+                "perPodMetrics", List.of(nextSlow, nextFresh)));
+
+        K8sTools.addWindowDeltas(first, next, 10);
+
+        // fleet mean: (48 - 6) / (700 - 200) = 84ms
+        assertEquals(84.0, (Double) next.get("windowMeanLatencyMs"), 0.01);
+        // worst pod: (33 - 3) / (200 - 100) = 300ms
+        assertEquals(300.0, (Double) next.get("windowWorstPodMeanLatencyMs"), 0.01);
+        assertEquals("slow-pod", next.get("windowWorstPod"));
+    }
+
+    @Test
+    void windowWorstPodSkipsPodsMissingFromTheFirstScrape() {
+        Map<String, Object> first = new HashMap<>(Map.of(
+                "totalRequests", 100.0, "successfulRequests", 100.0,
+                "latencyCount", 100.0, "latencySumSeconds", 3.0,
+                "perPodMetrics", List.of(podSample("existing-pod", 100, 3.0))));
+        Map<String, Object> next = new HashMap<>(Map.of(
+                "totalRequests", 300.0, "successfulRequests", 300.0,
+                "latencyCount", 300.0, "latencySumSeconds", 7.0,
+                "perPodMetrics", List.of(
+                        podSample("existing-pod", 200, 5.0),
+                        podSample("brand-new-pod", 100, 2.0))));
+
+        K8sTools.addWindowDeltas(first, next, 10);
+
+        // existing pod: (5 - 3) / 100 = 20ms; the new pod has no baseline
+        assertEquals(20.0, (Double) next.get("windowWorstPodMeanLatencyMs"), 0.01);
+        assertEquals("existing-pod", next.get("windowWorstPod"));
+    }
+
+    private static Map<String, Object> podSample(String podName, double latencyCount, double latencySumSeconds) {
+        Map<String, Object> sample = new HashMap<>();
+        sample.put("podName", podName);
+        sample.put("latencyCount", latencyCount);
+        sample.put("latencySumSeconds", latencySumSeconds);
+        return sample;
+    }
+
+    @Test
     void counterResetsAndScrapeErrorsProduceNoWindowFields() {
         // pod restarted between the scrapes: counters went backwards
         Map<String, Object> reset = new HashMap<>(Map.of("totalRequests", 5.0, "successfulRequests", 5.0));

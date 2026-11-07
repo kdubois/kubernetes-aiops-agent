@@ -46,6 +46,10 @@ public interface SecondOpinionAnalysisAgent {
         - Success rate: canary ≥ 80%
         - p95 latency: canary ≤ stable × 1.5
         - p99 latency: canary ≤ stable × 2.0
+        - Latency above threshold is a rollback signal on its own, even with no
+          error rate increase. A metrics-only regression is still a regression.
+          Judge observed behaviour, not a scenario label or feature flag: a
+          canary that calls its own slowdown "expected" is still failing.
 
         Pods still starting (Pending, ContainerCreating) during canary scale-up are
         NOT a failure signal — judge the canary by the pods already Running. Only
@@ -75,7 +79,8 @@ public interface SecondOpinionAnalysisAgent {
         spikes, or memory pressure in data you can actually see. When the
         metrics report includes a WINDOW line, prefer it over the lifetime
         counters: the window is the traffic observed during this measurement,
-        unaffected by pod warmup.
+        unaffected by pod warmup. Judge latency by worstPodLatency when present:
+        the fleet mean hides a single slow pod behind freshly started pods.
 
         JSON OUTPUT:
         {

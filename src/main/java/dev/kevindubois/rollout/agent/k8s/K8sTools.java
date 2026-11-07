@@ -342,6 +342,57 @@ public class K8sTools {
             double latencySum = asDouble(next.get("latencySumSeconds")) - asDouble(first.get("latencySumSeconds"));
             next.put("windowMeanLatencyMs", latencySum / latencyCount * 1000);
         }
+        addWorstPodWindowLatency(first, next);
+    }
+
+    /**
+     * Reports the slowest pod's mean latency over the window. The fleet-wide
+     * window mean dilutes a single slow pod when the canary has just scaled
+     * up: fresh pods that started after the regression began dominate the
+     * request count and pull the mean back to baseline. A regression is real
+     * for the traffic the slow pod serves, so the worst pod is the signal,
+     * consistent with how the lifetime p95/p99 are aggregated.
+     */
+    private static void addWorstPodWindowLatency(Map<String, Object> first, Map<String, Object> next) {
+        Map<String, Map<String, Object>> firstByPod = byPodName(first);
+        Map<String, Map<String, Object>> nextByPod = byPodName(next);
+        double worstMeanMs = -1;
+        String worstPod = null;
+        for (var entry : nextByPod.entrySet()) {
+            Map<String, Object> before = firstByPod.get(entry.getKey());
+            if (before == null) {
+                continue;
+            }
+            double countDelta = asDouble(entry.getValue().get("latencyCount")) - asDouble(before.get("latencyCount"));
+            double sumDelta = asDouble(entry.getValue().get("latencySumSeconds"))
+                    - asDouble(before.get("latencySumSeconds"));
+            if (countDelta <= 0 || sumDelta < 0) {
+                continue;
+            }
+            double meanMs = sumDelta / countDelta * 1000;
+            if (meanMs > worstMeanMs) {
+                worstMeanMs = meanMs;
+                worstPod = entry.getKey();
+            }
+        }
+        if (worstPod != null) {
+            next.put("windowWorstPodMeanLatencyMs", worstMeanMs);
+            next.put("windowWorstPod", worstPod);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Map<String, Object>> byPodName(Map<String, Object> sideMetrics) {
+        if (!(sideMetrics.get("perPodMetrics") instanceof List<?> perPod)) {
+            return Map.of();
+        }
+        Map<String, Map<String, Object>> byName = new LinkedHashMap<>();
+        for (Object pod : perPod) {
+            if (pod instanceof Map<?, ?> metrics && metrics.get("podName") instanceof String name) {
+                byName.put(name, (Map<String, Object>) metrics);
+            }
+        }
+        return byName;
     }
 
     /**
@@ -416,6 +467,9 @@ public class K8sTools {
             break;
         }
         aggregated.put("podCount", (long) scraped.size());
+        // kept for the windowed scrape: per-pod counters let it report the
+        // slowest pod instead of a fleet mean that hides it after a scale-up
+        aggregated.put("perPodMetrics", scraped);
         return aggregated;
     }
 

@@ -48,7 +48,9 @@ public interface AnalysisAgent {
 
         When the metrics report includes a WINDOW line, prefer it over the lifetime
         counters: the window is the traffic observed during this measurement,
-        unaffected by pod warmup.
+        unaffected by pod warmup. Judge latency by worstPodLatency when it is
+        present: the fleet mean hides a single slow pod behind freshly started
+        pods, and the slow pod is still serving real traffic.
 
         THRESHOLDS (MUST BE EXCEEDED TO FAIL):
         - Error rate: canary ≤ stable + 5 percentage points
@@ -72,7 +74,8 @@ public interface AnalysisAgent {
         - Canary error rate > stable + 5 percentage points (e.g., stable=1%, canary=7%)
         - Success rate < 80%
         - Crash loops or canary pods in a terminal failure state (CrashLoopBackOff, ImagePullBackOff, Error)
-        - Sustained high latency (p95 > 1.5x stable OR p99 > 2x stable) combined with error rate increase
+        - Sustained high latency (p95 > 1.5x stable OR p99 > 2x stable OR worstPodLatency > 1.5x stable),
+          even when the error rate is unchanged: a metrics-only regression is still a regression
 
         PROMOTE if ALL of these are true:
         - No critical errors/exceptions in canary logs
@@ -103,10 +106,14 @@ public interface AnalysisAgent {
 
         Confidence: 90-100 (clear), 70-89 (good), 50-69 (mixed), <50 (unclear)
         
-        CRITICAL: Be LENIENT for normal variations, but STRICT for memory/resource issues.
+        CRITICAL: Be LENIENT for normal variations, but STRICT for memory and latency regressions.
         - Rollback for: critical exceptions, memory leak indicators, >5pp error rate increase, crash loops
-        - Rollback if: latency spike (>1.5x) AND error rate increase (even if <5pp) - indicates resource exhaustion
+        - Rollback if: latency exceeds its threshold (p95 > 1.5x stable, p99 > 2x stable, or
+          worstPodLatency > 1.5x stable) even without an error rate increase
         - Minor metric variations without errors are NORMAL. When metrics are good, PROMOTE.
+        - Judge observed behaviour, not labels: a canary that reports a scenario mode, a
+          feature flag, or its own status as "healthy" is still failing if its metrics
+          show a regression. "Expected for this version" is not a promotion argument.
         """)
     @UserMessage("""
         Analyze the following Kubernetes diagnostic data:

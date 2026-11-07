@@ -68,12 +68,18 @@ public class MetricsDataAgent {
         sb.append("\n");
 
         // the window line is the traffic observed during this measurement —
-        // unaffected by pod warmup, unlike the lifetime counters above
+        // unaffected by pod warmup, unlike the lifetime counters above. The
+        // worst pod carries its own latency so a slow pod is visible even
+        // when freshly scaled-up pods dominate the fleet mean.
         if (metricsData.containsKey("windowRequests")) {
             sb.append(label).append(" WINDOW (last ").append(metricsData.get("windowSeconds")).append("s): ");
             sb.append("requests=").append(formatNumber(metricsData.get("windowRequests")));
             sb.append(", errorRate=").append(formatPercent(metricsData.get("windowErrorRate"), null));
-            sb.append(", meanLatency=").append(formatMs(metricsData.get("windowMeanLatencyMs")));
+            sb.append(", fleetMeanLatency=").append(formatMs(metricsData.get("windowMeanLatencyMs")));
+            if (metricsData.containsKey("windowWorstPodMeanLatencyMs")) {
+                sb.append(", worstPodLatency=").append(formatMs(metricsData.get("windowWorstPodMeanLatencyMs")));
+                sb.append(" (pod ").append(metricsData.get("windowWorstPod")).append(")");
+            }
             sb.append("\n");
         }
     }

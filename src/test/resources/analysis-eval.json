@@ -71,6 +71,18 @@
       }
     },
     {
+      "name": "latency-drift-diluted-fleet-mean",
+      "diagnosticReport": "=== LOG DIAGNOSTIC REPORT ===\nSTABLE POD: quarkus-demo-stable-7d9f6 - Running - Ready: 1/1\nSTABLE LOGS:\nINFO DemoScenarioService initialized with mode: happy\nINFO Processing requests normally\nCANARY POD: quarkus-demo-canary-q9hx5 - Running - Ready: 1/1\nCANARY LOGS:\nINFO DemoScenarioService initialized with mode: happy\nINFO Application started\nINFO Processing requests normally\n=== END ===",
+      "rolloutReport": "=== ROLLOUT STATUS REPORT ===\nROLLOUT: quarkus-demo (namespace quarkus-demo)\nPHASE: Progressing\nSTEP INDEX: 4\nTRAFFIC: canary 60%, stable 40%\nPODS: stable 10, canary 6\n=== END ===",
+      "metricsReport": "=== METRICS REPORT ===\nSTABLE METRICS: totalRequests=1993024, successRate=99.01%, errorRate=0.99%, p95=47.7ms, p99=49.8ms, pods=10\nSTABLE WINDOW (last 10s): requests=24597, errorRate=0.90%, fleetMeanLatency=29.7ms, worstPodLatency=31.2ms (pod quarkus-demo-stable-7d9f6)\nCANARY METRICS: totalRequests=23379, successRate=98.99%, errorRate=1.01%, p95=184.0ms, p99=217.6ms, pods=6\nCANARY WINDOW (last 10s): requests=12670, errorRate=0.99%, fleetMeanLatency=37.6ms, worstPodLatency=250.0ms (pod quarkus-demo-canary-q9hx5)\n=== END ===",
+      "expected": {
+        "promote": false,
+        "issueCategory": "CODE_BUG",
+        "minConfidence": 60,
+        "rootCauseContains": "latency"
+      }
+    },
+    {
       "name": "paused-rollout-healthy-evidence",
       "diagnosticReport": "=== LOG DIAGNOSTIC REPORT ===\nSTABLE POD: quarkus-demo-stable-7d9f6 - Running - Ready: 1/1\nSTABLE LOGS:\nINFO Application started (v1.1.0)\nINFO Processing requests normally\nCANARY POD: quarkus-demo-canary-9b2k4 - Running - Ready: 1/1\nCANARY LOGS:\nINFO Application started (v1.1.0)\nINFO Processing requests normally\n=== END ===",
       "rolloutReport": "=== ROLLOUT STATUS REPORT ===\nROLLOUT: quarkus-demo (namespace quarkus-demo)\nPHASE: Paused\nSTEP INDEX: 2\nTRAFFIC: canary 30%, stable 70%\nPODS: stable 7, canary 3\n=== END ===",
