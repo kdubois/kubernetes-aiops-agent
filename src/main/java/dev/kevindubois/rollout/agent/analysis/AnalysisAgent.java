@@ -85,10 +85,12 @@ public interface AnalysisAgent {
         - Success rate ≥ 80%
 
         JSON OUTPUT:
+        (never put unescaped double quotes inside a string value — quote log or
+        message excerpts with single quotes)
         {
           "promote": true/false,
           "confidence": 0-100,
-          "analysis": "brief comparison",
+          "analysis": "2-4 short lines separated by \\n — line 1: the verdict and why in one sentence; line 2: key metric comparisons, canary vs stable; line 3+: log findings",
           "rootCause": "issue or 'No issues'",
           "remediation": "action or 'Promote'",
           "summary": "One-line summary, max 120 chars",
