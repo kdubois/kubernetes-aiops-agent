@@ -9,7 +9,7 @@ import org.eclipse.microprofile.config.Config;
 import java.time.Duration;
 
 /**
- * Strong-model escalation tier for the analysis, in the shape of langchain4j's
+ * Second-opinion escalation tier for the analysis, in the shape of langchain4j's
  * Confidence Cascade: the default (cheaper) model analyzes first, the grader
  * checks the conclusion, and a clearly disputed conclusion is re-analyzed once
  * by a second-opinion model over the same diagnostic data. If the escalated
@@ -17,10 +17,10 @@ import java.time.Duration;
  * final tier.
  *
  * <p>Configured through {@code analysis.escalation.*} (fed by the
- * {@code ANALYSIS_STRONG_*} environment variables). The reference
- * deployment runs the cheap tier on Qwen (litemaas) and the strong tier on
+ * {@code ANALYSIS_SECOND_OPINION_*} environment variables). The reference
+ * deployment runs the cheap tier on Qwen (litemaas) and the second opinion tier on
  * DeepSeek (enmaas) — both open-weights models — with the escalation decided
- * by the Jev grader. An empty model name disables the tier: a disputed
+ * by the decision-model grader. An empty model name disables the tier: a disputed
  * conclusion then goes straight to the pause gate, exactly as before this
  * tier existed.
  *
@@ -35,30 +35,30 @@ import java.time.Duration;
 @ApplicationScoped
 public class AnalysisEscalation {
 
-    private final ChatModel strongModel;
-    private final SecondOpinionAnalysisAgent strongAgent;
+    private final ChatModel secondOpinionModel;
+    private final SecondOpinionAnalysisAgent secondOpinionAgent;
 
     @jakarta.inject.Inject
     AnalysisEscalation(Config config) {
-        this(strongModel(config));
+        this(secondOpinionModel(config));
     }
 
-    AnalysisEscalation(ChatModel strongModel) {
-        this.strongModel = strongModel;
-        this.strongAgent = strongModel == null ? null
+    AnalysisEscalation(ChatModel secondOpinionModel) {
+        this.secondOpinionModel = secondOpinionModel;
+        this.secondOpinionAgent = secondOpinionModel == null ? null
                 : AgenticServices.agentBuilder(SecondOpinionAnalysisAgent.class)
-                        .chatModel(strongModel)
+                        .chatModel(secondOpinionModel)
                         .build();
-        if (strongModel == null) {
-            Log.info("Analysis escalation disabled (no ANALYSIS_STRONG_MODEL): a disputed conclusion "
+        if (secondOpinionModel == null) {
+            Log.info("Analysis escalation disabled (no ANALYSIS_SECOND_OPINION_MODEL): a disputed conclusion "
                     + "goes straight to the pause gate");
         } else {
             Log.infof("Analysis escalation enabled: disputed conclusions are re-analyzed with %s",
-                    strongModel.toString());
+                    secondOpinionModel.toString());
         }
     }
 
-    private static ChatModel strongModel(Config config) {
+    private static ChatModel secondOpinionModel(Config config) {
         String modelName = config.getOptionalValue("analysis.escalation.model", String.class).orElse("").trim();
         if (modelName.isEmpty()) {
             return null;
@@ -78,7 +78,7 @@ public class AnalysisEscalation {
     }
 
     public boolean enabled() {
-        return strongAgent != null;
+        return secondOpinionAgent != null;
     }
 
     /**
@@ -91,7 +91,7 @@ public class AnalysisEscalation {
      */
     public AnalysisResult escalate(String diagnosticData, String prompt) {
         try {
-            return strongAgent.analyze(diagnosticData, prompt != null ? prompt : "");
+            return secondOpinionAgent.analyze(diagnosticData, prompt != null ? prompt : "");
         } catch (RuntimeException e) {
             Log.warnf("Analysis escalation failed (%s); keeping the disputed conclusion", e.getMessage());
             return null;

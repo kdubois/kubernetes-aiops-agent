@@ -17,20 +17,21 @@ spec:
       serviceAccountName: kubernetes-agent
       containers:
         - name: agent
-          image: quay.io/kevindubois/kubernetes-agent:latest
-          imagePullPolicy: IfNotPresent
+          image: ghcr.io/kdubois/kubernetes-agent:main
+          imagePullPolicy: Always
           ports:
             - containerPort: 8080
               name: http
               protocol: TCP
           env:
-            # Analysis model configuration
+            - name: QUARKUS_PROFILE
+              value: prod
+            # Analysis model (any OpenAI-compatible endpoint)
             - name: ANALYSIS_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: kubernetes-agent
                   key: analysis_api_key
-                  optional: true
             - name: ANALYSIS_BASE_URL
               valueFrom:
                 secretKeyRef:
@@ -43,36 +44,47 @@ spec:
                   name: kubernetes-agent
                   key: analysis_model
                   optional: true
-            # Remediation model configuration
-            - name: REMEDIATION_API_KEY
+            # Second-opinion tier for the escalation (optional, empty disables it)
+            - name: ANALYSIS_SECOND_OPINION_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: kubernetes-agent
-                  key: remediation_api_key
+                  key: analysis_second_opinion_api_key
                   optional: true
-            - name: REMEDIATION_BASE_URL
+            - name: ANALYSIS_SECOND_OPINION_BASE_URL
               valueFrom:
                 secretKeyRef:
                   name: kubernetes-agent
-                  key: remediation_base_url
+                  key: analysis_second_opinion_base_url
                   optional: true
-            - name: REMEDIATION_MODEL
+            - name: ANALYSIS_SECOND_OPINION_MODEL
               valueFrom:
                 secretKeyRef:
                   name: kubernetes-agent
-                  key: remediation_model
+                  key: analysis_second_opinion_model
                   optional: true
-            # GitHub Configuration
-            - name: GITHUB_TOKEN
+            # Decision model for the grader (optional, empty disables it)
+            - name: TYPESAFE_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: kubernetes-agent
-                  key: github_token
-            # Git Configuration
-            - name: GIT_USERNAME
-              value: "kubernetes-agent"
-            - name: GIT_EMAIL
-              value: "kubernetes-agent@csanchez.org"
+                  key: typesafe_api_key
+                  optional: true
+            # A2A remediation service (optional)
+            - name: REMEDIATION_AGENT_URL
+              value: http://remediation-agent:8080
+          readinessProbe:
+            httpGet:
+              path: /q/health/ready
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /q/health/live
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 30
           resources:
             requests:
               memory: "512Mi"
@@ -80,20 +92,3 @@ spec:
             limits:
               memory: "2Gi"
               cpu: "1000m"
-          livenessProbe:
-            httpGet:
-              path: /q/health
-              port: http
-            initialDelaySeconds: 30
-            periodSeconds: 10
-            timeoutSeconds: 5
-            failureThreshold: 3
-          readinessProbe:
-            httpGet:
-              path: /q/health
-              port: http
-            initialDelaySeconds: 10
-            periodSeconds: 5
-            timeoutSeconds: 3
-            failureThreshold: 3
-      restartPolicy: Always

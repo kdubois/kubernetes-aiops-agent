@@ -23,7 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 /**
  * Opt-in evaluation of the AnalysisGrader against the labelled scenarios in
  * analysis-eval.json. Runs the real analysis pipeline per case, then grades
- * the analysis's actual conclusion and its inversion with the real Jev
+ * the analysis's actual conclusion and its inversion with the real
  * decision model, using the production state builder, and reports both
  * probabilities with their separation.
  *
@@ -89,21 +89,21 @@ class GraderEvalTest {
                     c.diagnosticReport(), c.rolloutReport(), c.metricsReport());
 
             // the escalation tier: a clearly disputed conclusion is re-analyzed
-            // with the strong model over the same data, then re-graded — this
+            // with the second opinion model over the same data, then re-graded — this
             // mirrors AnalysisService's flow
             String escalationNote = "";
             if (pCorrect.isPresent() && pCorrect.get() < AnalysisService.CLEARLY_UNSUPPORTED
                     && escalation.enabled()) {
-                AnalysisResult strong = escalation.escalate(AnalysisEvalCases.diagnosticData(c), c.notes());
-                if (strong != null) {
+                AnalysisResult secondOpinion = escalation.escalate(AnalysisEvalCases.diagnosticData(c), c.notes());
+                if (secondOpinion != null) {
                     escalated++;
-                    Optional<Double> pStrong = grader.grade(strong,
+                    Optional<Double> pSecondOpinion = grader.grade(secondOpinion,
                             c.diagnosticReport(), c.rolloutReport(), c.metricsReport());
                     escalationNote = String.format(Locale.ROOT,
                             "escalated: %.2f -> %.2f, %s -> %s", pCorrect.get(),
-                            pStrong.orElse(-1.0), verdict(real), verdict(strong));
-                    real = strong;
-                    pCorrect = pStrong;
+                            pSecondOpinion.orElse(-1.0), verdict(real), verdict(secondOpinion));
+                    real = secondOpinion;
+                    pCorrect = pSecondOpinion;
                 }
             }
 
@@ -154,7 +154,7 @@ class GraderEvalTest {
                 - Gate safety (P(correct) >= veto bar): %d/%d
                 - Veto fires on wrong promotes: %d/%d
                 - Discrimination (P(correct) > P(inverted)): %d/%d (informational)
-                - Escalations to the strong model: %d
+                - Escalations to the second opinion model: %d
                 """.formatted(LocalDate.now(), AnalysisService.CLEARLY_UNSUPPORTED,
                 String.join("\n", rows), vetoSafe, graded, vetoFired, wrongPromotes, separated, graded, escalated));
         Log.infof("Analysis grader evaluation: gate safety %d/%d, veto on wrong promotes %d/%d, discrimination %d/%d, escalations %d. Report written to %s",

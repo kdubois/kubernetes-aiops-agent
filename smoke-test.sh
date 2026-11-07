@@ -9,13 +9,13 @@
 #   ./smoke-test.sh local                  # hit localhost:8080 directly
 #   CONTEXT=my-context ./smoke-test.sh     # use a specific kubeconfig context
 #
-# Prerequisites (k8s mode): kubectl access to the openshift-gitops namespace.
+# Prerequisites (k8s mode): kubectl access to the agent namespace (default: argo-rollouts).
 # Prerequisites (local mode): agent running on localhost:8080.
 
 set -euo pipefail
 
 MODE="${1:-k8s}"
-AGENT_NAMESPACE="openshift-gitops"
+AGENT_NAMESPACE="${AGENT_NAMESPACE:-argo-rollouts}"
 TEST_NAMESPACE="${NAMESPACE:-quarkus-demo}"
 CONTEXT="${CONTEXT:-}"
 LOCAL_URL="${LOCAL_URL:-http://localhost:8080}"

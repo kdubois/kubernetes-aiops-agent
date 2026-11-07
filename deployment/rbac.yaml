@@ -12,10 +12,6 @@ rules:
   - apiGroups: [""]
     resources: ["pods", "pods/log", "events", "services", "configmaps", "endpoints"]
     verbs: ["get", "list", "watch"]
-  # Execute commands in pods (for debugging)
-  - apiGroups: [""]
-    resources: ["pods/exec"]
-    verbs: ["create"]
   # Read deployments and other workloads
   - apiGroups: ["apps"]
     resources: ["deployments", "statefulsets", "daemonsets", "replicasets"]
@@ -41,5 +37,15 @@ roleRef:
   kind: ClusterRole
   name: kubernetes-agent
   apiGroup: rbac.authorization.k8s.io
-
-
+# The pause gate patches spec.paused on the Rollout. That write is scoped by a
+# namespaced Role in each rollout namespace, not by this ClusterRole:
+#
+# apiVersion: rbac.authorization.k8s.io/v1
+# kind: Role
+# metadata:
+#   name: kubernetes-agent-pause
+#   namespace: my-app
+# rules:
+# - apiGroups: ["argoproj.io"]
+#   resources: ["rollouts"]
+#   verbs: ["get", "patch"]

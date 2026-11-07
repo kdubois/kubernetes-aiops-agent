@@ -97,7 +97,7 @@
             <groupId>io.quarkiverse.langchain4j</groupId>
             <artifactId>quarkus-langchain4j-openai</artifactId>
         </dependency>
-        <!-- Decision model (Jev) for the analysis grader second opinion -->
+        <!-- Decision model for the analysis grader second opinion -->
         <dependency>
             <groupId>io.quarkiverse.langchain4j</groupId>
             <artifactId>quarkus-langchain4j-typesafe</artifactId>

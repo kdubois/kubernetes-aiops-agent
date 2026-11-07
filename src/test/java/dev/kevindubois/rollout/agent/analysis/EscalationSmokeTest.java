@@ -14,13 +14,13 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Opt-in smoke test of the strong-model escalation tier with the real models:
+ * Opt-in smoke test of the second-opinion escalation tier with the real models:
  * the cheap tier analyzes a hard labelled case, the escalation tier re-analyzes
- * the same data with the strong model, and the grader grades both. Run it when
- * changing the escalation wiring or the strong model:
+ * the same data with the second opinion model, and the grader grades both. Run it when
+ * changing the escalation wiring or the second opinion model:
  *
  * <pre>ANALYSIS_API_KEY=... ANALYSIS_BASE_URL=... ANALYSIS_MODEL=... \
- * ANALYSIS_STRONG_BASE_URL=... ANALYSIS_STRONG_API_KEY=... ANALYSIS_STRONG_MODEL=... \
+ * ANALYSIS_SECOND_OPINION_BASE_URL=... ANALYSIS_SECOND_OPINION_API_KEY=... ANALYSIS_SECOND_OPINION_MODEL=... \
  * TYPESAFE_API_KEY=... mvn test -Dtest=EscalationSmokeTest -Descalation.smoke=true</pre>
  */
 @QuarkusTest
@@ -37,7 +37,7 @@ class EscalationSmokeTest {
     AnalysisEscalation escalation;
 
     @Test
-    void strongTierReanalyzesAndGrades() {
+    void secondOpinionTierReanalyzesAndGrades() {
         assertTrue(escalation.enabled(), "the escalation tier must be configured for this test");
 
         // the memory-leak case: hard enough that the tiers can genuinely differ
@@ -52,17 +52,17 @@ class EscalationSmokeTest {
         AnalysisResult cheap = cheapAgent.analyze(data, c.notes());
         assertNotNull(cheap, "the cheap tier returned no result");
 
-        AnalysisResult strong = escalation.escalate(data, c.notes());
-        assertNotNull(strong, "the strong tier returned no result");
+        AnalysisResult secondOpinion = escalation.escalate(data, c.notes());
+        assertNotNull(secondOpinion, "the second opinion tier returned no result");
 
         var cheapGrade = grader.grade(cheap, c.diagnosticReport(), c.rolloutReport(), c.metricsReport());
-        var strongGrade = grader.grade(strong, c.diagnosticReport(), c.rolloutReport(), c.metricsReport());
-        Log.infof("Smoke: cheap=%s (conf %d, grade %s), strong=%s (conf %d, grade %s)",
+        var secondOpinionGrade = grader.grade(secondOpinion, c.diagnosticReport(), c.rolloutReport(), c.metricsReport());
+        Log.infof("Smoke: cheap=%s (conf %d, grade %s), secondOpinion=%s (conf %d, grade %s)",
                 cheap.promote() ? "promote" : "rollback", cheap.confidence(), cheapGrade,
-                strong.promote() ? "promote" : "rollback", strong.confidence(), strongGrade);
+                secondOpinion.promote() ? "promote" : "rollback", secondOpinion.confidence(), secondOpinionGrade);
 
         // both tiers must produce a well-formed conclusion for the labelled case
-        List.of(cheap, strong).forEach(result -> {
+        List.of(cheap, secondOpinion).forEach(result -> {
             assertTrue(result.promote() == Boolean.TRUE.equals(c.expected().promote()),
                     "tier concluded " + (result.promote() ? "promote" : "rollback")
                             + " but the case labels " + (c.expected().promote() ? "promote" : "rollback"));

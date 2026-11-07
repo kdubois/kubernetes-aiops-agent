@@ -30,8 +30,8 @@ src/main/java/dev/kevindubois/rollout/agent/
     MetricsDataAgent.java           # Non-AI: /q/metrics scraping
     DataCombinerAgent.java          # Non-AI: merges diagnostics, rollout status, and metrics into single report
     AnalysisAgent.java              # AI: decide promote/rollback, write analysis + rootCause
-    AnalysisGrader.java             # Decision model (Jev): grades the conclusion, second opinion for the pause gate
-    AnalysisEscalation.java         # Strong-model tier (DeepSeek): re-analyzes a disputed conclusion before the gate
+    AnalysisGrader.java             # Decision-model grader: grades the conclusion, second opinion for the pause gate
+    AnalysisEscalation.java         # Second-opinion tier: re-analyzes a disputed conclusion before the gate
   api/
     KubernetesAgentResource.java    # REST endpoint: POST /analyze
     KubernetesAgentRequest.java     # REST request DTO (userId, prompt, context)
@@ -63,7 +63,7 @@ deployment/
 
 ## Prerequisites
 
-Java 25+, Maven 3.8+, kubectl/oc, an API key for any OpenAI-compatible endpoint, Kubernetes cluster with Argo Rollouts + `rollouts-plugin-metric-ai`. Optionally a `TYPESAFE_API_KEY` for the Jev analysis grader (without it the pause gate uses the self-reported confidence).
+Java 25+, Maven 3.8+, kubectl/oc, an API key for any OpenAI-compatible endpoint, Kubernetes cluster with Argo Rollouts + `rollouts-plugin-metric-ai`. Optionally a `TYPESAFE_API_KEY` for the decision-model grader (without it the pause gate uses the self-reported confidence).
 
 ## Development
 
@@ -74,11 +74,11 @@ In local dev, credentials are read from environment variables via `application.p
 ```bash
 export ANALYSIS_API_KEY="..."   # Any OpenAI-compatible API key
 
-mvn quarkus:dev
-mvn quarkus:dev -Drun.mode=console   # Interactive console mode
+./mvnw quarkus:dev
+./mvnw quarkus:dev -Drun.mode=console   # Interactive console mode
 ```
 
-In production, credentials come from the `kubernetes-agent` Kubernetes Secret (K8s Secret path) or from a Vault KV path (Vault path — activated by adding `vault` to `QUARKUS_PROFILE`). See the `progressive-delivery` README for Vault bootstrap steps.
+In production, credentials come from the `kubernetes-agent` Kubernetes Secret. Vault is an optional path: add `vault` to `QUARKUS_PROFILE` and set `VAULT_ADDR` and the Kubernetes auth role. The reference OpenShift deployment uses Vault, bootstrapped by the `progressive-delivery` repository.
 
 **Profiles:** `dev`, `prod`
 
@@ -100,9 +100,11 @@ Use `@LoopAgent` for retry loops, `@SequenceAgent` for ordered steps, `@Parallel
 
 ```bash
 quarkus build --no-tests && quarkus image push --also-build
-kubectl rollout restart deployment/kubernetes-agent -n openshift-gitops
-kubectl rollout status deployment/kubernetes-agent -n openshift-gitops
+kubectl rollout restart deployment/kubernetes-agent -n argo-rollouts
+kubectl rollout status deployment/kubernetes-agent -n argo-rollouts
 ```
+
+The namespace is `argo-rollouts` for the standalone manifests in `deployment/`. The reference OpenShift deployment runs the agent in `openshift-gitops` next to Argo CD.
 
 ### Version bump
 
@@ -112,19 +114,18 @@ Update the image tag in `deployment/kustomization.yaml`, commit, and push. Argo 
 
 ```bash
 docker buildx build --platform linux/amd64,linux/arm64 \
-  -t quay.io/kevindubois/kubernetes-agent:v<version> --push .
+  -t ghcr.io/kdubois/kubernetes-agent:v<version> --push .
 ```
 
 ## Testing
 
 ```bash
-mvn test
-mvn test -Dtest=K8sToolsTest
-./run-console.sh         # Interactive console mode
+./mvnw test
+./mvnw test -Dtest=K8sToolsTest
 
 # Labelled analysis evaluation (calls the live model, opt-in):
 ANALYSIS_API_KEY=... ANALYSIS_BASE_URL=... ANALYSIS_MODEL=... \
-  mvn test -Dtest=AnalysisEvalTest -Danalysis.eval=true
+  ./mvnw test -Dtest=AnalysisEvalTest -Danalysis.eval=true
 ```
 
 The evaluation cases live in `src/test/resources/analysis-eval.json`; the report is written to `target/analysis-eval-report.md`. Run it before and after changing the `AnalysisAgent` prompt or model, and add a case whenever a new failure mode matters.
@@ -136,8 +137,8 @@ The analysis request from the plugin triggers this sequence:
 1. `AnalysisDataAgent` — `DiagnosticsDataAgent`, `RolloutStatusDataAgent`, and `MetricsDataAgent` run concurrently using only Kubernetes tools (no LLM).
 2. `DataCombinerAgent` — merges the three reports into a single `diagnosticData` string.
 3. `AnalysisAgent` — decides promote/rollback in a single pass and writes the analysis, root cause, and confidence.
-4. `AnalysisGrader` — after the workflow, the Jev decision model grades the conclusion with two yes/no questions (contradicted? sufficient data?), mapped to a three-way verdict: contradicted conclusions drop below the 0.30 veto bar, thin evidence lands in the neutral band, verified conclusions reach 0.5 and above. The grader is a veto with a margin, not a second confidence scale: only a contradicted conclusion triggers the escalation tier or lowers the effective confidence that drives the pause gate; thin evidence leaves the self-reported confidence standing — the next measurement gathers more data. Without `TYPESAFE_API_KEY` the grader disables itself and the self-reported confidence stands.
-5. `AnalysisEscalation` — the second-opinion tier (Confidence Cascade shape): a clearly disputed conclusion is re-analyzed once by a different model over the same diagnostic data — the analysis model first, the second-opinion model on dispute — and the escalated conclusion is re-graded before the gate decides. Configure via `ANALYSIS_STRONG_*`; an empty model disables the tier and a dispute goes straight to the gate. Evaluate the grader and escalation together with `ANALYSIS_API_KEY=... TYPESAFE_API_KEY=... ANALYSIS_STRONG_MODEL=... mvn test -Dtest=GraderEvalTest -Dgrader.eval=true`.
+4. `AnalysisGrader` — after the workflow, the decision model grades the conclusion with two yes/no questions (contradicted? sufficient data?), mapped to a three-way verdict: contradicted conclusions drop below the 0.30 veto bar, thin evidence lands in the neutral band, verified conclusions reach 0.5 and above. The grader is a veto with a margin, not a second confidence scale: only a contradicted conclusion triggers the escalation tier or lowers the effective confidence that drives the pause gate; thin evidence leaves the self-reported confidence standing — the next measurement gathers more data. Without `TYPESAFE_API_KEY` the grader disables itself and the self-reported confidence stands.
+5. `AnalysisEscalation` — the second-opinion tier (Confidence Cascade shape): a clearly disputed conclusion is re-analyzed once by a different model over the same diagnostic data — the analysis model first, the second-opinion model on dispute — and the escalated conclusion is re-graded before the gate decides. Configure via `ANALYSIS_SECOND_OPINION_*`; an empty model disables the tier and a dispute goes straight to the gate. Evaluate the grader and escalation together with `ANALYSIS_API_KEY=... TYPESAFE_API_KEY=... ANALYSIS_SECOND_OPINION_MODEL=... ./mvnw test -Dtest=GraderEvalTest -Dgrader.eval=true`.
 6. `RemediationAgent` — triggered by `AnalysisService` after the decision event is published, so the remediation activity appears after the analysis narrative and uses the final (post-escalation) result. On a rollback with `repoUrl` set it composes the request and hands it to `RemediationDelegator`, which calls the remediation-agent over A2A on a background thread. On a promote or without a repository it returns without delegating.
 7. Response returned synchronously to the plugin (`promote`, `confidence`, `analysis`, `rootCause`) — the decision is not delayed by the sandbox run. The response `confidence` stays the self-reported value; the effective confidence drives only the gate and the activity events.
 8. If `pauseOnUncertainty` is enabled and the result promotes with confidence below `uncertaintyThreshold`, the rollout is paused for human review (`spec.paused` patch, namespaced Role required). The human decision is served by `POST /rollout/promote` (unpause) and `POST /rollout/abort` (status subresource `abort` signal) in `RolloutControlResource`.
@@ -150,11 +151,11 @@ Note: the A2A call is not a framework-level `@A2AClientAgent` subagent — in th
 ## Debugging
 
 ```bash
-kubectl logs -f deployment/kubernetes-agent -n openshift-gitops
-kubectl logs deployment/kubernetes-agent -n openshift-gitops | grep -i "error\|tool"
+kubectl logs -f deployment/kubernetes-agent -n argo-rollouts
+kubectl logs deployment/kubernetes-agent -n argo-rollouts | grep -i "error\|tool"
 
 # Health check
-kubectl port-forward -n openshift-gitops svc/kubernetes-agent 8080:8080
+kubectl port-forward -n argo-rollouts svc/kubernetes-agent 8080:8080
 curl http://localhost:8080/q/health
 ```
 
@@ -162,7 +163,7 @@ curl http://localhost:8080/q/health
 
 | Symptom | Fix |
 |---|---|
-| Pod not starting | Check secret exists (K8s path) or Vault is reachable (Vault path) |
+| Pod not starting | Check the `kubernetes-agent` Secret exists, or that Vault is reachable if the `vault` profile is active |
 | API key errors | Verify the secret keys match the expected env vars (ANALYSIS_API_KEY) |
 | Tool calls failing | Check RBAC — agent needs read access to pods, logs, events |
 | Remediation not delegated | The A2A agent card is fetched lazily from `remediation.agent.url`; check the remediation-agent service is up and the URL resolves |
@@ -175,7 +176,7 @@ curl http://localhost:8080/q/health
 - `@SystemMessage` should define role, output format, and constraints; `@UserMessage` passes runtime data.
 - Log at `debug` for per-operation detail, `info` for decisions, `error` for failures.
 - Use `Log.infof` (parametrized) instead of `MessageFormat.format` for logging.
-- Format: `mvn fmt:format`
+- Format: `./mvnw fmt:format`
 
 ## Feature Checklist
 

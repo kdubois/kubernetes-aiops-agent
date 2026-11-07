@@ -31,27 +31,27 @@ This directory contains **unit tests only** for the Kubernetes AI Agent.
 
 ### Run All Unit Tests
 ```bash
-mvn test
+./mvnw test
 ```
 
 ### Run Specific Test
 ```bash
-mvn test -Dtest=K8sToolsTest
+./mvnw test -Dtest=K8sToolsTest
 ```
 
 ### Run with Coverage
 ```bash
-mvn test jacoco:report
+./mvnw test jacoco:report
 ```
 
 ## Manual Testing
 
-For manual end-to-end testing, use the console runner:
+For manual end-to-end testing, send a real request to the running agent with the `smoke-test.sh` script at the repository root:
 
 ```bash
 export ANALYSIS_API_KEY="sk-..."
-
-./run-console.sh
+./mvnw quarkus:dev          # terminal 1
+./smoke-test.sh local    # terminal 2
 ```
 
 ## CI/CD
