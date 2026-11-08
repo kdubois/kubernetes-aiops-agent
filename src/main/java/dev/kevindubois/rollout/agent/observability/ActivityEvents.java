@@ -1,6 +1,8 @@
 package dev.kevindubois.rollout.agent.observability;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.kevindubois.rollout.agent.analysis.AnalysisResult;
+import io.quarkus.logging.Log;
 import jakarta.enterprise.context.ApplicationScoped;
 
 import java.util.Optional;
@@ -17,6 +19,9 @@ public class ActivityEvents {
 
     @Inject
     ActivityEventStore store;
+
+    @Inject
+    ObjectMapper mapper;
 
     /** The model name configured for the analysis tier (e.g. rits/zai-org/glm-5-3). */
     @Inject
@@ -118,8 +123,18 @@ public class ActivityEvents {
     /**
      * Publishes the analysis conclusion — what the model decided and why —
      * before any quality grading, so the audience sees the reasoning first.
+     * The metric rows, when the model reported them, arrive as a separate
+     * event whose details carry them as JSON for the dashboard to render.
      */
     public void analysisSummary(AnalysisResult result, String modelLabel) {
+        if (!result.metricComparisons().isEmpty()) {
+            try {
+                store.publish("ANALYSIS_METRICS", "Canary vs stable metrics",
+                        mapper.writeValueAsString(result.metricComparisons()));
+            } catch (Exception e) {
+                Log.debugf(e, "could not serialize metric comparisons");
+            }
+        }
         if (result.summary() != null && !result.summary().isBlank()) {
             String title = modelLabel != null
                     ? "[" + modelLabel + "] " + result.summary() : result.summary();
