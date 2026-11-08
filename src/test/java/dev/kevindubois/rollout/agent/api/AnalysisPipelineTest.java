@@ -19,6 +19,7 @@ import io.restassured.config.RestAssuredConfig;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.util.HashMap;
 import java.util.List;
@@ -86,6 +87,12 @@ class AnalysisPipelineTest {
         assertThat(response.confidence()).isGreaterThanOrEqualTo(80);
         assertThat(response.pausedRollout()).isNull();
         verify(k8sTools, never()).pauseRollout(any(), any());
+        // the metric rows survive the model-output parse into the result
+        ArgumentCaptor<AnalysisResult> resultCaptor = ArgumentCaptor.forClass(AnalysisResult.class);
+        verify(activityEvents).analysisSummary(resultCaptor.capture(), any());
+        assertThat(resultCaptor.getValue().metricComparisons())
+                .extracting(AnalysisResult.MetricComparison::name)
+                .containsExactly("errorRate", "p95");
         // the request prompt reaches the model as operator notes
         WireMockExtension.server.verify(postRequestedFor(urlPathEqualTo("/v1/chat/completions"))
                 .withRequestBody(containing("Analyze canary deployment health")));
@@ -596,7 +603,8 @@ class AnalysisPipelineTest {
             "remediation":"Promote canary to stable",\
             "summary":"Canary healthy - promote",\
             "issueCategory":"NO_ISSUES",\
-            "suspectClasses":[]}""";
+            "suspectClasses":[],\
+            "metricComparisons":[{"name":"errorRate","canary":"0.8%","stable":"0.5%","verdict":"pass"},{"name":"p95","canary":"48ms","stable":"47ms","verdict":"pass"}]}""";
 
     private static final String LOW_CONFIDENCE_PROMOTE = """
             {"promote":true,"confidence":55,\
@@ -623,7 +631,8 @@ class AnalysisPipelineTest {
             "remediation":"Add null check in GreetingService.greet() before accessing str parameter",\
             "summary":"NPE in canary GreetingService - rollback",\
             "issueCategory":"CODE_BUG",\
-            "suspectClasses":["GreetingService"]}""";
+            "suspectClasses":["GreetingService"],\
+            "metricComparisons":[{"name":"errorRate","canary":"18%","stable":"0.5%","verdict":"fail"},{"name":"successRate","canary":"82%","stable":"99.5%","verdict":"pass"}]}""";
 
     private static final String MEMORY_LEAK_ANALYSIS = """
             {"promote":false,"confidence":88,\

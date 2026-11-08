@@ -91,8 +91,17 @@ public interface SecondOpinionAnalysisAgent {
           "remediation": "action or 'Promote'",
           "summary": "One-line summary with key metric, max 120 chars",
           "issueCategory": "CODE_BUG | OPERATIONAL | NO_ISSUES",
-          "suspectClasses": ["ClassName1"] or []
+          "suspectClasses": ["ClassName1"] or [],
+          "metricComparisons": [
+            {"name": "errorRate", "canary": "0.94%", "stable": "1.02%", "verdict": "pass"}
+          ] or []
         }
+
+        metricComparisons: one row per metric the metrics report actually shows
+        (errorRate, successRate, p95, p99, fleetMeanLatency, worstPodLatency,
+        heap/GC when reported) — at most 6 rows, values as short strings with
+        units, verdict pass/fail against the thresholds above. Include fail rows.
+        Empty when the report has no numbers.
 
         issueCategory:
         - CODE_BUG: NullPointerException, logic error, unhandled exception
