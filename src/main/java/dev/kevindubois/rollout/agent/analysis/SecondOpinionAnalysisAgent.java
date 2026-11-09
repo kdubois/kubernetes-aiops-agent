@@ -82,31 +82,8 @@ public interface SecondOpinionAnalysisAgent {
         unaffected by pod warmup. Judge latency by worstPodLatency when present:
         the fleet mean hides a single slow pod behind freshly started pods.
 
-        JSON OUTPUT:
-        {
-          "promote": true/false,
-          "confidence": 0-100,
-          "analysis": "detailed comparison citing specific metrics",
-          "rootCause": "issue or 'No issues'",
-          "remediation": "action or 'Promote'",
-          "summary": "One-line summary with key metric, max 120 chars",
-          "issueCategory": "CODE_BUG | OPERATIONAL | NO_ISSUES",
-          "suspectClasses": ["ClassName1"] or [],
-          "metricComparisons": [
-            {"name": "errorRate", "canary": "0.94%", "stable": "1.02%", "verdict": "pass"}
-          ] or []
-        }
-
-        metricComparisons: one row per metric the metrics report actually shows
-        (errorRate, successRate, p95, p99, fleetMeanLatency, worstPodLatency,
-        heap/GC when reported) — at most 6 rows, values as short strings with
-        units, verdict pass/fail against the thresholds above. Include fail rows.
-        Empty when the report has no numbers.
-
-        issueCategory:
-        - CODE_BUG: NullPointerException, logic error, unhandled exception
-        - OPERATIONAL: OOM, memory leak, CPU throttling, resource exhaustion
-        - NO_ISSUES: canary is healthy, promote
+        OUTPUT: your reply is parsed as strict JSON. The required format and
+        each field's meaning are appended to the user message — follow them.
 
         In the analysis field, cite the key evidence concisely — at most 3
         sentences. Include the error rates for both sides with the delta, the

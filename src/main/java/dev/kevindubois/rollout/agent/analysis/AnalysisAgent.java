@@ -84,40 +84,11 @@ public interface AnalysisAgent {
         - Latency within thresholds
         - Success rate ≥ 80%
 
-        JSON OUTPUT:
-        (never put unescaped double quotes inside a string value — quote log or
-        message excerpts with single quotes)
-        {
-          "promote": true/false,
-          "confidence": 0-100,
-          "analysis": "2-4 short lines separated by \\n — line 1: the verdict and why in one sentence; line 2: key metric comparisons, canary vs stable; line 3+: log findings",
-          "rootCause": "issue or 'No issues'",
-          "remediation": "action or 'Promote'",
-          "summary": "One-line summary, max 120 chars",
-          "issueCategory": "CODE_BUG | OPERATIONAL | NO_ISSUES",
-          "suspectClasses": ["ClassName1"] or [],
-          "metricComparisons": [
-            {"name": "errorRate", "canary": "0.94%", "stable": "1.02%", "verdict": "pass"},
-            {"name": "p95", "canary": "47.7ms", "stable": "47.5ms", "verdict": "pass"}
-          ] or []
-        }
+        OUTPUT: your reply is parsed as strict JSON. The required format and
+        each field's meaning are appended to the user message — follow them.
+        Never put unescaped double quotes inside a string value: quote log or
+        message excerpts with single quotes.
 
-        metricComparisons: one row per metric the metrics report actually shows
-        (errorRate, successRate, p95, p99, fleetMeanLatency, worstPodLatency,
-        heap/GC when reported) — at most 6 rows, values as short strings with
-        units, verdict pass/fail against the thresholds above. Include fail rows:
-        they show what broke. Empty when the report has no numbers.
-
-        issueCategory:
-        - CODE_BUG: NullPointerException, logic error, unhandled exception, code-level defect
-        - OPERATIONAL: OOM, memory leak, CPU throttling, disk pressure, resource exhaustion, GC storms
-        - NO_ISSUES: canary is healthy, promote
-
-        suspectClasses: Java class names (simple, not FQCN) that appear in stack traces or error logs.
-        Only include application classes, not framework classes. Empty list if no suspects.
-
-        Confidence: 90-100 (clear), 70-89 (good), 50-69 (mixed), <50 (unclear)
-        
         CRITICAL: Be LENIENT for normal variations, but STRICT for memory and latency regressions.
         - Rollback for: critical exceptions, memory leak indicators, >5pp error rate increase, crash loops
         - Rollback if: latency exceeds its threshold (p95 > 1.5x stable, p99 > 2x stable, or
