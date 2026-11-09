@@ -190,17 +190,15 @@ class AnalysisGraderTest {
     }
 
     @Test
-    void missingAnswerFallsBackToEmpty() {
+    void modelFailureOrPartialAnswerFallsBackToEmpty() {
         // the model answered only one of the two questions
         when(model.decide(any(DecisionRequest.class))).thenReturn(DecisionResponse.builder()
                 .answers(Map.of(CONTRADICTION_ID, YesNoAnswer.from(0.5)))
                 .build());
 
         assertThat(new AnalysisGrader(model, true).grade(result(90), "diagnostics", "rollout-status", "metrics")).isEmpty();
-    }
 
-    @Test
-    void callFailureFallsBackToEmpty() {
+        // and a call failure behaves the same
         when(model.decide(any(DecisionRequest.class))).thenThrow(new RuntimeException("timeout"));
 
         assertThat(new AnalysisGrader(model, true).grade(result(90), "diagnostics", "rollout-status", "metrics")).isEmpty();

@@ -76,23 +76,34 @@ class RolloutControlResourceTest {
     }
 
     @Test
-    void promoteReturns404WhenTheRolloutIsMissing() {
+    void missingRolloutMapsTo404ForBothActions() {
         when(namedResource.get()).thenReturn(null);
 
         given()
                 .when().post("/rollout/promote?namespace=" + NAMESPACE + "&name=" + ROLLOUT)
+                .then().statusCode(404);
+        given()
+                .when().post("/rollout/abort?namespace=" + NAMESPACE + "&name=" + ROLLOUT)
                 .then().statusCode(404);
 
         verify(namedResource, never()).patch(any(PatchContext.class), anyString());
     }
 
     @Test
-    void promoteReturns500WhenThePatchFails() {
+    void patchFailureMapsTo500ForBothActions() {
         when(namedResource.patch(any(PatchContext.class), anyString()))
                 .thenThrow(new KubernetesClientException("403 Forbidden"));
 
         given()
                 .when().post("/rollout/promote?namespace=" + NAMESPACE + "&name=" + ROLLOUT)
+                .then().statusCode(500);
+
+        EditReplacePatchable<Rollout> statusResource = statusResource();
+        when(statusResource.patch(any(PatchContext.class), anyString()))
+                .thenThrow(new KubernetesClientException("403 Forbidden"));
+
+        given()
+                .when().post("/rollout/abort?namespace=" + NAMESPACE + "&name=" + ROLLOUT)
                 .then().statusCode(500);
     }
 
@@ -108,28 +119,6 @@ class RolloutControlResourceTest {
         // then the same status.abort patch `kubectl argo rollouts abort` sends
         verify(namedResource).patch(jsonMergePatch(), eq("{\"spec\":{\"paused\":false}}"));
         verify(statusResource).patch(jsonMergePatch(), eq("{\"status\":{\"abort\":true}}"));
-    }
-
-    @Test
-    void abortReturns404WhenTheRolloutIsMissing() {
-        when(namedResource.get()).thenReturn(null);
-
-        given()
-                .when().post("/rollout/abort?namespace=" + NAMESPACE + "&name=" + ROLLOUT)
-                .then().statusCode(404);
-
-        verify(namedResource, never()).patch(any(PatchContext.class), anyString());
-    }
-
-    @Test
-    void abortReturns500WhenTheStatusPatchFails() {
-        EditReplacePatchable<Rollout> statusResource = statusResource();
-        when(statusResource.patch(any(PatchContext.class), anyString()))
-                .thenThrow(new KubernetesClientException("403 Forbidden"));
-
-        given()
-                .when().post("/rollout/abort?namespace=" + NAMESPACE + "&name=" + ROLLOUT)
-                .then().statusCode(500);
     }
 
     /** The status subresource operation the abort signal is patched through. */
