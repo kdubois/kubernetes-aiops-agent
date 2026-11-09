@@ -17,16 +17,10 @@ class PauseGateTest {
     }
 
     @Test
-    void disabledWhenMapIsNull() {
-        PauseGate gate = PauseGate.fromMap(null);
-        assertFalse(gate.enabled());
-        assertFalse(gate.shouldPause(result(true, 10), 10));
-    }
-
-    @Test
-    void disabledWhenFlagAbsent() {
-        PauseGate gate = PauseGate.fromMap(Map.of("namespace", "quarkus-demo"));
-        assertFalse(gate.enabled());
+    void disabledWithoutTheFlagOrTheMap() {
+        assertFalse(PauseGate.fromMap(null).enabled());
+        assertFalse(PauseGate.fromMap(Map.of("namespace", "quarkus-demo")).enabled());
+        assertFalse(PauseGate.fromMap(null).shouldPause(result(true, 10), 10));
     }
 
     @Test

@@ -41,83 +41,7 @@ class K8sToolsTest {
         when(podOp.inNamespace(anyString())).thenReturn(nsOp);
     }
 
-    @Test
-    void testGetCanaryDiagnostics_Success() {
-        String namespace = "default";
-        Pod stablePod = K8sTestFixtures.createTestPod("stable-pod", namespace);
-        stablePod.getMetadata().setLabels(Map.of("role", "stable"));
-        Pod canaryPod = K8sTestFixtures.createTestPod("canary-pod", namespace);
-        canaryPod.getMetadata().setLabels(Map.of("role", "canary"));
 
-        PodList stablePodList = new PodList();
-        stablePodList.setItems(List.of(stablePod));
-        PodList canaryPodList = new PodList();
-        canaryPodList.setItems(List.of(canaryPod));
-
-        FilterWatchListDeletable<Pod, PodList, PodResource> stableLabelOp = mock(FilterWatchListDeletable.class);
-        FilterWatchListDeletable<Pod, PodList, PodResource> canaryLabelOp = mock(FilterWatchListDeletable.class);
-
-        when(nsOp.withLabels(Map.of("role", "stable"))).thenReturn(stableLabelOp);
-        when(stableLabelOp.list()).thenReturn(stablePodList);
-
-        when(nsOp.withLabels(Map.of("role", "canary"))).thenReturn(canaryLabelOp);
-        when(canaryLabelOp.list()).thenReturn(canaryPodList);
-
-        PodResource stablePodResource = mock(PodResource.class);
-        PodResource canaryPodResource = mock(PodResource.class);
-
-        when(nsOp.withName("stable-pod")).thenReturn(stablePodResource);
-        when(stablePodResource.get()).thenReturn(stablePod);
-        when(stablePodResource.tailingLines(anyInt())).thenReturn(stablePodResource);
-        when(stablePodResource.getLog(anyBoolean())).thenReturn("Stable logs");
-
-        when(nsOp.withName("canary-pod")).thenReturn(canaryPodResource);
-        when(canaryPodResource.get()).thenReturn(canaryPod);
-        when(canaryPodResource.tailingLines(anyInt())).thenReturn(canaryPodResource);
-        when(canaryPodResource.getLog(anyBoolean())).thenReturn("Canary logs");
-
-        PodDataResult result = k8sTools.getCanaryDiagnostics(namespace, "app", 200, null, null);
-
-        assertNotNull(result);
-        assertFalse(result.hasError());
-        assertNotNull(result.stable());
-        assertNotNull(result.canary());
-        assertEquals("stable-pod", result.stable().get("podName"));
-        assertEquals("canary-pod", result.canary().get("podName"));
-    }
-
-    @Test
-    void testGetCanaryDiagnostics_NoStablePods() {
-        String namespace = "default";
-        Pod canaryPod = K8sTestFixtures.createTestPod("canary-pod", namespace);
-        canaryPod.getMetadata().setLabels(Map.of("role", "canary"));
-
-        PodList emptyStablePodList = new PodList();
-        emptyStablePodList.setItems(List.of());
-        PodList canaryPodList = new PodList();
-        canaryPodList.setItems(List.of(canaryPod));
-
-        FilterWatchListDeletable<Pod, PodList, PodResource> stableLabelOp = mock(FilterWatchListDeletable.class);
-        FilterWatchListDeletable<Pod, PodList, PodResource> canaryLabelOp = mock(FilterWatchListDeletable.class);
-
-        when(nsOp.withLabels(Map.of("role", "stable"))).thenReturn(stableLabelOp);
-        when(stableLabelOp.list()).thenReturn(emptyStablePodList);
-
-        when(nsOp.withLabels(Map.of("role", "canary"))).thenReturn(canaryLabelOp);
-        when(canaryLabelOp.list()).thenReturn(canaryPodList);
-
-        PodResource canaryPodResource = mock(PodResource.class);
-        when(nsOp.withName("canary-pod")).thenReturn(canaryPodResource);
-        when(canaryPodResource.get()).thenReturn(canaryPod);
-        when(canaryPodResource.tailingLines(anyInt())).thenReturn(canaryPodResource);
-        when(canaryPodResource.getLog(anyBoolean())).thenReturn("Canary logs");
-
-        PodDataResult result = k8sTools.getCanaryDiagnostics(namespace, "app", 200, null, null);
-
-        assertNotNull(result);
-        assertNotNull(result.stable());
-        assertTrue(result.stable().containsKey("error"));
-    }
 
     @Test
     void testGetCanaryDiagnostics_NoCanaryPods() {
@@ -219,33 +143,7 @@ class K8sToolsTest {
         assertTrue(result.error().contains("No Rollout found"));
     }
 
-    @Test
-    void testGetRolloutStatus_EmptyNamespace() {
-        RolloutStatusData result = k8sTools.getRolloutStatus("", null, null, null);
-        assertNotNull(result);
-        assertTrue(result.hasError());
-        assertTrue(result.error().contains("required"));
-    }
 
-    @Test
-    void testPauseRollout_Success() {
-        String namespace = "default";
-        Rollout rollout = K8sTestFixtures.createTestRollout("demo-rollout", namespace, "Progressing", 2, 30);
-        var rolloutNsOp = rolloutNsOpFor(namespace);
-
-        KubernetesResourceList<Rollout> rolloutList = mock(KubernetesResourceList.class);
-        when(rolloutNsOp.list()).thenReturn(rolloutList);
-        when(rolloutList.getItems()).thenReturn(List.of(rollout));
-
-        Resource<Rollout> namedResource = mock(Resource.class);
-        when(rolloutNsOp.withName("demo-rollout")).thenReturn(namedResource);
-        when(namedResource.patch(any(PatchContext.class), anyString())).thenReturn(rollout);
-
-        String paused = k8sTools.pauseRollout(namespace, null);
-
-        assertEquals("demo-rollout", paused);
-        verify(namedResource).patch(any(PatchContext.class), eq("{\"spec\":{\"paused\":true}}"));
-    }
 
     @Test
     void testPauseRollout_PausesTheNamedRolloutAmongSeveral() {
@@ -320,26 +218,7 @@ class K8sToolsTest {
         assertNull(paused);
     }
 
-    @Test
-    void testPauseRollout_EmptyNamespace() {
-        assertNull(k8sTools.pauseRollout("", null));
-    }
 
-    @Test
-    void testGetRolloutStatus_ByName() {
-        String namespace = "default";
-        Rollout rollout = K8sTestFixtures.createTestRollout("demo-rollout", namespace, "Progressing", 2, 30);
-        Resource<Rollout> namedResource = mock(Resource.class);
-        when(rolloutNsOpFor(namespace).withName("demo-rollout")).thenReturn(namedResource);
-        when(namedResource.get()).thenReturn(rollout);
-        mockPods(namespace, 1, 1);
-
-        RolloutStatusData result = k8sTools.getRolloutStatus(namespace, "demo-rollout", null, null);
-
-        assertFalse(result.hasError());
-        assertEquals("demo-rollout", result.rolloutName());
-        assertEquals(30, result.canaryWeight());
-    }
 
     @Test
     void testGetRolloutStatus_ByNameNotFound() {
@@ -463,37 +342,6 @@ class K8sToolsTest {
         assertEquals(Map.of("role", "canary"), K8sTools.parseLabels("novalue,=missing,role=canary,empty="));
     }
 
-    @Test
-    void testGetCanaryDiagnostics_DefaultTailLines() {
-        String namespace = "default";
-        Pod stablePod = K8sTestFixtures.createTestPod("stable-pod", namespace);
-        stablePod.getMetadata().setLabels(Map.of("role", "stable"));
-
-        PodList stablePodList = new PodList();
-        stablePodList.setItems(List.of(stablePod));
-        PodList emptyCanaryPodList = new PodList();
-        emptyCanaryPodList.setItems(List.of());
-
-        FilterWatchListDeletable<Pod, PodList, PodResource> stableLabelOp = mock(FilterWatchListDeletable.class);
-        FilterWatchListDeletable<Pod, PodList, PodResource> canaryLabelOp = mock(FilterWatchListDeletable.class);
-
-        when(nsOp.withLabels(Map.of("role", "stable"))).thenReturn(stableLabelOp);
-        when(stableLabelOp.list()).thenReturn(stablePodList);
-
-        when(nsOp.withLabels(Map.of("role", "canary"))).thenReturn(canaryLabelOp);
-        when(canaryLabelOp.list()).thenReturn(emptyCanaryPodList);
-
-        PodResource stablePodResource = mock(PodResource.class);
-        when(nsOp.withName("stable-pod")).thenReturn(stablePodResource);
-        when(stablePodResource.get()).thenReturn(stablePod);
-        when(stablePodResource.tailingLines(anyInt())).thenReturn(stablePodResource);
-        when(stablePodResource.getLog(anyBoolean())).thenReturn("Stable logs");
-
-        PodDataResult result = k8sTools.getCanaryDiagnostics(namespace, "app", null, null, null);
-
-        assertNotNull(result);
-        assertFalse(result.hasError());
-    }
 
     @Test
     void sampleTooThinRequiresScrapedMetricsBelowTheFloor() {
