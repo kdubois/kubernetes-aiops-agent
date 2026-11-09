@@ -94,6 +94,22 @@ public interface MyAgent {
 
 Use `@LoopAgent` for retry loops, `@SequenceAgent` for ordered steps, `@ParallelAgent` for concurrent non-AI work.
 
+### Structured output
+
+The framework owns the output contract: LangChain4j generates the JSON format from the
+agent method's return type — nested records and enums included — and appends it to the
+user message. Consequences:
+
+- Field semantics live in `@Description` annotations on the result record
+  (`dev.langchain4j.model.output.structured.Description`); the descriptions ride along
+  with the injected format. The system prompt carries decision logic and rules, never
+  a schema sketch or field documentation.
+- The one output rule that stays in the prompt: JSON escaping — never put unescaped
+  double quotes inside a string value; quote log excerpts with single quotes.
+- Do not unit-test the framework's schema injection or the `@Description` plumbing.
+  The labelled eval (`AnalysisEvalTest`, run before and after) is the guard for
+  output-contract changes.
+
 ## Building and Deploying
 
 ### Fast path (no version bump)
@@ -127,6 +143,12 @@ docker buildx build --platform linux/amd64,linux/arm64 \
 ANALYSIS_API_KEY=... ANALYSIS_BASE_URL=... ANALYSIS_MODEL=... \
   ./mvnw test -Dtest=AnalysisEvalTest -Danalysis.eval=true
 ```
+
+Test logic, not the language or the framework: no tests that construct records and
+assert their accessors, and no test that re-proves a mock-chain glue path another test
+already covers. Keep the tests that pin behaviour the analysis depends on — the
+pipeline scenarios, metric aggregation and window semantics, grader banding, the pause
+gate, and REST error mapping.
 
 The evaluation cases live in `src/test/resources/analysis-eval.json`; the report is written to `target/analysis-eval-report.md`. Run it before and after changing the `AnalysisAgent` prompt or model, and add a case whenever a new failure mode matters.
 
