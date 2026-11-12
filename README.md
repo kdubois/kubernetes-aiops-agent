@@ -603,7 +603,7 @@ export ANALYSIS_MODEL="gpt-4o"  # Optional, this is the default
 ```bash
 export ANALYSIS_API_KEY="AIza..."
 export ANALYSIS_BASE_URL="https://generativelanguage.googleapis.com/v1beta/openai/"
-export ANALYSIS_MODEL="gemini-3.5-flash"
+export ANALYSIS_MODEL="gemini-3.8-flash"
 ./mvnw quarkus:dev
 ```
 
