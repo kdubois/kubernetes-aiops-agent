@@ -1,8 +1,12 @@
 package dev.kevindubois.rollout.agent.analysis;
 
 import dev.langchain4j.agentic.Agent;
+import dev.langchain4j.agentic.declarative.ChatModelSupplier;
+import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.service.SystemMessage;
 import dev.langchain4j.service.UserMessage;
+import io.quarkiverse.langchain4j.ModelName;
+import io.quarkus.arc.Arc;
 
 /**
  * The second opinion tier of the analysis cascade. A cheaper model analyzed the same
@@ -13,9 +17,8 @@ import dev.langchain4j.service.UserMessage;
  * calibration, unlike the cheap tier's prompt which is tuned for speed.
  *
  * <p>Same method signature as {@link AnalysisAgent} so both serve as tiers in
- * the Confidence Cascade pattern; the hand-rolled escalation in
- * {@code AnalysisService} invokes this agent when the quality check disputes
- * the cheap tier's conclusion.
+ * the Confidence Cascade pattern; {@link AnalysisEscalation} invokes this
+ * agent when the quality check disputes the cheap tier's conclusion.
  */
 public interface SecondOpinionAnalysisAgent {
 
@@ -104,4 +107,14 @@ public interface SecondOpinionAnalysisAgent {
         """)
     @Agent(outputKey = "escalatedResult", description = "Re-analyzes disputed diagnostic data with deeper scrutiny")
     AnalysisResult analyze(String diagnosticData, String message);
+
+    /**
+     * Binds this tier to the named second-opinion model
+     * ({@code quarkus.langchain4j.openai.secondopinion.*}) instead of the
+     * default analysis model.
+     */
+    @ChatModelSupplier
+    static ChatModel chatModel() {
+        return Arc.container().instance(ChatModel.class, ModelName.Literal.of("secondopinion")).get();
+    }
 }

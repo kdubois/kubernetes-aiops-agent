@@ -20,8 +20,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * changing the escalation wiring or the second opinion model:
  *
  * <pre>ANALYSIS_API_KEY=... ANALYSIS_BASE_URL=... ANALYSIS_MODEL=... \
- * ANALYSIS_SECOND_OPINION_BASE_URL=... ANALYSIS_SECOND_OPINION_API_KEY=... ANALYSIS_SECOND_OPINION_MODEL=... \
- * TYPESAFE_API_KEY=... mvn test -Dtest=EscalationSmokeTest -Descalation.smoke=true</pre>
+ * ANALYSIS_SECOND_OPINION_MODEL=... TYPESAFE_API_KEY=... \
+ * mvn test -Dtest=EscalationSmokeTest -Descalation.smoke=true</pre>
  */
 @QuarkusTest
 @EnabledIfSystemProperty(named = "escalation.smoke", matches = "true")

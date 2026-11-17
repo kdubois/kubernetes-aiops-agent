@@ -1,12 +1,9 @@
 package dev.kevindubois.rollout.agent.analysis;
 
-import dev.langchain4j.agentic.AgenticServices;
-import dev.langchain4j.model.chat.ChatModel;
 import io.quarkus.logging.Log;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.Config;
-
-import java.time.Duration;
 
 /**
  * Second-opinion escalation tier for the analysis, in the shape of langchain4j's
@@ -16,69 +13,52 @@ import java.time.Duration;
  * conclusion is still disputed, the pause gate takes over — the human is the
  * final tier.
  *
- * <p>Configured through {@code analysis.escalation.*} (fed by the
- * {@code ANALYSIS_SECOND_OPINION_*} environment variables). The reference
- * deployment runs the cheap tier on Qwen (litemaas) and the second opinion tier on
- * DeepSeek (enmaas) — both open-weights models — with the escalation decided
- * by the decision-model grader. An empty model name disables the tier: a disputed
- * conclusion then goes straight to the pause gate, exactly as before this
- * tier existed.
- *
- * <p>Known limitation: the declarative sequence's remediation step acts on the
- * pre-escalation conclusion. When the escalation flips the direction of the
- * decision, the rollout decision is correct (it is built after the escalation)
- * but the remediation side effect may be spurious or missing. The full fix is
- * to move the remediation trigger behind the escalation; not done yet because
- * the race needs a disputed conclusion, a direction flip and a configured
- * repository at the same time.
+ * <p>The second-opinion model is the named {@code secondopinion} OpenAI
+ * configuration ({@code quarkus.langchain4j.openai.secondopinion.*}), fed by
+ * the {@code ANALYSIS_SECOND_OPINION_*} environment variables and falling back
+ * to the analysis credentials. The reference deployment runs the cheap tier on
+ * Qwen (litemaas) and the second opinion tier on DeepSeek (enmaas) — both
+ * open-weights models — with the escalation decided by the decision-model
+ * grader. An unset model name disables the tier: a disputed conclusion then
+ * goes straight to the pause gate, exactly as before this tier existed.
  */
 @ApplicationScoped
 public class AnalysisEscalation {
 
-    private final ChatModel secondOpinionModel;
-    private final SecondOpinionAnalysisAgent secondOpinionAgent;
+    /** The named model configuration behind this tier. */
+    static final String SECOND_OPINION_MODEL_PROPERTY =
+            "quarkus.langchain4j.openai.secondopinion.chat-model.model-name";
 
-    @jakarta.inject.Inject
-    AnalysisEscalation(Config config) {
-        this(secondOpinionModel(config));
+    private final SecondOpinionAnalysisAgent secondOpinionAgent;
+    private final boolean enabled;
+
+    @Inject
+    AnalysisEscalation(Config config, SecondOpinionAnalysisAgent secondOpinionAgent) {
+        this(secondOpinionAgent, modelConfigured(config));
     }
 
-    AnalysisEscalation(ChatModel secondOpinionModel) {
-        this.secondOpinionModel = secondOpinionModel;
-        this.secondOpinionAgent = secondOpinionModel == null ? null
-                : AgenticServices.agentBuilder(SecondOpinionAnalysisAgent.class)
-                        .chatModel(secondOpinionModel)
-                        .build();
-        if (secondOpinionModel == null) {
+    AnalysisEscalation(SecondOpinionAnalysisAgent secondOpinionAgent, boolean enabled) {
+        this.secondOpinionAgent = secondOpinionAgent;
+        this.enabled = enabled;
+        if (!enabled) {
             Log.info("Analysis escalation disabled (no ANALYSIS_SECOND_OPINION_MODEL): a disputed conclusion "
                     + "goes straight to the pause gate");
         } else {
-            Log.infof("Analysis escalation enabled: disputed conclusions are re-analyzed with %s",
-                    secondOpinionModel.toString());
+            Log.info("Analysis escalation enabled: disputed conclusions are re-analyzed with the second-opinion model");
         }
     }
 
-    private static ChatModel secondOpinionModel(Config config) {
-        String modelName = config.getOptionalValue("analysis.escalation.model", String.class).orElse("").trim();
-        if (modelName.isEmpty()) {
-            return null;
-        }
-        String baseUrl = config.getOptionalValue("analysis.escalation.base-url", String.class).orElse("");
-        String apiKey = config.getOptionalValue("analysis.escalation.api-key", String.class).orElse("");
-        return dev.langchain4j.model.openai.OpenAiChatModel.builder()
-                .baseUrl(baseUrl)
-                .apiKey(apiKey)
-                .modelName(modelName)
-                .temperature(0.3)
-                // reasoning models spend tokens on thinking before the answer
-                .maxCompletionTokens(12288)
-                .timeout(Duration.ofSeconds(120))
-                .responseFormat("json")
-                .build();
+    /**
+     * The tier is on when a second-opinion model is configured. The sentinel
+     * model name keeps the named model bean usable while the tier is off.
+     */
+    private static boolean modelConfigured(Config config) {
+        String modelName = config.getOptionalValue(SECOND_OPINION_MODEL_PROPERTY, String.class).orElse("").trim();
+        return !modelName.isEmpty() && !"missing".equals(modelName);
     }
 
     public boolean enabled() {
-        return secondOpinionAgent != null;
+        return enabled;
     }
 
     /**

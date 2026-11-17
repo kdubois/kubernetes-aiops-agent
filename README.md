@@ -108,7 +108,7 @@ The confidence the analysis LLM reports about itself is not always calibrated. A
 
 The grader degrades gracefully: without the decision-model key (`TYPESAFE_API_KEY`), on a call failure, or on a timeout it disables itself and the gate falls back to the self-reported confidence — the grader never fails the measurement. The response contract is unchanged: `confidence` stays the self-reported value; the pause gate and the `DECISION` event reflect the effective confidence, with both values logged next to each other.
 
-Every grade is published as a `QUALITY_CHECK` activity event with the score and the finding — `passed` (≥ 50/100, the evidence backs the conclusion), `neutral` (30–50, the evidence is too thin to decide), or `failed` (below 30/100, the evidence contradicts the conclusion). The evidence itself is gathered as a window: metrics are scraped twice with `analysis.sample.window-seconds` (default 10) between them, and the analysis judges the delta — the requests, errors and latency observed during the measurement, unaffected by pod warmup. The window reports the fleet mean and the worst pod's mean latency; the worst pod is the signal because freshly scaled-up canary pods would otherwise dilute a single slow pod back to baseline. The window extends while the canary sample is below `analysis.sample.min-requests` (default 500 — an error rate over a handful of requests is noise), bounded by `analysis.sample.max-waits`; each extension shows in the feed as a "Gathering more canary evidence" event. The event order tells the story: the `CONFIDENCE_SCORE` event publishes the model's self-reported confidence right after its conclusion, the quality check grades it next, and the `DECISION` event announces the effective confidence with both inputs. When the escalation tier re-analyzes a failed conclusion, the `MODEL_ESCALATION` event names both models and their decisions, e.g. `glm-5-3 said continue (95/100), quality check failed at 29/100 — DeepSeek-V4.1 re-analyzed: continue (85/100)`. The model names come from the configuration (`quarkus.langchain4j.openai.chat-model.model-name` and `analysis.escalation.model`), so the events always name the models actually in use.
+Every grade is published as a `QUALITY_CHECK` activity event with the score and the finding — `passed` (≥ 50/100, the evidence backs the conclusion), `neutral` (30–50, the evidence is too thin to decide), or `failed` (below 30/100, the evidence contradicts the conclusion). The evidence itself is gathered as a window: metrics are scraped twice with `analysis.sample.window-seconds` (default 10) between them, and the analysis judges the delta — the requests, errors and latency observed during the measurement, unaffected by pod warmup. The window reports the fleet mean and the worst pod's mean latency; the worst pod is the signal because freshly scaled-up canary pods would otherwise dilute a single slow pod back to baseline. The window extends while the canary sample is below `analysis.sample.min-requests` (default 500 — an error rate over a handful of requests is noise), bounded by `analysis.sample.max-waits`; each extension shows in the feed as a "Gathering more canary evidence" event. The event order tells the story: the `CONFIDENCE_SCORE` event publishes the model's self-reported confidence right after its conclusion, the quality check grades it next, and the `DECISION` event announces the effective confidence with both inputs. When the escalation tier re-analyzes a failed conclusion, the `MODEL_ESCALATION` event names both models and their decisions, e.g. `glm-5-3 said continue (95/100), quality check failed at 29/100 — DeepSeek-V4.1 re-analyzed: continue (85/100)`. The model names come from the configuration (`quarkus.langchain4j.openai.chat-model.model-name` and `quarkus.langchain4j.openai.secondopinion.chat-model.model-name`), so the events always name the models actually in use.
 
 The grader is a single decision call with a threshold (grade → combine → gate), shaped like langchain4j-agentic's Confidence Cascade pattern, so a future tiered-model design (cheap analysis first, a second opinion model when uncertain) can adopt the cascade planner directly.
 
@@ -238,7 +238,7 @@ $EDITOR deployment/secret.yaml
 kubectl apply -f deployment/secret.yaml
 ```
 
-The required key is `analysis_api_key`. `analysis_second_opinion_api_key` enables the escalation tier, and `typesafe_api_key` enables the decision-model grader; both are optional. The secret is mounted by the Deployment, so a key change needs a pod restart.
+The required key is `analysis_api_key`. `analysis_second_opinion_model` enables the escalation tier (its key and base URL fall back to the analysis values when unset), and `typesafe_api_key` enables the decision-model grader; both are optional. The secret is mounted by the Deployment, so a key change needs a pod restart.
 
 ### 3. Deploy
 
@@ -405,9 +405,9 @@ The decision is synchronous. Remediation runs in the background after a rollback
 | `ANALYSIS_API_KEY` | Yes | API key for the analysis model (any OpenAI-compatible endpoint) |
 | `ANALYSIS_BASE_URL` | No | Base URL for analysis model API (default: "https://api.openai.com/v1") |
 | `ANALYSIS_MODEL` | No | Analysis model name (default: "gpt-4o") |
-| `ANALYSIS_SECOND_OPINION_API_KEY` | No | API key for the escalation tier; without it escalation is disabled |
-| `ANALYSIS_SECOND_OPINION_BASE_URL` | No | Base URL for the escalation tier |
-| `ANALYSIS_SECOND_OPINION_MODEL` | No | Model for the escalation tier; empty disables escalation |
+| `ANALYSIS_SECOND_OPINION_API_KEY` | No | API key for the escalation tier; falls back to `ANALYSIS_API_KEY` |
+| `ANALYSIS_SECOND_OPINION_BASE_URL` | No | Base URL for the escalation tier; falls back to `ANALYSIS_BASE_URL` |
+| `ANALYSIS_SECOND_OPINION_MODEL` | No | Model for the escalation tier; unset disables escalation |
 | `TYPESAFE_API_KEY` | No | API key for the decision-model grader; without it the grader disables itself and the pause gate uses the self-reported confidence |
 | `REMEDIATION_AGENT_URL` | No | URL of the remediation-agent A2A service (defaults to `http://remediation-agent:8080`) |
 
