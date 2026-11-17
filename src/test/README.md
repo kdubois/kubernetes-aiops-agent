@@ -2,67 +2,56 @@
 
 ## Overview
 
-This directory contains **unit tests only** for the Kubernetes AI Agent.
+The normal suite is unit tests only: fast, isolated, no external dependencies, no API keys. The labelled evaluations that call live models are opt-in via system properties.
 
-## Test Philosophy
+## Always-on tests
 
-- **Unit tests only**: Fast, isolated tests that don't require external dependencies
-- **Focus on essential functionality**: Tests cover data models, utilities, and core business logic
+| Test file | Purpose |
+|-----------|---------|
+| `api/AnalysisPipelineTest.java` | End-to-end analysis pipeline with WireMock LLM and A2A stubs |
+| `api/RolloutControlResourceTest.java` | Promote/abort rollout control endpoints |
+| `analysis/AnalysisGraderTest.java` | Grader verdict banding (contradicted / neutral / supported) |
+| `analysis/PauseGateTest.java` | Uncertainty pause gate decisions |
+| `analysis/SecondOpinionModelWiringTest.java` | The `secondopinion` named model resolves to a ChatModel bean |
+| `analysis/AnalysisEvalSetTest.java` | Validates the evaluation set structure |
+| `k8s/K8sToolsTest.java` | Canary diagnostics and metrics tools |
+| `k8s/MetricsAggregationTest.java` | Per-pod metrics aggregation and window semantics |
+| `observability/ActivityEventsTest.java` | Activity event payloads |
+| `utils/TextUtilsTest.java` | Shared text utilities |
 
-## Test Files
+Fixtures live in `fixtures/K8sTestFixtures.java` (mock Kubernetes resources).
 
-### Unit Tests (Fast, No External Dependencies)
+## Opt-in tests (live models)
 
-| Test File | Purpose | Speed |
-|-----------|---------|-------|
-| `KubernetesAgentResponseTest.java` | Tests request/response data models | Fast |
-| `AnalysisPipelineTest.java` | End-to-end analysis pipeline with WireMock LLM and A2A stubs | Fast |
-| `K8sToolsTest.java` | Tests canary diagnostics and metrics tools | Fast |
-| `MetricsAggregationTest.java` | Tests per-pod metrics aggregation | Fast |
-| `PauseGateTest.java` | Tests the uncertainty pause gate | Fast |
-| `TextUtilsTest.java` | Tests shared text utilities | Fast |
-| `AnalysisEvalSetTest.java` | Validates the evaluation set structure | Fast |
+These call the real chat, decision, and second-opinion models and never run in the normal suite or CI:
 
-### Test Fixtures
+| Test file | Purpose | Enable with |
+|-----------|---------|-------------|
+| `analysis/AnalysisEvalTest.java` | Labelled analysis evaluation against `analysis-eval.json` | `-Danalysis.eval=true` |
+| `analysis/GraderEvalTest.java` | Grader separation on the labelled scenarios | `-Dgrader.eval=true` |
+| `analysis/EscalationSmokeTest.java` | Both tiers analyze a hard labelled case, both graded | `-Descalation.smoke=true` |
 
-- `K8sTestFixtures.java` - Mock Kubernetes resources for testing
+Run them before and after changing the `AnalysisAgent` or grader prompts, models, or wiring. See the main `README.md` for the full env-var commands.
 
-## Running Tests
+## Running tests
 
-### Run All Unit Tests
 ```bash
-./mvnw test
+./mvnw test                          # whole unit suite
+./mvnw test -Dtest=K8sToolsTest      # one class
 ```
 
-### Run Specific Test
-```bash
-./mvnw test -Dtest=K8sToolsTest
-```
+If port 8081 is already in use on your machine (another Quarkus app, dev mode), point the test HTTP server elsewhere: `./mvnw test -Dquarkus.http.test-port=18081`.
 
-### Run with Coverage
-```bash
-./mvnw test jacoco:report
-```
-
-## Manual Testing
+## Manual testing
 
 For manual end-to-end testing, send a real request to the running agent with the `smoke-test.sh` script at the repository root:
 
 ```bash
 export ANALYSIS_API_KEY="sk-..."
 ./mvnw quarkus:dev          # terminal 1
-./smoke-test.sh local    # terminal 2
+./smoke-test.sh local       # terminal 2
 ```
 
 ## CI/CD
 
-The test suite runs automatically on every commit:
-- Fast unit tests (< 10 seconds)
-- No external dependencies required
-- No API keys needed
-
-## Coverage Goals
-
-- **Target**: 60% line coverage (configured in pom.xml)
-- **Focus**: Core business logic and data models
-- **Exclude**: Integration points that require external services
+GitHub Actions builds every commit: unit tests on every push, container images pushed to GHCR from `main` only.

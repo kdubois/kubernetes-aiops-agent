@@ -174,7 +174,6 @@ flowchart LR
 The project uses GitHub Actions for automated builds and deployments:
 
 - **Automated Builds**: Every push to `main` triggers a build, runs tests, and pushes container images to GitHub Container Registry (GHCR)
-- **Test Coverage**: Code coverage reports are automatically uploaded to Codecov
 - **Pull Request Validation**: PRs are built and tested automatically without pushing images
 - **Container Images**: Available at `ghcr.io/kdubois/kubernetes-agent`
 - **Dependency Management**: Dependabot automatically creates PRs for Maven dependencies, GitHub Actions, and Docker base images
