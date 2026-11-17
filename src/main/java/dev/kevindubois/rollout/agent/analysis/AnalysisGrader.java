@@ -35,8 +35,8 @@ import java.util.regex.Pattern;
  * as disputed and the gate held healthy rollouts.
  *
  * <p>Deliberately a single decision call with a threshold (grade → combine →
- * gate), shaped like the Confidence Cascade pattern langchain4j-agentic
- * provides since 1.23.0 (ConfidenceCascadePlanner). Our gate escalates to a
+ * gate), shaped like the Confidence Cascade pattern announced for
+ * langchain4j-agentic (ConfidenceCascadePlanner). Our gate escalates to a
  * human pause instead of a second opinion tier, so the cascade planner itself
  * does not fit here — but keeping this shape means swapping to a tiered-model
  * cascade later is a wiring change, not a redesign.

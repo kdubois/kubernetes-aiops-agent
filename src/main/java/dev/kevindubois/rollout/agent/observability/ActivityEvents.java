@@ -4,9 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.kevindubois.rollout.agent.analysis.AnalysisResult;
 import io.quarkus.logging.Log;
 import jakarta.enterprise.context.ApplicationScoped;
-
-import java.util.Optional;
 import jakarta.inject.Inject;
+
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 /**
@@ -30,8 +29,9 @@ public class ActivityEvents {
 
     /** The model name configured for the second-opinion tier. */
     @Inject
-    @ConfigProperty(name = "analysis.escalation.model")
-    Optional<String> secondOpinionModelName;
+    @ConfigProperty(name = "quarkus.langchain4j.openai.secondopinion.chat-model.model-name",
+            defaultValue = "second-opinion model")
+    String secondOpinionModelName;
 
     private String shortModelName(String modelName) {
         if (modelName == null || modelName.isBlank()) {
@@ -48,7 +48,7 @@ public class ActivityEvents {
 
     /** Short model name of the second-opinion tier, for UI badges and event labels. */
     public String secondOpinionModelLabel() {
-        return shortModelName(secondOpinionModelName.orElse("second-opinion model"));
+        return shortModelName(secondOpinionModelName);
     }
 
     public void requestStarted(String detail, int measurement, int totalMeasurements) {
