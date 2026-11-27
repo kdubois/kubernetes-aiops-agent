@@ -4,13 +4,11 @@ on:
   push:
     branches:
       - main
-      - carlos
     tags:
       - 'v*'
   pull_request:
     branches:
       - main
-      - carlos
 
 env:
   REGISTRY: ghcr.io
