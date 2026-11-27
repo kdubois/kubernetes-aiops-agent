@@ -61,29 +61,22 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push container image
+        env:
+          META_JSON: ${{ steps.meta.outputs.json }}
         run: |
-          # Quarkus's --group/--name are separate path components (they get
-          # joined as group/name), unlike metadata-action's `images:` above
-          # which wants the full "owner/repo" path in one string. Passing the
-          # full IMAGE_NAME as --name *and* setting --group doubles the owner
-          # into ghcr.io/<owner>/<owner>/<repo>; passing it as --name *alone*
-          # (no --group) falls back to the stale group="kevindubois" baked
-          # into application.properties from before this became a fork,
-          # producing ghcr.io/kevindubois/<owner>/<repo> instead. Split them.
-          #
           # Tag primarily with the full commit SHA (guaranteed unique and
           # immutable, unlike a branch name or "latest") so deployments can
           # pin to an exact, traceable build. The other tags computed by
-          # docker/metadata-action (branch name, latest, short-sha) are kept
-          # as additional convenience tags on the same image.
-          ADDITIONAL_TAGS=$(echo '${{ steps.meta.outputs.json }}' | jq -r '.["tag-names"] | join(",")')
+          # docker/metadata-action (branch name, PR ref, semver, latest) are
+          # kept as additional convenience tags on the same image.
+          ADDITIONAL_TAGS=$(printf '%s' "$META_JSON" | jq -r '.["tag-names"] | join(",")')
           ./mvnw -B package \
             -Dquarkus.container-image.build=true \
-            -Dquarkus.container-image.push=true \
+            -Dquarkus.container-image.push=${{ github.event_name != 'pull_request' }} \
             -Dquarkus.container-image.registry=${{ env.REGISTRY }} \
             -Dquarkus.container-image.group=${{ github.repository_owner }} \
-            -Dquarkus.container-image.name=${{ github.event.repository.name }} \
-            -Dquarkus.container-image.tag=${{ github.sha }} \
+            -Dquarkus.container-image.name=kubernetes-agent \
+            -Dquarkus.container-image.tag=${{ github.event.pull_request.head.sha || github.sha }} \
             -Dquarkus.container-image.additional-tags=${ADDITIONAL_TAGS} \
             -DskipTests
 
