@@ -12,6 +12,8 @@ on:
 
 env:
   REGISTRY: ghcr.io
+  # Full "owner/repo" path, used only for docker/metadata-action's `images:`
+  # input below (it needs the full path to compute correct tag references).
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
@@ -56,17 +58,25 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
-            type=sha,prefix={{branch}}-
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push container image
+        env:
+          META_JSON: ${{ steps.meta.outputs.json }}
         run: |
+          # Tag primarily with the full commit SHA (guaranteed unique and
+          # immutable, unlike a branch name or "latest") so deployments can
+          # pin to an exact, traceable build. The other tags computed by
+          # docker/metadata-action (branch name, PR ref, semver, latest) are
+          # kept as additional convenience tags on the same image.
+          ADDITIONAL_TAGS=$(printf '%s' "$META_JSON" | jq -r '.["tag-names"] | join(",")')
           ./mvnw -B package \
             -Dquarkus.container-image.build=true \
-            -Dquarkus.container-image.push=true \
+            -Dquarkus.container-image.push=${{ github.event_name != 'pull_request' }} \
             -Dquarkus.container-image.registry=${{ env.REGISTRY }} \
             -Dquarkus.container-image.group=${{ github.repository_owner }} \
             -Dquarkus.container-image.name=kubernetes-agent \
-            -Dquarkus.container-image.tag=${{ steps.meta.outputs.version }} \
+            -Dquarkus.container-image.tag=${{ github.event.pull_request.head.sha || github.sha }} \
+            -Dquarkus.container-image.additional-tags=${ADDITIONAL_TAGS} \
             -DskipTests
 
